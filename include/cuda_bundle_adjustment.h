@@ -41,58 +41,21 @@ public:
 	*/
 	static Ptr create();
 
-	/** @brief Adds a pose vertex to the graph.
+	/** @brief adds a new graph to the optimiser with a custom edge 
 	*/
-	virtual void addPoseVertex(PoseVertex* v) = 0;
-
-	/** @brief Adds a landmark vertex to the graph.
-	*/
-	virtual void addLandmarkVertex(LandmarkVertex* v) = 0;
-
-	/** @brief Adds an edge with monocular observation to the graph.
-	*/
-	virtual void addMonocularEdge(MonoEdge* e) = 0;
-
-	/** @brief Adds an edge with stereo observation to the graph.
-	*/
-	virtual void addStereoEdge(StereoEdge* e) = 0;
-
-	/** @brief Returns the pose vertex with specified id.
-	*/
-	virtual PoseVertex* poseVertex(int id) const = 0;
-
-	/** @brief Returns the landmark vertex with specified id.
-	*/
-	virtual LandmarkVertex* landmarkVertex(int id) const = 0;
-
-	/** @brief Removes a pose vertex from the graph.
-	*/
-	virtual void removePoseVertex(PoseVertex* v) = 0;
-
-	/** @brief Removes a landmark vertex from the graph.
-	*/
-	virtual void removeLandmarkVertex(LandmarkVertex* v) = 0;
-
-	/** @brief Removes an edge from the graph.
-	*/
-	virtual void removeEdge(BaseEdge* e) = 0;
-
-	/** @brief Sets a camera parameters to the graph.
-	@note The camera parameters are the same in all edges.
-	*/
-	virtual void setCameraPrams(const CameraParams& camera) = 0;
-
-	/** @brief Returns the number of poses in the graph.
-	*/
-	virtual size_t nposes() const = 0;
-
-	/** @brief Returns the number of landmarks in the graph.
-	*/
-	virtual size_t nlandmarks() const = 0;
-
-	/** @brief Returns the total number of edges in the graph.
-	*/
-	virtual size_t nedges() const = 0;
+	template <typename T>
+	bool addEdgeSet(std::unique_ptr<T>& edgeSet)
+	{
+		for(int i = 0; i < edgeSets.size(); ++i)
+		{
+			if (!edgeSets[i]) 
+			{
+				edgeSets[i] = std::move(edgeSet);
+				return true;
+			}
+		}
+		return false;
+	}
 
 	/** @brief Initializes the graph.
 	*/
@@ -118,6 +81,17 @@ public:
 	/** @brief the destructor.
 	*/
 	virtual ~CudaBundleAdjustment();
+
+	void addPoseVertex(VertexP* v) override;
+	void addLandmarkVertex(VertexP* v) override;
+	VertexP* poseVertex(int id) const override;
+	VertexL* landmarkVertex(int id) const override;
+	void removePoseVertex(PoseVertex* v) override;
+	void removeLandmarkVertex(PoseVertex* v) override;
+	size_t nposes() const override;
+	size_t nlandmarks() const override;
+	void clear() override;
+
 };
 
 } // namespace cuba

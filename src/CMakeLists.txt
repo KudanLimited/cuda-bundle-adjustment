@@ -36,7 +36,7 @@ endif()
 
 file(GLOB srcs ./*.cpp ./*.cu ./*.h ${CUBA_INCLUDE_DIR}/*.h)
 cuda_add_library(cuda_bundle_adjustment ${srcs})
-target_link_libraries(cuda_bundle_adjustment ${CUDA_cusparse_LIBRARY} ${CUDA_cusolver_LIBRARY})
+target_link_libraries(cuda_bundle_adjustment ${CUDA_cusparse_LIBRARY} ${CUDA_cusolver_LIBRARY} Eigen3::Eigen3)
 
 install(
 	TARGETS cuda_bundle_adjustment

@@ -23,7 +23,7 @@ limitations under the License.
 
 namespace cuba
 {
-
+	
 template <typename T>
 class DeviceBuffer
 {
