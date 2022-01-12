@@ -120,6 +120,75 @@ using MonoEdge = Edge<2>;
 using StereoEdge = Edge<3>;
 
 ////////////////////////////////////////////////////////////////////////////////////
+// EdgeSet
+////////////////////////////////////////////////////////////////////////////////////
+
+/** @brief groups together a set of edges of the same type. 
+*/
+class BaseEdgeSet 
+{
+public:
+
+	BaseEdgeSet() {}
+
+	virtual void computeError() = 0;
+
+	template<typename T>
+	void addEdge(T* edge)
+	{
+		edges.insert(edge);
+
+		edge->vertexP->edges.insert(edge);
+		edge->vertexL->edges.insert(edge);
+	}
+
+	template<typename T>
+	void removeEdge(T* e)
+	{
+		auto vertexP = e->poseVertex();
+		if (vertexP->edges.count(e))
+			vertexP->edges.erase(e);
+
+		auto vertexL = e->landmarkVertex();
+		if (vertexL->edges.count(e))
+			vertexL->edges.erase(e);
+
+		if (edges.count(edge))
+		{
+			edges.erase(edge);
+		}
+	}
+
+	size_t nedges() const
+	{
+		return edges.size();
+	}
+
+private:
+
+	std::unordered_set<BaseEdge*> edges;
+};
+
+class StereoEdgeSet : public BaseEdgeSet
+{
+public:
+
+	StereoGraph() : BaseGraph("StereoGraph") {}
+
+	void computeError() override;
+};
+
+class MonoEdgeSet : public BaseEdgeSet
+{
+public:
+
+	MonoGraph() : BaseGraph("StereoGraph") {}
+
+	void computeError() override;
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////
 // Vertex
 ////////////////////////////////////////////////////////////////////////////////////
 

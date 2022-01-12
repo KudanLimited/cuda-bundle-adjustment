@@ -27,6 +27,7 @@ limitations under the License.
 #include "device_matrix.h"
 #include "cuda_block_solver.h"
 #include "cuda_linear_solver.h"
+#include "graph.h"
 
 namespace cuba
 {
@@ -85,35 +86,43 @@ public:
 		qs_.clear();
 		ts_.clear();
 		Xws_.clear();
-		measurements2D_.clear();
-		measurements3D_.clear();
 		omegas_.clear();
 		edge2PL_.clear();
 		edgeFlags_.clear();
 	}
 
-	void initialize(const VertexMapP& vertexMapP, const VertexMapL& vertexMapL,
-		const EdgeSet2D& edgeSet2D, const EdgeSet3D& edgeSet3D, const CameraParams& camera)
+	void initialize(const std::array<BaseEdgeSet*, 6>& edgeSets, const CameraParams& camera)
 	{
+		assert(graphs.size() > 0);
+		
 		const auto t0 = get_time_point();
 
-		nedges2D_ = static_cast<int>(edgeSet2D.size());
-		nedges3D_ = static_cast<int>(edgeSet3D.size());
+		int totalEdgeSize = 0;
+
+		for(const auto edgeSet : edgeSets)
+		{
+			if (!edgeSet)
+			{
+				break;
+			}
+
+			totalEdgeSize += edgeSet->edges.size();
+		}
+
+		nedges_ = totalEdgeSize;
 
 		clear();
 
-		verticesP_.reserve(vertexMapP.size());
-		verticesL_.reserve(vertexMapL.size());
-		baseEdges_.reserve(nedges2D_ + nedges3D_);
-		HplBlockPos_.reserve(nedges2D_ + nedges3D_);
-		qs_.reserve(vertexMapP.size());
-		ts_.reserve(vertexMapP.size());
-		Xws_.reserve(vertexMapL.size());
-		measurements2D_.reserve(nedges2D_);
-		measurements3D_.reserve(nedges3D_);
-		omegas_.reserve(nedges2D_ + nedges3D_);
-		edge2PL_.reserve(nedges2D_ + nedges3D_);
-		edgeFlags_.reserve(nedges2D_ + nedges3D_);
+		verticesP_.reserve(totalVertexP.size());
+		verticesL_.reserve(totalVertexL.size());
+		baseEdges_.reserve(totalEdgeSize);
+		HplBlockPos_.reserve(totalEdgeSize);
+		qs_.reserve(totalVertexP.size());
+		ts_.reserve(totalVvertexP.size());
+		Xws_.reserve(totalVertexL.size());
+		omegas_.reserve(totalEdgeSize);
+		edge2PL_.reserve(totalEdgeSize);
+		edgeFlags_.reserve(totalEdgeSize);
 
 		std::vector<VertexP*> fixedVerticesP_;
 		std::vector<VertexL*> fixedVerticesL_;
@@ -174,41 +183,31 @@ public:
 
 		// gather each edge members into each vector
 		int edgeId = 0;
-		for (const auto e : edgeSet2D)
+		for (const auto* edgeSet : edgeSets)
 		{
-			const auto vertexP = e->vertexP;
-			const auto vertexL = e->vertexL;
+			if (!edgeSet)
+			{
+				break;
+			}
 
-			baseEdges_.push_back(e);
+			for (const auto edge : edgeSet->edges)
+			{
+				const auto vertexP = edge->vertexP;
+				const auto vertexL = edge->vertexL;
 
-			if (!vertexP->fixed && !vertexL->fixed)
-				HplBlockPos_.push_back({ vertexP->iP, vertexL->iL, edgeId });
+				baseEdges_.push_back(edge);
 
-			measurements2D_.emplace_back(e->measurement.data());
-			omegas_.push_back(ScalarCast(e->information));
-			edge2PL_.push_back({ vertexP->iP, vertexL->iL });
-			edgeFlags_.push_back(makeEdgeFlag(vertexP->fixed, vertexL->fixed));
+				if (!vertexP->fixed && !vertexL->fixed)
+				{
+					HplBlockPos_.push_back({ vertexP->iP, vertexL->iL, edgeId });
+				}
 
-			edgeId++;
-		}
+				omegas_.push_back(ScalarCast(edge->information));
+				edge2PL_.push_back({ vertexP->iP, vertexL->iL });
+				edgeFlags_.push_back(makeEdgeFlag(vertexP->fixed, vertexL->fixed));
 
-		// gather each edge members into each vector
-		for (const auto e : edgeSet3D)
-		{
-			const auto vertexP = e->vertexP;
-			const auto vertexL = e->vertexL;
-
-			baseEdges_.push_back(e);
-			
-			if (!vertexP->fixed && !vertexL->fixed)
-				HplBlockPos_.push_back({ vertexP->iP, vertexL->iL, edgeId });
-
-			measurements3D_.emplace_back(e->measurement.data());
-			omegas_.push_back(ScalarCast(e->information));
-			edge2PL_.push_back({ vertexP->iP, vertexL->iL });
-			edgeFlags_.push_back(makeEdgeFlag(vertexP->fixed, vertexL->fixed));
-
-			edgeId++;
+				edgeId++;
+			}
 		}
 
 		nHplBlocks_ = static_cast<int>(HplBlockPos_.size());
@@ -224,7 +223,9 @@ public:
 
 		// create sparse linear solver
 		if (!linearSolver_)
+		{
 			linearSolver_ = SparseLinearSolver::create();
+		}
 
 		profItems_.assign(PROF_ITEM_NUM, 0);
 
@@ -232,7 +233,7 @@ public:
 		profItems_[PROF_ITEM_INITIALIZE] += get_duration(t0, t1);
 	}
 
-	void buildStructure()
+	void buildStructure(const std::array<BaseEdgeSet*, 6>& edgeSets)
 	{
 		const auto t0 = get_time_point();
 
@@ -293,20 +294,39 @@ public:
 		d_Xws_.upload(Xws_.data());
 
 		// upload edge information to device memory
-		d_measurements2D_.assign(nedges2D_, measurements2D_.data());
-		d_measurements3D_.assign(nedges3D_, measurements3D_.data());
-		d_errors2D_.resize(nedges2D_);
-		d_errors3D_.resize(nedges3D_);
-		d_omegas2D_.assign(nedges2D_, omegas_.data());
-		d_omegas3D_.assign(nedges3D_, omegas_.data() + nedges2D_);
-		d_Xcs2D_.resize(nedges2D_);
-		d_Xcs3D_.resize(nedges3D_);
-		d_edge2PL2D_.assign(nedges2D_, edge2PL_.data());
-		d_edge2PL3D_.assign(nedges3D_, edge2PL_.data() + nedges2D_);
-		d_edgeFlags2D_.assign(nedges2D_, edgeFlags_.data());
-		d_edgeFlags3D_.assign(nedges3D_, edgeFlags_.data() + nedges2D_);
-		d_edge2Hpl2D_.map(nedges2D_, d_edge2Hpl_.data());
-		d_edge2Hpl3D_.map(nedges3D_, d_edge2Hpl_.data() + nedges2D_);
+		int accumEdgeSize = 0;
+		for (int i = 0; i < edgeSets.size(); ++i)
+		{
+			EdgeSetDeviceData& esDevice = d_edgeSets[i];
+			BaseEdgeSet* edgeSet = edgeSets[i];
+			size_t nedges = graph->edges.size();
+
+			if (!edgeSet)
+			{
+				break;
+			}
+
+			if (i > 0)
+			{
+				accumEdgeSize += edgeSets[i - 1]->edges.size()
+			}
+
+			esDevice.d_errors.resize(nedges);
+			esDevice.d_Xcs.resize(nedges);
+			
+			std::vector<Measurement> measurements;
+			for (const auto& edge : edgeSet->edges)
+			{
+				measurements.emplace_back(edge->measurement.data());
+			}
+			esDevice.d_measurements.assign(nedges, measurements.data());
+		
+			esDevice.d_omegas.assign(nedges, omegas_.data() + accumEdgeSize);
+			esDevice.d_edge2PL.assign(nedges, edge2PL_.data() + accumEdgeSize);
+			esDevice.d_edgeFlags.assign(nedges, edgeFlags_.data() + accumEdgeSize);
+			esDevice.d_edge2Hpl.map(nedges, d_edge2Hpl_.data() + accumEdgeSize);
+		}
+	
 		d_chi_.resize(1);
 
 		const auto t1 = get_time_point();
@@ -320,23 +340,33 @@ public:
 		profItems_[PROF_ITEM_DECOMP_SYMBOLIC] += get_duration(t1, t2);
 	}
 
-	double computeErrors()
+	double computeErrors(const std::array<BaseEdgeSet*, 6>& edgeSets)
 	{
 		const auto t0 = get_time_point();
 
-		const Scalar chi2D = gpu::computeActiveErrors(d_qs_, d_ts_, d_Xws_, d_measurements2D_,
-			d_omegas2D_, d_edge2PL2D_, d_errors2D_, d_Xcs2D_, d_chi_);
+		Scalar accumChi = 0;
+		for (int i = 0; i < edgeSets.size(); ++i)
+		{
+			if (!edgeSets[i])
+			{
+				break;
+			}
 
-		const Scalar chi3D = gpu::computeActiveErrors(d_qs_, d_ts_, d_Xws_, d_measurements3D_,
-			d_omegas3D_, d_edge2PL3D_, d_errors3D_, d_Xcs3D_, d_chi_);
+			EdgeSetDeviceData& d_edgeSet = d_edgeSets[i];
+			
+			const Scalar chi = edgeSets[i]->computeError(d_qs_, d_ts_, d_Xws_, d_edgeSet.d_measurements,
+				d_edgeSet.d_omegas, d_edgeSet.d_edge2PL, d_edgeSet.d_errors, d_edgeSet.d_Xcs, d_chi_);
+			
+			accumChi += chi;
+		}
 
 		const auto t1 = get_time_point();
 		profItems_[PROF_ITEM_COMPUTE_ERROR] += get_duration(t0, t1);
 
-		return chi2D + chi3D;
+		return accumChi;
 	}
 
-	void buildSystem()
+	void buildSystem(const std::array<BaseEdgeSet*, 6>& edgeSets)
 	{
 		const auto t0 = get_time_point();
 
@@ -354,11 +384,18 @@ public:
 		d_bp_.fillZero();
 		d_bl_.fillZero();
 
-		gpu::constructQuadraticForm(d_Xcs2D_, d_qs_, d_errors2D_, d_omegas2D_, d_edge2PL2D_,
-			d_edge2Hpl2D_, d_edgeFlags2D_, d_Hpp_, d_bp_, d_Hll_, d_bl_, d_Hpl_);
+		for (int i = 0; i < edgeSets.size(); ++i)
+		{
+			if (!edgeSets[i])
+			{
+				break;
+			}
 
-		gpu::constructQuadraticForm(d_Xcs3D_, d_qs_, d_errors3D_, d_omegas3D_, d_edge2PL3D_,
-			d_edge2Hpl3D_, d_edgeFlags3D_, d_Hpp_, d_bp_, d_Hll_, d_bl_, d_Hpl_);
+			EdgeSetDeviceData& d_edgeSets = d_edgeSets[i];
+
+			gpu::constructQuadraticForm(d_edgeSets.d_Xcs, d_qs_, d_edgeSets.d_errors, d_edgeSets.d_omegas, d_edgeSets.d_edge2PL,
+				d_edgeSets.d_edge2Hpl, d_edgeSets.d_edgeFlags, d_Hpp_, d_bp_, d_Hll_, d_bl_, d_Hpl_);
+		}
 
 		const auto t1 = get_time_point();
 		profItems_[PROF_ITEM_BUILD_SYSTEM] += get_duration(t0, t1);
@@ -496,6 +533,8 @@ private:
 		return flag;
 	}
 
+	std::array<EdgeSetDeviceData, 6> d_edgeSets;
+
 	////////////////////////////////////////////////////////////////////////////////////
 	// host buffers
 	////////////////////////////////////////////////////////////////////////////////////
@@ -512,8 +551,6 @@ private:
 	std::vector<Vec3d> Xws_;
 
 	// edge information
-	std::vector<Vec2d> measurements2D_;
-	std::vector<Vec3d> measurements3D_;
 	std::vector<Scalar> omegas_;
 	std::vector<PLIndex> edge2PL_;
 	std::vector<uint8_t> edgeFlags_;
@@ -535,13 +572,7 @@ private:
 	GpuVec3d d_ts_, d_Xws_;
 
 	// edge information
-	GpuVec3d d_Xcs2D_, d_Xcs3D_;
-	GpuVec1d d_omegas2D_, d_omegas3D_;
-	GpuVec2d d_measurements2D_, d_errors2D_;
-	GpuVec3d d_measurements3D_, d_errors3D_;
-	GpuVec2i d_edge2PL2D_, d_edge2PL3D_;
-	GpuVec1b d_edgeFlags2D_, d_edgeFlags3D_;
-	GpuVec1i d_edge2Hpl_, d_edge2Hpl2D_, d_edge2Hpl3D_;
+	GpuVec1i d_edge2Hpl;
 
 	// solution increments Δx = [Δxp Δxl]
 	GpuVec1d d_x_;
@@ -591,89 +622,58 @@ class CudaBundleAdjustmentImpl : public CudaBundleAdjustment
 {
 public:
 
-	void addPoseVertex(VertexP* v) override
+	void addPoseVertex(VertexP* v) 
 	{
-		vertexMapP_.insert({ v->id, v });
+		vertexMapP.insert({ v->id, v });
 	}
 
-	void addLandmarkVertex(VertexL* v) override
+	void addLandmarkVertex(VertexL* v) 
 	{
-		vertexMapL_.insert({ v->id, v });
+		vertexMapL.insert({ v->id, v });
 	}
 
-	void addMonocularEdge(Edge2D* e) override
+	VertexP* poseVertex(int id) const
 	{
-		edges2D_.insert(e);
-
-		e->vertexP->edges.insert(e);
-		e->vertexL->edges.insert(e);
+		return vertexMapP.at(id);
 	}
 
-	void addStereoEdge(Edge3D* e) override
+	VertexL* landmarkVertex(int id) const
 	{
-		edges3D_.insert(e);
-
-		e->vertexP->edges.insert(e);
-		e->vertexL->edges.insert(e);
+		return vertexMapL.at(id);
 	}
 
-	VertexP* poseVertex(int id) const override
+	void removePoseVertex(PoseVertex* v)
 	{
-		return vertexMapP_.at(id);
-	}
-
-	VertexL* landmarkVertex(int id) const override
-	{
-		return vertexMapL_.at(id);
-	}
-
-	void removePoseVertex(PoseVertex* v) override
-	{
-		auto it = vertexMapP_.find(v->id);
-		if (it == std::end(vertexMapP_))
+		auto it = vertexMapP.find(v->id);
+		if (it == std::end(vertexMapP))
 			return;
 
 		for (auto e : it->second->edges)
 			removeEdge(e);
 
-		vertexMapP_.erase(it);
+		vertexMapP.erase(it);
 	}
 
-	void removeLandmarkVertex(LandmarkVertex* v) override
+	void removeLandmarkVertex(LandmarkVertex* v)
 	{
-		auto it = vertexMapL_.find(v->id);
-		if (it == std::end(vertexMapL_))
+		auto it = vertexMapL.find(v->id);
+		if (it == std::end(vertexMapL))
 			return;
 
 		for (auto e : it->second->edges)
 			removeEdge(e);
 
-		vertexMapL_.erase(it);
+		vertexMapL.erase(it);
 	}
 
-	void removeEdge(BaseEdge* e) override
+	size_t nposes() const
 	{
-		auto vertexP = e->poseVertex();
-		if (vertexP->edges.count(e))
-			vertexP->edges.erase(e);
+		return vertexMapP.size();
+	}
 
-		auto vertexL = e->landmarkVertex();
-		if (vertexL->edges.count(e))
-			vertexL->edges.erase(e);
-
-		if (e->dim() == 2)
-		{
-			auto edge2D = reinterpret_cast<Edge2D*>(e);
-			if (edges2D_.count(edge2D))
-				edges2D_.erase(edge2D);
-		}
-
-		if (e->dim() == 3)
-		{
-			auto edge3D = reinterpret_cast<Edge3D*>(e);
-			if (edges3D_.count(edge3D))
-				edges3D_.erase(edge3D);
-		}
+	size_t nlandmarks() const
+	{
+		return vertexMapL.size();
 	}
 
 	void setCameraPrams(const CameraParams& camera) override
@@ -681,24 +681,9 @@ public:
 		camera_ = camera;
 	}
 
-	size_t nposes() const override
-	{
-		return vertexMapP_.size();
-	}
-
-	size_t nlandmarks() const override
-	{
-		return vertexMapL_.size();
-	}
-
-	size_t nedges() const override
-	{
-		return edges2D_.size() + edges3D_.size();
-	}
-
 	void initialize() override
 	{
-		solver_.initialize(vertexMapP_, vertexMapL_, edges2D_, edges3D_, camera_);
+		solver_.initialize(std::array<BaseGraph*, 6>& graphs, camera_);
 
 		stats_.clear();
 	}
@@ -771,11 +756,9 @@ public:
 
 	void clear() override
 	{
-		vertexMapP_.clear();
-		vertexMapL_.clear();
-		edges2D_.clear();
-		edges3D_.clear();
-		stats_.clear();
+		vertexMapL.clear();
+		vertexMapP.clear();
+		edgeSets.clear();
 	}
 
 	const BatchStatistics& batchStatistics() const override
@@ -798,11 +781,12 @@ private:
 	static inline double attenuation(double x) { return 1 - std::pow(2 * x - 1, 3); }
 	static inline double clamp(double v, double lo, double hi) { return std::max(lo, std::min(v, hi)); }
 
+	std::map<int, VertexP*> vertexMapP;  //!< connected pose vertices.
+	std::map<int, VertexL*> vertexMapL; //!< connected landmark vertices.
+
+	std::array<BaseEdge*, 6> edgeSets = nullptr;
+
 	CudaBlockSolver solver_;
-	VertexMapP vertexMapP_;
-	VertexMapL vertexMapL_;
-	EdgeSet2D edges2D_;
-	EdgeSet3D edges3D_;
 	CameraParams camera_;
 
 	BatchStatistics stats_;
