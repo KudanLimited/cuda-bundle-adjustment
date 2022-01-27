@@ -34,12 +34,6 @@ namespace gpu
 // Type alias
 ////////////////////////////////////////////////////////////////////////////////////
 
-template <int N>
-using Vecxd = Vec<Scalar, N>;
-
-template <int N>
-using GpuVecxd = GpuVec<Vecxd<N>>;
-
 using PxPBlockPtr = BlockPtr<Scalar, PDIM, PDIM>;
 using LxLBlockPtr = BlockPtr<Scalar, LDIM, LDIM>;
 using PxLBlockPtr = BlockPtr<Scalar, PDIM, LDIM>;
@@ -1018,22 +1012,54 @@ Scalar computeActiveErrors_(const GpuVec4d& qs, const GpuVec3d& ts, const GpuVec
 	return h_chi;
 }
 
-Scalar computeActiveErrors(const GpuVec4d& qs, const GpuVec3d& ts, const GpuVec3d& Xws,
+template <>
+Scalar computeActiveErrors_<2>(const GpuVec4d& qs, const GpuVec3d& ts, const GpuVec3d& Xws,
 	const GpuVec2d& measurements, const GpuVec1d& omegas, const GpuVec2i& edge2PL,
 	GpuVec2d& errors, GpuVec3d& Xcs, Scalar* chi)
 {
-	return computeActiveErrors_(qs, ts, Xws, measurements, omegas, edge2PL, errors, Xcs, chi);
+	const int nedges = measurements.ssize();
+	const int block = BLOCK_ACTIVE_ERRORS;
+	const int grid = 16;
+
+	if (nedges <= 0)
+		return 0;
+
+	CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
+	computeActiveErrorsKernel<2><<<grid, block>>>(nedges, qs, ts, Xws, measurements, omegas,
+		edge2PL, errors, Xcs, chi);
+	CUDA_CHECK(cudaGetLastError());
+
+	Scalar h_chi = 0;
+	CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
+
+	return h_chi;
 }
 
-Scalar computeActiveErrors(const GpuVec4d& qs, const GpuVec3d& ts, const GpuVec3d& Xws,
+template <>
+Scalar computeActiveErrors_<3>(const GpuVec4d& qs, const GpuVec3d& ts, const GpuVec3d& Xws,
 	const GpuVec3d& measurements, const GpuVec1d& omegas, const GpuVec2i& edge2PL,
 	GpuVec3d& errors, GpuVec3d& Xcs, Scalar* chi)
 {
-	return computeActiveErrors_(qs, ts, Xws, measurements, omegas, edge2PL, errors, Xcs, chi);
+	const int nedges = measurements.ssize();
+	const int block = BLOCK_ACTIVE_ERRORS;
+	const int grid = 16;
+
+	if (nedges <= 0)
+		return 0;
+
+	CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
+	computeActiveErrorsKernel<3><<<grid, block>>>(nedges, qs, ts, Xws, measurements, omegas,
+		edge2PL, errors, Xcs, chi);
+	CUDA_CHECK(cudaGetLastError());
+
+	Scalar h_chi = 0;
+	CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
+
+	return h_chi;
 }
 
 template <int M>
-void constructQuadraticForm_(const GpuVec3d& Xcs, const GpuVec4d& qs, const GpuVecxd<M>& errors,
+void constructQuadraticForm_(const GpuVec3d& Xcs, const GpuVec4d& qs, GpuVecxd<M>& errors,
 	const GpuVec1d& omegas, const GpuVec2i& edge2PL, const GpuVec1i& edge2Hpl, const GpuVec1b& flags,
 	GpuPxPBlockVec& Hpp, GpuPx1BlockVec& bp, GpuLxLBlockVec& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl)
 {
@@ -1042,25 +1068,51 @@ void constructQuadraticForm_(const GpuVec3d& Xcs, const GpuVec4d& qs, const GpuV
 	const int grid = divUp(nedges, block);
 
 	if (nedges <= 0)
+	{
 		return;
+	}
 
 	constructQuadraticFormKernel<M><<<grid, block>>>(nedges, Xcs, qs, errors, omegas, edge2PL,
 		edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
 	CUDA_CHECK(cudaGetLastError());
 }
 
-void constructQuadraticForm(const GpuVec3d& Xcs, const GpuVec4d& qs, const GpuVec2d& errors,
+template <>
+void constructQuadraticForm_<2>(const GpuVec3d& Xcs, const GpuVec4d& qs, GpuVec2d& errors,
 	const GpuVec1d& omegas, const GpuVec2i& edge2PL, const GpuVec1i& edge2Hpl, const GpuVec1b& flags,
 	GpuPxPBlockVec& Hpp, GpuPx1BlockVec& bp, GpuLxLBlockVec& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl)
 {
-	constructQuadraticForm_(Xcs, qs, errors, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
+	const int nedges = errors.ssize();
+	const int block = 512;
+	const int grid = divUp(nedges, block);
+
+	if (nedges <= 0)
+	{
+		return;
+	}
+
+	constructQuadraticFormKernel<2><<<grid, block>>>(nedges, Xcs, qs, errors, omegas, edge2PL,
+		edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
+	CUDA_CHECK(cudaGetLastError());
 }
 
-void constructQuadraticForm(const GpuVec3d& Xcs, const GpuVec4d& qs, const GpuVec3d& errors,
+template <>
+void constructQuadraticForm_<3>(const GpuVec3d& Xcs, const GpuVec4d& qs, GpuVec3d& errors,
 	const GpuVec1d& omegas, const GpuVec2i& edge2PL, const GpuVec1i& edge2Hpl, const GpuVec1b& flags,
 	GpuPxPBlockVec& Hpp, GpuPx1BlockVec& bp, GpuLxLBlockVec& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl)
 {
-	constructQuadraticForm_(Xcs, qs, errors, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
+	const int nedges = errors.ssize();
+	const int block = 512;
+	const int grid = divUp(nedges, block);
+
+	if (nedges <= 0)
+	{
+		return;
+	}
+
+	constructQuadraticFormKernel<3><<<grid, block>>>(nedges, Xcs, qs, errors, omegas, edge2PL,
+		edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
+	CUDA_CHECK(cudaGetLastError());
 }
 
 template <typename T, int DIM>

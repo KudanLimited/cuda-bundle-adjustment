@@ -1,0 +1,29 @@
+########### AGGREGATED COMPONENTS AND DEPENDENCIES FOR THE MULTI CONFIG #####################
+#############################################################################################
+
+set(jbig_COMPONENT_NAMES ${jbig_COMPONENT_NAMES} )
+list(REMOVE_DUPLICATES jbig_COMPONENT_NAMES)
+set(jbig_FIND_DEPENDENCY_NAMES ${jbig_FIND_DEPENDENCY_NAMES} )
+list(REMOVE_DUPLICATES jbig_FIND_DEPENDENCY_NAMES)
+
+########### VARIABLES #######################################################################
+#############################################################################################
+set(jbig_PACKAGE_FOLDER_RELWITHDEBINFO "/home/kudan/.conan/data/jbig/20160605/_/_/package/bc25cccf370acdc9aede786b6cfe7144959ff365")
+set(jbig_INCLUDE_DIRS_RELWITHDEBINFO "${jbig_PACKAGE_FOLDER_RELWITHDEBINFO}/include")
+set(jbig_RES_DIRS_RELWITHDEBINFO "${jbig_PACKAGE_FOLDER_RELWITHDEBINFO}/res")
+set(jbig_DEFINITIONS_RELWITHDEBINFO )
+set(jbig_SHARED_LINK_FLAGS_RELWITHDEBINFO )
+set(jbig_EXE_LINK_FLAGS_RELWITHDEBINFO )
+set(jbig_OBJECTS_RELWITHDEBINFO )
+set(jbig_COMPILE_DEFINITIONS_RELWITHDEBINFO )
+set(jbig_COMPILE_OPTIONS_C_RELWITHDEBINFO )
+set(jbig_COMPILE_OPTIONS_CXX_RELWITHDEBINFO )
+set(jbig_LIB_DIRS_RELWITHDEBINFO "${jbig_PACKAGE_FOLDER_RELWITHDEBINFO}/lib")
+set(jbig_LIBS_RELWITHDEBINFO jbig)
+set(jbig_SYSTEM_LIBS_RELWITHDEBINFO )
+set(jbig_FRAMEWORK_DIRS_RELWITHDEBINFO "${jbig_PACKAGE_FOLDER_RELWITHDEBINFO}/Frameworks")
+set(jbig_FRAMEWORKS_RELWITHDEBINFO )
+set(jbig_BUILD_MODULES_PATHS_RELWITHDEBINFO )
+set(jbig_BUILD_DIRS_RELWITHDEBINFO "${jbig_PACKAGE_FOLDER_RELWITHDEBINFO}/")
+
+set(jbig_COMPONENTS_RELWITHDEBINFO )

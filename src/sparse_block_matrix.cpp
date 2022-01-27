@@ -15,6 +15,7 @@ limitations under the License.
 */
 
 #include "sparse_block_matrix.h"
+#include "optimisable_graph.h"
 
 #include <algorithm>
 
@@ -52,7 +53,7 @@ void HplSparseBlockMatrix::constructFromBlockPos(std::vector<HplBlockPos>& block
 		browInd[nnzPerCol[pos.col]++] = pos.row;
 }
 
-void HschurSparseBlockMatrix::constructFromVertices(const std::vector<VertexL*>& verticesL)
+void HschurSparseBlockMatrix::constructFromVertices(const std::vector<LandmarkVertex*>& verticesL)
 {
 	struct BlockPos { int row, col; };
 
@@ -74,7 +75,7 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<VertexL*>&
 		indices.clear();
 		for (const auto e : vL->edges)
 		{
-			const auto vP = e->poseVertex();
+			const auto vP = e->getPoseVertex();
 			if (!vP->fixed)
 				indices.push_back(vP->iP);
 		}

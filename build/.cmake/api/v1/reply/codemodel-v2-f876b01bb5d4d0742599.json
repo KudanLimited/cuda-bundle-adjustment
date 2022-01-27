@@ -1,0 +1,161 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-RelWithDebInfo-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.7"
+					},
+					"projectIndex" : 0,
+					"source" : "."
+				},
+				{
+					"build" : "src",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-src-RelWithDebInfo-e2e18e7c2c2e94220f5f.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.7"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 1,
+					"source" : "src",
+					"targetIndexes" : 
+					[
+						0
+					]
+				},
+				{
+					"build" : "samples/sample_ba_from_file",
+					"jsonFile" : "directory-samples.sample_ba_from_file-RelWithDebInfo-e4142b01f0ac4ae3dec8.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.7"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 2,
+					"source" : "samples/sample_ba_from_file",
+					"targetIndexes" : 
+					[
+						1
+					]
+				},
+				{
+					"build" : "samples/sample_comparison_with_g2o",
+					"jsonFile" : "directory-samples.sample_comparison_with_g2o-RelWithDebInfo-8f5aa9adbacf4f552605.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.7"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 3,
+					"source" : "samples/sample_comparison_with_g2o",
+					"targetIndexes" : 
+					[
+						2
+					]
+				}
+			],
+			"name" : "RelWithDebInfo",
+			"projects" : 
+			[
+				{
+					"childIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "CudaBundleAdjustment"
+				},
+				{
+					"directoryIndexes" : 
+					[
+						1
+					],
+					"name" : "cuda_bundle_adjustment",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						0
+					]
+				},
+				{
+					"directoryIndexes" : 
+					[
+						2
+					],
+					"name" : "sample_ba_from_file",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						1
+					]
+				},
+				{
+					"directoryIndexes" : 
+					[
+						3
+					],
+					"name" : "sample_comparison_with_g2o",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						2
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 1,
+					"id" : "cuda_bundle_adjustment::@145eef247bfb46b6828c",
+					"jsonFile" : "target-cuda_bundle_adjustment-RelWithDebInfo-c389f0a0653a0eaec415.json",
+					"name" : "cuda_bundle_adjustment",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "sample_ba_from_file::@55f0866dbd3b2fb01a93",
+					"jsonFile" : "target-sample_ba_from_file-RelWithDebInfo-2fe421de0cd4b01d5480.json",
+					"name" : "sample_ba_from_file",
+					"projectIndex" : 2
+				},
+				{
+					"directoryIndex" : 3,
+					"id" : "sample_comparison_with_g2o::@351ca3832b46abdaf78a",
+					"jsonFile" : "target-sample_comparison_with_g2o-RelWithDebInfo-f7bcaa43106c54b427d8.json",
+					"name" : "sample_comparison_with_g2o",
+					"projectIndex" : 3
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/kudan/Documents/Github/cuda-bundle-adjustment/build",
+		"source" : "/home/kudan/Documents/Github/cuda-bundle-adjustment"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 3
+	}
+}

@@ -24,6 +24,8 @@ limitations under the License.
 
 namespace cuba
 {
+// forward declerations
+struct PLIndex;
 
 template <typename T, int BLOCK_ROWS, int BLOCK_COLS>
 class BlockPtr
@@ -184,16 +186,6 @@ using GpuPxLBlockVec = DeviceBlockVector<Scalar, PDIM, LDIM>;
 using GpuPx1BlockVec = DeviceBlockVector<Scalar, PDIM, 1>;
 using GpuLx1BlockVec = DeviceBlockVector<Scalar, LDIM, 1>;
 
-struct EdgeSetDeviceData
-{
-	GpuVec3d d_Xcs;
-	GpuVec1d d_omegas;
-	GpuVec2d d_measurements;
-	GpuVec3d d_errors;
-	GpuVec2i d_edge2PL;
-	GpuVec1b d_edgeFlags;
-	GpuVec1i d_edge2Hpl;
-};
 
 } // namespace cuba
 

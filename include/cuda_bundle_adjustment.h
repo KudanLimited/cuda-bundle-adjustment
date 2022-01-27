@@ -17,10 +17,51 @@ limitations under the License.
 #ifndef __CUDA_BUNDLE_ADJUSTMENT_H__
 #define __CUDA_BUNDLE_ADJUSTMENT_H__
 
-#include "cuda_bundle_adjustment_types.h"
+#include <memory>
+#include <vector>
+#include <map>
+#include <array>
+#include <string>
+#include <cmath>
+
+#include "device_matrix.h"
+#include "device_buffer.h"
+
 
 namespace cuba
 {
+
+template <class T>
+using UniquePtr = std::unique_ptr<T>;
+
+////////////////////////////////////////////////////////////////////////////////////
+// Statistics
+////////////////////////////////////////////////////////////////////////////////////
+
+/** @brief information about optimization.
+*/
+struct BatchInfo
+{
+	int iteration;           //!< iteration number
+	double chi2;             //!< total chi2 (objective function value)
+};
+
+using BatchStatistics = std::vector<BatchInfo>;
+
+/** @brief Time profile.
+*/
+using TimeProfile = std::map<std::string, double>;
+
+////////////////////////////////////////////////////////////////////////////////////
+// Cuda Bundle Adjustment
+////////////////////////////////////////////////////////////////////////////////////
+// forward declerations
+struct PoseVertex;
+struct LandmarkVertex;
+struct CameraParams;
+class BaseEdgeSet;
+class CudaBlockSolver;
+class CudaBundleAdjustmentImpl;
 
 /** @brief CUDA implementation of Bundle Adjustment.
 
@@ -30,32 +71,17 @@ It optimizes camera poses and landmarks (3D points) represented by a graph.
 @attention This class doesn't take responsibility for deleting pointers to vertices and edges
 added in the graph.
 
+
 */
 class CudaBundleAdjustment
 {
 public:
 
-	using Ptr = UniquePtr<CudaBundleAdjustment>;
+	using Ptr = UniquePtr<CudaBundleAdjustmentImpl>;
 
 	/** @brief Creates an instance of CudaBundleAdjustment.
 	*/
 	static Ptr create();
-
-	/** @brief adds a new graph to the optimiser with a custom edge 
-	*/
-	template <typename T>
-	bool addEdgeSet(std::unique_ptr<T>& edgeSet)
-	{
-		for(int i = 0; i < edgeSets.size(); ++i)
-		{
-			if (!edgeSets[i]) 
-			{
-				edgeSets[i] = std::move(edgeSet);
-				return true;
-			}
-		}
-		return false;
-	}
 
 	/** @brief Initializes the graph.
 	*/
@@ -82,16 +108,92 @@ public:
 	*/
 	virtual ~CudaBundleAdjustment();
 
-	void addPoseVertex(VertexP* v) override;
-	void addLandmarkVertex(VertexP* v) override;
-	VertexP* poseVertex(int id) const override;
-	VertexL* landmarkVertex(int id) const override;
-	void removePoseVertex(PoseVertex* v) override;
-	void removeLandmarkVertex(PoseVertex* v) override;
+	virtual void addPoseVertex(PoseVertex* v) = 0;
+	virtual void addLandmarkVertex(LandmarkVertex* v) = 0;
+	virtual PoseVertex* poseVertex(int id) const = 0;
+	virtual LandmarkVertex* landmarkVertex(int id) const = 0;
+	virtual bool removePoseVertex(BaseEdgeSet* edgeSet, PoseVertex* v) = 0;
+	virtual bool removeLandmarkVertex(BaseEdgeSet* edgeSet, LandmarkVertex* v) = 0;
+	virtual size_t nposes() const = 0;
+	virtual size_t nlandmarks() const = 0;
+	virtual std::array<BaseEdgeSet*, 6>& getEdgeSets() = 0;
+
+	virtual void setCameraPrams(const CameraParams& camera) = 0;
+};
+
+/** @brief Implementation of CudaBundleAdjustment.
+*/
+class CudaBundleAdjustmentImpl : public CudaBundleAdjustment
+{
+public:
+
+	/**
+	 * @brief constructor
+	 */
+	CudaBundleAdjustmentImpl();
+
+	/** @brief adds a new graph to the optimiser with a custom edge 
+	*/
+	template <typename T>
+	bool addEdgeSet(T* edgeSet)
+	{
+		for(int i = 0; i < edgeSets.size(); ++i)
+		{
+			if (!edgeSets[i]) 
+			{
+				edgeSets[i] = edgeSet;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	void addPoseVertex(PoseVertex* v) override;
+
+	void addLandmarkVertex(LandmarkVertex* v) override;
+	PoseVertex* poseVertex(int id) const override;
+
+	LandmarkVertex* landmarkVertex(int id) const override;
+
+	bool removePoseVertex(BaseEdgeSet* edgeSet, PoseVertex* v) override;
+
+	bool removeLandmarkVertex(BaseEdgeSet* edgeSet, LandmarkVertex* v) override;
+
 	size_t nposes() const override;
+
 	size_t nlandmarks() const override;
+	
+	std::array<BaseEdgeSet*, 6>& getEdgeSets() override;
+
+	void setCameraPrams(const CameraParams& camera) override;
+
+	void initialize() override;
+
+	void optimize(int niterations) override;
+
 	void clear() override;
 
+	const BatchStatistics& batchStatistics() const override;
+
+	const TimeProfile& timeProfile() override;
+
+	~CudaBundleAdjustmentImpl();
+
+private:
+
+	static inline double attenuation(double x) { return 1 - std::pow(2 * x - 1, 3); }
+	static inline double clamp(double v, double lo, double hi) { return std::max(lo, std::min(v, hi)); }
+
+	std::map<int, PoseVertex*> vertexMapP;  //!< connected pose vertices.
+	std::map<int, LandmarkVertex*> vertexMapL; //!< connected landmark vertices.
+
+	std::array<BaseEdgeSet*, 6> edgeSets = { nullptr };
+
+	std::unique_ptr<CudaBlockSolver> solver_;
+	std::unique_ptr<CameraParams> camera_;
+
+	BatchStatistics stats_;
+	TimeProfile timeProfile_;
 };
 
 } // namespace cuba

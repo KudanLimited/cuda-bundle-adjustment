@@ -27,13 +27,14 @@ limitations under the License.
 #include "device_matrix.h"
 #include "cuda_block_solver.h"
 #include "cuda_linear_solver.h"
-#include "graph.h"
+#include "optimisable_graph.h"
+#include "cuda_block_solver_impl.h"
 
 namespace cuba
 {
 
-using VertexMapP = std::map<int, VertexP*>;
-using VertexMapL = std::map<int, VertexL*>;
+using VertexMapP = std::map<int, PoseVertex*>;
+using VertexMapL = std::map<int, LandmarkVertex*>;
 using EdgeSet2D = std::unordered_set<Edge2D*>;
 using EdgeSet3D = std::unordered_set<Edge3D*>;
 using time_point = decltype(std::chrono::steady_clock::now());
@@ -52,746 +53,639 @@ static inline double get_duration(const time_point& from, const time_point& to)
 template <typename T>
 static constexpr Scalar ScalarCast(T v) { return static_cast<Scalar>(v); }
 
-/** @brief Implementation of Block solver.
-*/
-class CudaBlockSolver
+void CudaBlockSolver::clear()
 {
-public:
+	verticesP_.clear();
+	verticesL_.clear();
+	baseEdges_.clear();
+	HplBlockPos_.clear();
+	qs_.clear();
+	ts_.clear();
+	Xws_.clear();
+	omegas_.clear();
+	edge2PL_.clear();
+	edgeFlags_.clear();
+}
 
-	enum ProfileItem
-	{
-		PROF_ITEM_INITIALIZE,
-		PROF_ITEM_BUILD_STRUCTURE,
-		PROF_ITEM_COMPUTE_ERROR,
-		PROF_ITEM_BUILD_SYSTEM,
-		PROF_ITEM_SCHUR_COMPLEMENT,
-		PROF_ITEM_DECOMP_SYMBOLIC,
-		PROF_ITEM_DECOMP_NUMERICAL,
-		PROF_ITEM_UPDATE,
-		PROF_ITEM_NUM
-	};
+void CudaBlockSolver::initialize(std::array<BaseEdgeSet*, 6>& edgeSets, std::map<int, PoseVertex*>& vertexMapP, 
+	std::map<int, LandmarkVertex*>& vertexMapL, CameraParams* camera)
+{
+	assert(edgeSets.size() > 0);
+	assert(camera != nullptr);
 
-	struct PLIndex
-	{
-		int P, L;
-		PLIndex(int P = 0, int L = 0) : P(P), L(L) {}
-	};
+	const auto t0 = get_time_point();
+	int totalEdgeSize = 0;
 
-	void clear()
+	for(const auto edgeSet : edgeSets)
 	{
-		verticesP_.clear();
-		verticesL_.clear();
-		baseEdges_.clear();
-		HplBlockPos_.clear();
-		qs_.clear();
-		ts_.clear();
-		Xws_.clear();
-		omegas_.clear();
-		edge2PL_.clear();
-		edgeFlags_.clear();
+		if (!edgeSet)
+		{
+			break;
+		}
+
+		totalEdgeSize += edgeSet->nedges();
 	}
 
-	void initialize(const std::array<BaseEdgeSet*, 6>& edgeSets, const CameraParams& camera)
+	nedges_ = totalEdgeSize;
+	clear();
+
+	verticesP_.reserve(vertexMapP.size());
+	verticesL_.reserve(vertexMapL.size());
+	baseEdges_.reserve(totalEdgeSize);
+	HplBlockPos_.reserve(totalEdgeSize);
+	qs_.reserve(vertexMapP.size());
+	ts_.reserve(vertexMapP.size());
+	Xws_.reserve(vertexMapL.size());
+	omegas_.reserve(totalEdgeSize);
+	edge2PL_.reserve(totalEdgeSize);
+	edgeFlags_.reserve(totalEdgeSize);
+
+	std::vector<PoseVertex*> fixedVerticesP_;
+	std::vector<LandmarkVertex*> fixedVerticesL_;
+	int numP = 0;
+	int numL = 0;
+
+	// assign pose vertex id
+	// gather rotations and translations into each vector
+	for (const auto& [id, poseVertex] : vertexMapP)
 	{
-		assert(graphs.size() > 0);
-		
-		const auto t0 = get_time_point();
-
-		int totalEdgeSize = 0;
-
-		for(const auto edgeSet : edgeSets)
+		if (!poseVertex->fixed)
 		{
-			if (!edgeSet)
-			{
-				break;
-			}
-
-			totalEdgeSize += edgeSet->edges.size();
+			poseVertex->iP = numP++;
+			verticesP_.push_back(poseVertex);
+			qs_.emplace_back(poseVertex->q.coeffs().data());
+			ts_.emplace_back(poseVertex->t.data());
 		}
-
-		nedges_ = totalEdgeSize;
-
-		clear();
-
-		verticesP_.reserve(totalVertexP.size());
-		verticesL_.reserve(totalVertexL.size());
-		baseEdges_.reserve(totalEdgeSize);
-		HplBlockPos_.reserve(totalEdgeSize);
-		qs_.reserve(totalVertexP.size());
-		ts_.reserve(totalVvertexP.size());
-		Xws_.reserve(totalVertexL.size());
-		omegas_.reserve(totalEdgeSize);
-		edge2PL_.reserve(totalEdgeSize);
-		edgeFlags_.reserve(totalEdgeSize);
-
-		std::vector<VertexP*> fixedVerticesP_;
-		std::vector<VertexL*> fixedVerticesL_;
-		int numP = 0;
-		int numL = 0;
-
-		// assign pose vertex id
-		// gather rotations and translations into each vector
-		for (const auto& [id, vertexP] : vertexMapP)
+		else
 		{
-			if (!vertexP->fixed)
-			{
-				vertexP->iP = numP++;
-				verticesP_.push_back(vertexP);
-				qs_.emplace_back(vertexP->q.coeffs().data());
-				ts_.emplace_back(vertexP->t.data());
-			}
-			else
-			{
-				fixedVerticesP_.push_back(vertexP);
-			}
+			fixedVerticesP_.push_back(poseVertex);
 		}
-
-		// assign landmark vertex id
-		// gather 3D positions into vector
-		for (const auto& [id, vertexL] : vertexMapL)
-		{
-			if (!vertexL->fixed)
-			{
-				vertexL->iL = numL++;
-				verticesL_.push_back(vertexL);
-				Xws_.emplace_back(vertexL->Xw.data());
-			}
-			else
-			{
-				fixedVerticesL_.push_back(vertexL);
-			}
-		}
-
-		numP_ = numP;
-		numL_ = numL;
-
-		// inactive(fixed) vertices are added after active vertices
-		for (auto vertexP : fixedVerticesP_)
-		{
-			vertexP->iP = numP++;
-			verticesP_.push_back(vertexP);
-			qs_.emplace_back(vertexP->q.coeffs().data());
-			ts_.emplace_back(vertexP->t.data());
-		}
-
-		for (auto vertexL : fixedVerticesL_)
-		{
-			vertexL->iL = numL++;
-			verticesL_.push_back(vertexL);
-			Xws_.emplace_back(vertexL->Xw.data());
-		}
-
-		// gather each edge members into each vector
-		int edgeId = 0;
-		for (const auto* edgeSet : edgeSets)
-		{
-			if (!edgeSet)
-			{
-				break;
-			}
-
-			for (const auto edge : edgeSet->edges)
-			{
-				const auto vertexP = edge->vertexP;
-				const auto vertexL = edge->vertexL;
-
-				baseEdges_.push_back(edge);
-
-				if (!vertexP->fixed && !vertexL->fixed)
-				{
-					HplBlockPos_.push_back({ vertexP->iP, vertexL->iL, edgeId });
-				}
-
-				omegas_.push_back(ScalarCast(edge->information));
-				edge2PL_.push_back({ vertexP->iP, vertexL->iL });
-				edgeFlags_.push_back(makeEdgeFlag(vertexP->fixed, vertexL->fixed));
-
-				edgeId++;
-			}
-		}
-
-		nHplBlocks_ = static_cast<int>(HplBlockPos_.size());
-
-		// upload camera parameters to constant memory
-		std::vector<Scalar> cameraParams(5);
-		cameraParams[0] = ScalarCast(camera.fx);
-		cameraParams[1] = ScalarCast(camera.fy);
-		cameraParams[2] = ScalarCast(camera.cx);
-		cameraParams[3] = ScalarCast(camera.cy);
-		cameraParams[4] = ScalarCast(camera.bf);
-		gpu::setCameraParameters(cameraParams.data());
-
-		// create sparse linear solver
-		if (!linearSolver_)
-		{
-			linearSolver_ = SparseLinearSolver::create();
-		}
-
-		profItems_.assign(PROF_ITEM_NUM, 0);
-
-		const auto t1 = get_time_point();
-		profItems_[PROF_ITEM_INITIALIZE] += get_duration(t0, t1);
 	}
 
-	void buildStructure(const std::array<BaseEdgeSet*, 6>& edgeSets)
+	// assign landmark vertex id
+	// gather 3D positions into vector
+	for (const auto& [id, landmarkVertex] : vertexMapL)
 	{
-		const auto t0 = get_time_point();
-
-		// build Hpl block matrix structure
-		d_Hpl_.resize(numP_, numL_);
-		d_Hpl_.resizeNonZeros(nHplBlocks_);
-
-		d_HplBlockPos_.assign(nHplBlocks_, HplBlockPos_.data());
-		d_nnzPerCol_.resize(numL_ + 1);
-		d_edge2Hpl_.resize(baseEdges_.size());
-
-		gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_);
-
-		// build Hschur block matrix structure
-		Hsc_.resize(numP_, numP_);
-		Hsc_.constructFromVertices(verticesL_);
-		Hsc_.convertBSRToCSR();
-
-		d_Hsc_.resize(numP_, numP_);
-		d_Hsc_.resizeNonZeros(Hsc_.nblocks());
-		d_Hsc_.upload(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
-
-		d_HscCSR_.resize(Hsc_.nnzSymm());
-		d_BSR2CSR_.assign(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
-
-		d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
-		gpu::findHschureMulBlockIndices(d_Hpl_, d_Hsc_, d_HscMulBlockIds_);
-
-		// allocate device buffers
-		d_x_.resize(numP_ * PDIM + numL_ * LDIM);
-		d_b_.resize(numP_ * PDIM + numL_ * LDIM);
-
-		d_xp_.map(numP_, d_x_.data());
-		d_bp_.map(numP_, d_b_.data());
-		d_xl_.map(numL_, d_x_.data() + numP_ * PDIM);
-		d_bl_.map(numL_, d_b_.data() + numP_ * PDIM);
-
-		d_Hpp_.resize(numP_);
-		d_Hll_.resize(numL_);
-
-		d_HppBackup_.resize(numP_);
-		d_HllBackup_.resize(numL_);
-
-		d_bsc_.resize(numP_);
-		d_invHll_.resize(numL_);
-		d_Hpl_invHll_.resize(nHplBlocks_);
-
-		// upload solutions to device memory
-		d_solution_.resize(verticesP_.size() * 7 + verticesL_.size() * 3);
-		d_solutionBackup_.resize(d_solution_.size());
-
-		d_qs_.map(qs_.size(), d_solution_.data());
-		d_ts_.map(ts_.size(), d_qs_.data() + d_qs_.size());
-		d_Xws_.map(Xws_.size(), d_ts_.data() + d_ts_.size());
-		
-		d_qs_.upload(qs_.data());
-		d_ts_.upload(ts_.data());
-		d_Xws_.upload(Xws_.data());
-
-		// upload edge information to device memory
-		int accumEdgeSize = 0;
-		for (int i = 0; i < edgeSets.size(); ++i)
+		if (!landmarkVertex->fixed)
 		{
-			EdgeSetDeviceData& esDevice = d_edgeSets[i];
-			BaseEdgeSet* edgeSet = edgeSets[i];
-			size_t nedges = graph->edges.size();
-
-			if (!edgeSet)
-			{
-				break;
-			}
-
-			if (i > 0)
-			{
-				accumEdgeSize += edgeSets[i - 1]->edges.size()
-			}
-
-			esDevice.d_errors.resize(nedges);
-			esDevice.d_Xcs.resize(nedges);
-			
-			std::vector<Measurement> measurements;
-			for (const auto& edge : edgeSet->edges)
-			{
-				measurements.emplace_back(edge->measurement.data());
-			}
-			esDevice.d_measurements.assign(nedges, measurements.data());
-		
-			esDevice.d_omegas.assign(nedges, omegas_.data() + accumEdgeSize);
-			esDevice.d_edge2PL.assign(nedges, edge2PL_.data() + accumEdgeSize);
-			esDevice.d_edgeFlags.assign(nedges, edgeFlags_.data() + accumEdgeSize);
-			esDevice.d_edge2Hpl.map(nedges, d_edge2Hpl_.data() + accumEdgeSize);
+			landmarkVertex->iL = numL++;
+			verticesL_.push_back(landmarkVertex);
+			Xws_.emplace_back(landmarkVertex->Xw.data());
 		}
+		else
+		{
+			fixedVerticesL_.push_back(landmarkVertex);
+		}
+	}
+
+	numP_ = numP;
+	numL_ = numL;
+
+	// inactive(fixed) vertices are added after active vertices
+	for (auto poseVertex : fixedVerticesP_)
+	{
+		poseVertex->iP = numP++;
+		verticesP_.push_back(poseVertex);
+		qs_.emplace_back(poseVertex->q.coeffs().data());
+		ts_.emplace_back(poseVertex->t.data());
+	}
+
+	for (auto landmarkVertex : fixedVerticesL_)
+	{
+		landmarkVertex->iL = numL++;
+		verticesL_.push_back(landmarkVertex);
+		Xws_.emplace_back(landmarkVertex->Xw.data());
+	}
+
+	// gather each edge members into each vector
+	int edgeId = 0;
+	for (const auto* edgeSet : edgeSets)
+	{
+		if (!edgeSet)
+		{
+			break;
+		}
+
+		for (auto* edge : edgeSet->get())
+		{
+			const auto poseVertex = edge->getPoseVertex();
+			const auto landmarkVertex = edge->getLandmarkVertex();
+			baseEdges_.push_back(edge);
+
+			if (!poseVertex->fixed && !landmarkVertex->fixed)
+			{
+				HplBlockPos_.push_back({ poseVertex->iP, landmarkVertex->iL, edgeId });
+			}
+
+			omegas_.push_back(ScalarCast(edge->information()));
+			edge2PL_.push_back({ poseVertex->iP, landmarkVertex->iL });
+			edgeFlags_.push_back(makeEdgeFlag(poseVertex->fixed, landmarkVertex->fixed));
+
+			edgeId++;
+		}
+	}
+
+	nHplBlocks_ = static_cast<int>(HplBlockPos_.size());
+
+	// upload camera parameters to constant memory
+	std::vector<Scalar> cameraParams(5);
+	cameraParams[0] = ScalarCast(camera->fx);
+	cameraParams[1] = ScalarCast(camera->fy);
+	cameraParams[2] = ScalarCast(camera->cx);
+	cameraParams[3] = ScalarCast(camera->cy);
+	cameraParams[4] = ScalarCast(camera->bf);
+	gpu::setCameraParameters(cameraParams.data());
+
+	// create sparse linear solver
+	if (!linearSolver_)
+	{
+		linearSolver_ = SparseLinearSolver::create();
+	}
+
+	profItems_.assign(PROF_ITEM_NUM, 0);
+
+	const auto t1 = get_time_point();
+	profItems_[PROF_ITEM_INITIALIZE] += get_duration(t0, t1);
+}
+
+void CudaBlockSolver::buildStructure(const std::array<BaseEdgeSet*, 6>& edgeSets)
+{
+	const auto t0 = get_time_point();
+
+	// build Hpl block matrix structure
+	d_Hpl_.resize(numP_, numL_);
+	d_Hpl_.resizeNonZeros(nHplBlocks_);
+
+	d_HplBlockPos_.assign(nHplBlocks_, HplBlockPos_.data());
+	d_nnzPerCol_.resize(numL_ + 1);
+	d_edge2Hpl_.resize(baseEdges_.size());
+
+	gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_);
+
+	// build Hschur block matrix structure
+	Hsc_.resize(numP_, numP_);
+	Hsc_.constructFromVertices(verticesL_);
+	Hsc_.convertBSRToCSR();
+
+	d_Hsc_.resize(numP_, numP_);
+	d_Hsc_.resizeNonZeros(Hsc_.nblocks());
+	d_Hsc_.upload(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
+
+	d_HscCSR_.resize(Hsc_.nnzSymm());
+	d_BSR2CSR_.assign(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
+
+	d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
+	gpu::findHschureMulBlockIndices(d_Hpl_, d_Hsc_, d_HscMulBlockIds_);
+
+	// allocate device buffers
+	d_x_.resize(numP_ * PDIM + numL_ * LDIM);
+	d_b_.resize(numP_ * PDIM + numL_ * LDIM);
+
+	d_xp_.map(numP_, d_x_.data());
+	d_bp_.map(numP_, d_b_.data());
+	d_xl_.map(numL_, d_x_.data() + numP_ * PDIM);
+	d_bl_.map(numL_, d_b_.data() + numP_ * PDIM);
+
+	d_Hpp_.resize(numP_);
+	d_Hll_.resize(numL_);
+
+	d_HppBackup_.resize(numP_);
+	d_HllBackup_.resize(numL_);
+
+	d_bsc_.resize(numP_);
+	d_invHll_.resize(numL_);
+	d_Hpl_invHll_.resize(nHplBlocks_);
+
+	// upload solutions to device memory
+	d_solution_.resize(verticesP_.size() * 7 + verticesL_.size() * 3);
+	d_solutionBackup_.resize(d_solution_.size());
+
+	d_qs_.map(qs_.size(), d_solution_.data());
+	d_ts_.map(ts_.size(), d_qs_.data() + d_qs_.size());
+	d_Xws_.map(Xws_.size(), d_ts_.data() + d_ts_.size());
 	
-		d_chi_.resize(1);
+	d_qs_.upload(qs_.data());
+	d_ts_.upload(ts_.data());
+	d_Xws_.upload(Xws_.data());
 
-		const auto t1 = get_time_point();
-
-		// analyze pattern of Hschur matrix (symbolic decomposition)
-		linearSolver_->initialize(Hsc_);
-
-		const auto t2 = get_time_point();
-
-		profItems_[PROF_ITEM_BUILD_STRUCTURE] += get_duration(t0, t1);
-		profItems_[PROF_ITEM_DECOMP_SYMBOLIC] += get_duration(t1, t2);
-	}
-
-	double computeErrors(const std::array<BaseEdgeSet*, 6>& edgeSets)
+	// upload edge information to device memory
+	size_t index = 0;
+	for (int i = 0; i < edgeSets.size(); ++i)
 	{
-		const auto t0 = get_time_point();
-
-		Scalar accumChi = 0;
-		for (int i = 0; i < edgeSets.size(); ++i)
+		if (!edgeSets[i])
 		{
-			if (!edgeSets[i])
-			{
-				break;
-			}
-
-			EdgeSetDeviceData& d_edgeSet = d_edgeSets[i];
-			
-			const Scalar chi = edgeSets[i]->computeError(d_qs_, d_ts_, d_Xws_, d_edgeSet.d_measurements,
-				d_edgeSet.d_omegas, d_edgeSet.d_edge2PL, d_edgeSet.d_errors, d_edgeSet.d_Xcs, d_chi_);
-			
-			accumChi += chi;
+			break;
 		}
 
-		const auto t1 = get_time_point();
-		profItems_[PROF_ITEM_COMPUTE_ERROR] += get_duration(t0, t1);
+		BaseEdgeSet* edgeSet = edgeSets[i];
+		size_t nedges = edgeSet->nedges();
 
-		return accumChi;
-	}
-
-	void buildSystem(const std::array<BaseEdgeSet*, 6>& edgeSets)
-	{
-		const auto t0 = get_time_point();
-
-		////////////////////////////////////////////////////////////////////////////////////
-		// Build linear system about solution increments Δx
-		// H*Δx = -b
-		// 
-		// coefficient matrix are divided into blocks, and each block is calculated
-		// | Hpp  Hpl ||Δxp| = |-bp|
-		// | HplT Hll ||Δxl|   |-bl|
-		////////////////////////////////////////////////////////////////////////////////////
-
-		d_Hpp_.fillZero();
-		d_Hll_.fillZero();
-		d_bp_.fillZero();
-		d_bl_.fillZero();
-
-		for (int i = 0; i < edgeSets.size(); ++i)
+		if (i > 0)
 		{
-			if (!edgeSets[i])
-			{
-				break;
-			}
-
-			EdgeSetDeviceData& d_edgeSets = d_edgeSets[i];
-
-			gpu::constructQuadraticForm(d_edgeSets.d_Xcs, d_qs_, d_edgeSets.d_errors, d_edgeSets.d_omegas, d_edgeSets.d_edge2PL,
-				d_edgeSets.d_edge2Hpl, d_edgeSets.d_edgeFlags, d_Hpp_, d_bp_, d_Hll_, d_bl_, d_Hpl_);
+			index += edgeSets[i - 1]->nedges();
 		}
 
-		const auto t1 = get_time_point();
-		profItems_[PROF_ITEM_BUILD_SYSTEM] += get_duration(t0, t1);
+		// add the graph data to the device
+		edgeSets[i]->initDevice(nedges, edgeSet->getMeasurementData(), omegas_.data() + index, 
+			edge2PL_.data() + index, edgeFlags_.data() + index, d_edge2Hpl_.data() + index);
 	}
 
-	double maxDiagonal()
+	d_chi_.resize(1);
+
+	const auto t1 = get_time_point();
+
+	// analyze pattern of Hschur matrix (symbolic decomposition)
+	linearSolver_->initialize(Hsc_);
+
+	const auto t2 = get_time_point();
+
+	profItems_[PROF_ITEM_BUILD_STRUCTURE] += get_duration(t0, t1);
+	profItems_[PROF_ITEM_DECOMP_SYMBOLIC] += get_duration(t1, t2);
+}
+
+double CudaBlockSolver::computeErrors(const std::array<BaseEdgeSet*, 6>& edgeSets)
+{
+	const auto t0 = get_time_point();
+
+	Scalar accumChi = 0;
+	for (int i = 0; i < edgeSets.size(); ++i)
 	{
-		DeviceBuffer<Scalar> d_buffer(16);
-		const Scalar maxP = gpu::maxDiagonal(d_Hpp_, d_buffer);
-		const Scalar maxL = gpu::maxDiagonal(d_Hll_, d_buffer);
-		return std::max(maxP, maxL);
-	}
-
-	void setLambda(double lambda)
-	{
-		gpu::addLambda(d_Hpp_, ScalarCast(lambda), d_HppBackup_);
-		gpu::addLambda(d_Hll_, ScalarCast(lambda), d_HllBackup_);
-	}
-
-	void restoreDiagonal()
-	{
-		gpu::restoreDiagonal(d_Hpp_, d_HppBackup_);
-		gpu::restoreDiagonal(d_Hll_, d_HllBackup_);
-	}
-
-	bool solve()
-	{
-		const auto t0 = get_time_point();
-
-		////////////////////////////////////////////////////////////////////////////////////
-		// Schur complement
-		// bSc = -bp + Hpl*Hll^-1*bl
-		// HSc = Hpp - Hpl*Hll^-1*HplT
-		////////////////////////////////////////////////////////////////////////////////////
-		gpu::computeBschure(d_bp_, d_Hpl_, d_Hll_, d_bl_, d_bsc_, d_invHll_, d_Hpl_invHll_);
-		gpu::computeHschure(d_Hpp_, d_Hpl_invHll_, d_Hpl_, d_HscMulBlockIds_, d_Hsc_);
-		
-		const auto t1 = get_time_point();
-
-		////////////////////////////////////////////////////////////////////////////////////
-		// Solve linear equation about Δxp
-		// HSc*Δxp = bp
-		////////////////////////////////////////////////////////////////////////////////////
-		gpu::convertHschureBSRToCSR(d_Hsc_, d_BSR2CSR_, d_HscCSR_);
-		const bool success = linearSolver_->solve(d_HscCSR_, d_bsc_.values(), d_xp_.values());
-		if (!success)
-			return false;
-
-		const auto t2 = get_time_point();
-
-		////////////////////////////////////////////////////////////////////////////////////
-		// Solve linear equation about Δxl
-		// Hll*Δxl = -bl - HplT*Δxp
-		////////////////////////////////////////////////////////////////////////////////////
-		gpu::schurComplementPost(d_invHll_, d_bl_, d_Hpl_, d_xp_, d_xl_);
-
-		const auto t3 = get_time_point();
-		profItems_[PROF_ITEM_SCHUR_COMPLEMENT] += (get_duration(t0, t1) + get_duration(t2, t3));
-		profItems_[PROF_ITEM_DECOMP_NUMERICAL] += get_duration(t1, t2);
-
-		return true;
-	}
-
-	void update()
-	{
-		const auto t0 = get_time_point();
-
-		gpu::updatePoses(d_xp_, d_qs_, d_ts_);
-		gpu::updateLandmarks(d_xl_, d_Xws_);
-
-		const auto t1 = get_time_point();
-		profItems_[PROF_ITEM_UPDATE] += get_duration(t0, t1);
-	}
-
-	double computeScale(double lambda)
-	{
-		gpu::computeScale(d_x_, d_b_, d_chi_, ScalarCast(lambda));
-		Scalar scale = 0;
-		d_chi_.download(&scale);
-		return scale;
-	}
-
-	void push()
-	{
-		d_solution_.copyTo(d_solutionBackup_);
-	}
-
-	void pop()
-	{
-		d_solutionBackup_.copyTo(d_solution_);
-	}
-
-	void finalize()
-	{
-		d_qs_.download(qs_.data());
-		d_ts_.download(ts_.data());
-		d_Xws_.download(Xws_.data());
-
-		for (size_t i = 0; i < verticesP_.size(); i++)
+		if (!edgeSets[i])
 		{
-			qs_[i].copyTo(verticesP_[i]->q.coeffs().data());
-			ts_[i].copyTo(verticesP_[i]->t.data());
+			break;
 		}
 
-		for (size_t i = 0; i < verticesL_.size(); i++)
-			Xws_[i].copyTo(verticesL_[i]->Xw.data());
+		const Scalar chi = edgeSets[i]->computeError(d_qs_, d_ts_, d_Xws_, d_chi_);
+		accumChi += chi;
 	}
 
-	void getTimeProfile(TimeProfile& prof) const
-	{
-		static const char* profileItemString[PROF_ITEM_NUM] =
-		{
-			"0: Initialize Optimizer",
-			"1: Build Structure",
-			"2: Compute Error",
-			"3: Build System",
-			"4: Schur Complement",
-			"5: Symbolic Decomposition",
-			"6: Numerical Decomposition",
-			"7: Update Solution"
-		};
+	const auto t1 = get_time_point();
+	profItems_[PROF_ITEM_COMPUTE_ERROR] += get_duration(t0, t1);
 
-		prof.clear();
-		for (int i = 0; i < PROF_ITEM_NUM; i++)
-			prof[profileItemString[i]] = profItems_[i];
-	}
+	return accumChi;
+}
 
-private:
-
-	static inline uint8_t makeEdgeFlag(bool fixedP, bool fixedL)
-	{
-		uint8_t flag = 0;
-		if (fixedP) flag |= EDGE_FLAG_FIXED_P;
-		if (fixedL) flag |= EDGE_FLAG_FIXED_L;
-		return flag;
-	}
-
-	std::array<EdgeSetDeviceData, 6> d_edgeSets;
+void CudaBlockSolver::buildSystem(const std::array<BaseEdgeSet*, 6>& edgeSets)
+{
+	const auto t0 = get_time_point();
 
 	////////////////////////////////////////////////////////////////////////////////////
-	// host buffers
-	////////////////////////////////////////////////////////////////////////////////////
-
-	// graph components
-	std::vector<VertexP*> verticesP_;
-	std::vector<VertexL*> verticesL_;
-	std::vector<BaseEdge*> baseEdges_;
-	int numP_, numL_, nedges2D_, nedges3D_;
-
-	// solution vectors
-	std::vector<Vec4d> qs_;
-	std::vector<Vec3d> ts_;
-	std::vector<Vec3d> Xws_;
-
-	// edge information
-	std::vector<Scalar> omegas_;
-	std::vector<PLIndex> edge2PL_;
-	std::vector<uint8_t> edgeFlags_;
-
-	// block matrices
-	HplSparseBlockMatrix Hpl_;
-	HschurSparseBlockMatrix Hsc_;
-	SparseLinearSolver::Ptr linearSolver_;
-	std::vector<HplBlockPos> HplBlockPos_;
-	int nHplBlocks_;
-
-	////////////////////////////////////////////////////////////////////////////////////
-	// device buffers
-	////////////////////////////////////////////////////////////////////////////////////
-
-	// solution vectors
-	GpuVec1d d_solution_, d_solutionBackup_;
-	GpuVec4d d_qs_;
-	GpuVec3d d_ts_, d_Xws_;
-
-	// edge information
-	GpuVec1i d_edge2Hpl;
-
-	// solution increments Δx = [Δxp Δxl]
-	GpuVec1d d_x_;
-	GpuPx1BlockVec d_xp_;
-	GpuLx1BlockVec d_xl_;
-
-	// coefficient matrix of linear system
+	// Build linear system about solution increments Δx
+	// H*Δx = -b
+	// 
+	// coefficient matrix are divided into blocks, and each block is calculated
 	// | Hpp  Hpl ||Δxp| = |-bp|
 	// | HplT Hll ||Δxl|   |-bl|
-	GpuPxPBlockVec d_Hpp_;
-	GpuLxLBlockVec d_Hll_;
-	GpuHplBlockMat d_Hpl_;
-	GpuVec3i d_HplBlockPos_;
-	GpuVec1d d_b_;
-	GpuPx1BlockVec d_bp_;
-	GpuLx1BlockVec d_bl_;
-	GpuPx1BlockVec d_HppBackup_;
-	GpuLx1BlockVec d_HllBackup_;
-
-	// schur complement of the H matrix
-	// HSc = Hpp - Hpl*inv(Hll)*HplT
-	// bSc = -bp + Hpl*inv(Hll)*bl
-	GpuHscBlockMat d_Hsc_;
-	GpuPx1BlockVec d_bsc_;
-	GpuLxLBlockVec d_invHll_;
-	GpuPxLBlockVec d_Hpl_invHll_;
-	GpuVec3i d_HscMulBlockIds_;
-
-	// conversion matrix storage format BSR to CSR
-	GpuVec1d d_HscCSR_;
-	GpuVec1i d_BSR2CSR_;
-
-	// temporary buffer
-	DeviceBuffer<Scalar> d_chi_;
-	GpuVec1i d_nnzPerCol_;
-
-	////////////////////////////////////////////////////////////////////////////////////
-	// statistics
 	////////////////////////////////////////////////////////////////////////////////////
 
-	std::vector<double> profItems_;
-};
+	d_Hpp_.fillZero();
+	d_Hll_.fillZero();
+	d_bp_.fillZero();
+	d_bl_.fillZero();
 
-/** @brief Implementation of CudaBundleAdjustment.
-*/
-class CudaBundleAdjustmentImpl : public CudaBundleAdjustment
-{
-public:
-
-	void addPoseVertex(VertexP* v) 
+	for (auto* edgeSet : edgeSets)
 	{
-		vertexMapP.insert({ v->id, v });
-	}
-
-	void addLandmarkVertex(VertexL* v) 
-	{
-		vertexMapL.insert({ v->id, v });
-	}
-
-	VertexP* poseVertex(int id) const
-	{
-		return vertexMapP.at(id);
-	}
-
-	VertexL* landmarkVertex(int id) const
-	{
-		return vertexMapL.at(id);
-	}
-
-	void removePoseVertex(PoseVertex* v)
-	{
-		auto it = vertexMapP.find(v->id);
-		if (it == std::end(vertexMapP))
-			return;
-
-		for (auto e : it->second->edges)
-			removeEdge(e);
-
-		vertexMapP.erase(it);
-	}
-
-	void removeLandmarkVertex(LandmarkVertex* v)
-	{
-		auto it = vertexMapL.find(v->id);
-		if (it == std::end(vertexMapL))
-			return;
-
-		for (auto e : it->second->edges)
-			removeEdge(e);
-
-		vertexMapL.erase(it);
-	}
-
-	size_t nposes() const
-	{
-		return vertexMapP.size();
-	}
-
-	size_t nlandmarks() const
-	{
-		return vertexMapL.size();
-	}
-
-	void setCameraPrams(const CameraParams& camera) override
-	{
-		camera_ = camera;
-	}
-
-	void initialize() override
-	{
-		solver_.initialize(std::array<BaseGraph*, 6>& graphs, camera_);
-
-		stats_.clear();
-	}
-
-	void optimize(int niterations) override
-	{
-		const int maxq = 10;
-		const double tau = 1e-5;
-
-		double nu = 2;
-		double lambda = 0;
-		double F = 0;
-
-		// Levenberg-Marquardt iteration
-		for (int iteration = 0; iteration < niterations; iteration++)
+		if (!edgeSet)
 		{
-			if (iteration == 0)
-				solver_.buildStructure();
-
-			const double iniF = solver_.computeErrors();
-			F = iniF;
-
-			solver_.buildSystem();
-			
-			if (iteration == 0)
-				lambda = tau * solver_.maxDiagonal();
-
-			int q = 0;
-			double rho = -1;
-			for (; q < maxq && rho < 0; q++)
-			{
-				solver_.push();
-
-				solver_.setLambda(lambda);
-
-				const bool success = solver_.solve();
-
-				solver_.update();
-
-				const double Fhat = solver_.computeErrors();
-				const double scale = solver_.computeScale(lambda) + 1e-3;
-				rho = success ? (F - Fhat) / scale : -1;
-
-				if (rho > 0)
-				{
-					lambda *= clamp(attenuation(rho), 1./3, 2./3);
-					nu = 2;
-					F = Fhat;
-					break;
-				}
-				else
-				{
-					lambda *= nu;
-					nu *= 2;
-					solver_.restoreDiagonal();
-					solver_.pop();
-				}
-			}
-
-			stats_.push_back({ iteration, F });
-
-			if (q == maxq || rho <= 0 || !std::isfinite(lambda))
-				break;
+			break;
 		}
 
-		solver_.finalize();
-
-		solver_.getTimeProfile(timeProfile_);
+		edgeSet->constructQuadraticForm(d_qs_, d_Hpp_, d_bp_, d_Hll_, d_bl_, d_Hpl_);
 	}
 
-	void clear() override
+	const auto t1 = get_time_point();
+	profItems_[PROF_ITEM_BUILD_SYSTEM] += get_duration(t0, t1);
+}
+
+double CudaBlockSolver::maxDiagonal()
+{
+	DeviceBuffer<Scalar> d_buffer(16);
+	const Scalar maxP = gpu::maxDiagonal(d_Hpp_, d_buffer);
+	const Scalar maxL = gpu::maxDiagonal(d_Hll_, d_buffer);
+	return std::max(maxP, maxL);
+}
+
+void CudaBlockSolver::setLambda(double lambda)
+{
+	gpu::addLambda(d_Hpp_, ScalarCast(lambda), d_HppBackup_);
+	gpu::addLambda(d_Hll_, ScalarCast(lambda), d_HllBackup_);
+}
+
+void CudaBlockSolver::restoreDiagonal()
+{
+	gpu::restoreDiagonal(d_Hpp_, d_HppBackup_);
+	gpu::restoreDiagonal(d_Hll_, d_HllBackup_);
+}
+
+bool CudaBlockSolver::solve()
+{
+	const auto t0 = get_time_point();
+
+	////////////////////////////////////////////////////////////////////////////////////
+	// Schur complement
+	// bSc = -bp + Hpl*Hll^-1*bl
+	// HSc = Hpp - Hpl*Hll^-1*HplT
+	////////////////////////////////////////////////////////////////////////////////////
+	gpu::computeBschure(d_bp_, d_Hpl_, d_Hll_, d_bl_, d_bsc_, d_invHll_, d_Hpl_invHll_);
+	gpu::computeHschure(d_Hpp_, d_Hpl_invHll_, d_Hpl_, d_HscMulBlockIds_, d_Hsc_);
+	
+	const auto t1 = get_time_point();
+
+	////////////////////////////////////////////////////////////////////////////////////
+	// Solve linear equation about Δxp
+	// HSc*Δxp = bp
+	////////////////////////////////////////////////////////////////////////////////////
+	gpu::convertHschureBSRToCSR(d_Hsc_, d_BSR2CSR_, d_HscCSR_);
+	const bool success = linearSolver_->solve(d_HscCSR_, d_bsc_.values(), d_xp_.values());
+	if (!success)
+		return false;
+
+	const auto t2 = get_time_point();
+
+	////////////////////////////////////////////////////////////////////////////////////
+	// Solve linear equation about Δxl
+	// Hll*Δxl = -bl - HplT*Δxp
+	////////////////////////////////////////////////////////////////////////////////////
+	gpu::schurComplementPost(d_invHll_, d_bl_, d_Hpl_, d_xp_, d_xl_);
+
+	const auto t3 = get_time_point();
+	profItems_[PROF_ITEM_SCHUR_COMPLEMENT] += (get_duration(t0, t1) + get_duration(t2, t3));
+	profItems_[PROF_ITEM_DECOMP_NUMERICAL] += get_duration(t1, t2);
+
+	return true;
+}
+
+void CudaBlockSolver::update()
+{
+	const auto t0 = get_time_point();
+
+	gpu::updatePoses(d_xp_, d_qs_, d_ts_);
+	gpu::updateLandmarks(d_xl_, d_Xws_);
+
+	const auto t1 = get_time_point();
+	profItems_[PROF_ITEM_UPDATE] += get_duration(t0, t1);
+}
+
+double CudaBlockSolver::computeScale(double lambda)
+{
+	gpu::computeScale(d_x_, d_b_, d_chi_, ScalarCast(lambda));
+	Scalar scale = 0;
+	d_chi_.download(&scale);
+	return scale;
+}
+
+void CudaBlockSolver::push()
+{
+	d_solution_.copyTo(d_solutionBackup_);
+}
+
+void CudaBlockSolver::pop()
+{
+	d_solutionBackup_.copyTo(d_solution_);
+}
+
+void CudaBlockSolver::finalize()
+{
+	d_qs_.download(qs_.data());
+	d_ts_.download(ts_.data());
+	d_Xws_.download(Xws_.data());
+
+	for (size_t i = 0; i < verticesP_.size(); i++)
 	{
-		vertexMapL.clear();
-		vertexMapP.clear();
-		edgeSets.clear();
+		qs_[i].copyTo(verticesP_[i]->q.coeffs().data());
+		ts_[i].copyTo(verticesP_[i]->t.data());
 	}
 
-	const BatchStatistics& batchStatistics() const override
+	for (size_t i = 0; i < verticesL_.size(); i++)
+		Xws_[i].copyTo(verticesL_[i]->Xw.data());
+}
+
+void CudaBlockSolver::getTimeProfile(TimeProfile& prof) const
+{
+	static const char* profileItemString[PROF_ITEM_NUM] =
 	{
-		return stats_;
-	}
+		"0: Initialize Optimizer",
+		"1: Build Structure",
+		"2: Compute Error",
+		"3: Build System",
+		"4: Schur Complement",
+		"5: Symbolic Decomposition",
+		"6: Numerical Decomposition",
+		"7: Update Solution"
+	};
 
-	const TimeProfile& timeProfile() override
+	prof.clear();
+	for (int i = 0; i < PROF_ITEM_NUM; i++)
+		prof[profileItemString[i]] = profItems_[i];
+}
+
+inline uint8_t CudaBlockSolver::makeEdgeFlag(bool fixedP, bool fixedL)
+{
+	uint8_t flag = 0;
+	if (fixedP) flag |= EDGE_FLAG_FIXED_P;
+	if (fixedL) flag |= EDGE_FLAG_FIXED_L;
+	return flag;
+}
+
+// CudaBundleAdjustmentImpl functions
+
+void CudaBundleAdjustmentImpl::addPoseVertex(PoseVertex* v) 
+{
+	vertexMapP.insert({ v->id, v });
+}
+
+void CudaBundleAdjustmentImpl::addLandmarkVertex(LandmarkVertex* v) 
+{
+	vertexMapL.insert({ v->id, v });
+}
+
+PoseVertex* CudaBundleAdjustmentImpl::poseVertex(int id) const 
+{
+	auto it = vertexMapP.find(id);
+	if (it == std::end(vertexMapP)) 
 	{
-		return timeProfile_;
+		printf("Warning: id: %d not found in vertex map.\n");
+		return nullptr;
 	}
+	return vertexMapP.at(id);
+}
 
-	~CudaBundleAdjustmentImpl()
+LandmarkVertex* CudaBundleAdjustmentImpl::landmarkVertex(int id) const 
+{
+	auto it = vertexMapL.find(id);
+	if (it == std::end(vertexMapL)) 
 	{
-		clear();
+		printf("Warning: id: %d not found in Landmark map.\n");
+		return nullptr;
+	}
+	return vertexMapL.at(id);
+}
+
+bool CudaBundleAdjustmentImpl::removePoseVertex(BaseEdgeSet* edgeSet, PoseVertex* v) 
+{
+	auto it = vertexMapP.find(v->id);
+	if (it == std::end(vertexMapP))
+	{
+		return false;
 	}
 
-private:
+	for (auto e : it->second->edges)
+	{
+		edgeSet->removeEdge(e);
+	}
 
-	static inline double attenuation(double x) { return 1 - std::pow(2 * x - 1, 3); }
-	static inline double clamp(double v, double lo, double hi) { return std::max(lo, std::min(v, hi)); }
+	vertexMapP.erase(it);
+	return true;
+}
 
-	std::map<int, VertexP*> vertexMapP;  //!< connected pose vertices.
-	std::map<int, VertexL*> vertexMapL; //!< connected landmark vertices.
+bool CudaBundleAdjustmentImpl::removeLandmarkVertex(BaseEdgeSet* edgeSet, LandmarkVertex* v) 
+{
+	auto it = vertexMapL.find(v->id);
+	if (it == std::end(vertexMapL))
+	{
+		return false;
+	}
 
-	std::array<BaseEdge*, 6> edgeSets = nullptr;
+	for (auto e : it->second->edges)
+	{
+		edgeSet->removeEdge(e);
+	}
 
-	CudaBlockSolver solver_;
-	CameraParams camera_;
+	vertexMapL.erase(it);
+	return true;
+}
 
-	BatchStatistics stats_;
-	TimeProfile timeProfile_;
-};
+size_t CudaBundleAdjustmentImpl::nposes() const 
+{
+	return vertexMapP.size();
+}
+
+size_t CudaBundleAdjustmentImpl::nlandmarks() const 
+{
+	return vertexMapL.size();
+}
+
+std::array<BaseEdgeSet*, 6>& CudaBundleAdjustmentImpl::getEdgeSets() 
+{
+	return edgeSets;
+}
+
+void CudaBundleAdjustmentImpl::setCameraPrams(const CameraParams& camera)
+{
+	if (camera_)
+	{
+		camera_ = nullptr;
+	}
+	camera_ = std::make_unique<CameraParams>(camera);
+}
+
+void CudaBundleAdjustmentImpl::initialize() 
+{
+	solver_->initialize(edgeSets, vertexMapP, vertexMapL, camera_.get());
+	stats_.clear();
+}
+
+void CudaBundleAdjustmentImpl::optimize(int niterations) 
+{
+	const int maxq = 10;
+	const double tau = 1e-5;
+
+	double nu = 2;
+	double lambda = 0;
+	double F = 0;
+
+	// Levenberg-Marquardt iteration
+	for (int iteration = 0; iteration < niterations; iteration++)
+	{
+		if (iteration == 0)
+		{
+			solver_->buildStructure(edgeSets);
+		}
+
+		const double iniF = solver_->computeErrors(edgeSets);
+		F = iniF;
+
+		solver_->buildSystem(edgeSets);
+		
+		if (iteration == 0)
+		{
+			lambda = tau * solver_->maxDiagonal();
+		}
+
+		int q = 0;
+		double rho = -1;
+		for (; q < maxq && rho < 0; q++)
+		{
+			solver_->push();
+
+			solver_->setLambda(lambda);
+
+			const bool success = solver_->solve();
+
+			solver_->update();
+
+			const double Fhat = solver_->computeErrors(edgeSets);
+			const double scale = solver_->computeScale(lambda) + 1e-3;
+			rho = success ? (F - Fhat) / scale : -1;
+
+			if (rho > 0)
+			{
+				lambda *= clamp(attenuation(rho), 1./3, 2./3);
+				nu = 2;
+				F = Fhat;
+				break;
+			}
+			else
+			{
+				lambda *= nu;
+				nu *= 2;
+				solver_->restoreDiagonal();
+				solver_->pop();
+			}
+		}
+
+		stats_.push_back({ iteration, F });
+
+		if (q == maxq || rho <= 0 || !std::isfinite(lambda))
+		{
+			break;
+		}
+	}
+
+	solver_->finalize();
+
+	solver_->getTimeProfile(timeProfile_);
+}
+
+void CudaBundleAdjustmentImpl::clear() 
+{
+	vertexMapL.clear();
+	vertexMapP.clear();
+	
+	for (int i = 0; i < edgeSets.size(); ++i)
+	{
+		edgeSets[i] = nullptr;
+	}
+}
+
+const BatchStatistics& CudaBundleAdjustmentImpl::batchStatistics() const 
+{
+	return stats_;
+}
+
+const TimeProfile& CudaBundleAdjustmentImpl::timeProfile()
+{
+	return timeProfile_;
+}
+
+CudaBundleAdjustmentImpl::CudaBundleAdjustmentImpl() :
+	solver_(std::make_unique<CudaBlockSolver>()), camera_(std::make_unique<CameraParams>())
+{}
+
+CudaBundleAdjustmentImpl::~CudaBundleAdjustmentImpl()
+{
+	clear();
+}
 
 CudaBundleAdjustment::Ptr CudaBundleAdjustment::create()
 {

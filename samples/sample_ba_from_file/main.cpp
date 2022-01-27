@@ -22,7 +22,8 @@ limitations under the License.
 
 #include <cuda_bundle_adjustment.h>
 #include <object_creator.h>
-#include <graph.h>
+#include <cuda_bundle_adjustment_types.h>
+#include <optimisable_graph.h>
 
 static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename);
 
@@ -46,7 +47,16 @@ int main(int argc, char** argv)
 	std::cout << "=== Graph size : " << std::endl;
 	std::cout << "num poses      : " << optimizer->nposes() << std::endl;
 	std::cout << "num landmarks  : " << optimizer->nlandmarks() << std::endl;
-	std::cout << "num edges      : " << optimizer->nedges() << std::endl << std::endl;
+
+	auto& edgeSets = optimizer->getEdgeSets();
+	for (const auto* edgeSet : edgeSets)
+	{
+		if (!edgeSet)
+		{
+			break;
+		}
+		std::cout << "num edges      : " << edgeSet->nedges() << std::endl << std::endl;
+	}
 
 	std::cout << "Running BA... " << std::flush;
 
@@ -97,8 +107,8 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 	auto optimizer = cuba::CudaBundleAdjustment::create();
 
 	// read pose vertices
-	std::unique_ptr<cuba::MonoEdgeSet> monoEdgeSet = std::make_unique<cuba::MonoEdgeSet>(); 
-	std::unique_ptr<cuba::StereoEdgeSet> stereoEdgeSet = std::make_unique<cuba::StereoEdgeSet>(); 
+	cuba::MonoEdgeSet* monoEdgeSet = new cuba::MonoEdgeSet(); 
+	cuba::StereoEdgeSet* stereoEdgeSet = new cuba::StereoEdgeSet(); 
 
 	for (const auto& node : fs["pose_vertices"])
 	{
@@ -123,6 +133,7 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 	}
 
 	// read monocular edges
+	int i = 0;
 	for (const auto& node : fs["monocular_edges"])
 	{
 		const int iP = node["vertexP"];
@@ -130,14 +141,20 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 		const auto measurement = getArray<double, 2>(node["measurement"]);
 		const double information = node["information"];
 
-		auto vertexP = optimizer->poseVertex(iP);
-		auto vertexL = optimizer->landmarkVertex(iL);
+		auto poseVertex = optimizer->poseVertex(iP);
+		auto landmarkVertex = optimizer->landmarkVertex(iL);
 
-		auto e = obj.create<cuba::MonoEdge>(measurement, information, vertexP, vertexL);
+		auto e = obj.create<cuba::MonoEdge>(measurement, information, poseVertex, landmarkVertex);
 		monoEdgeSet->addEdge(e);
+
+		if (i < 10) {
+			printf("2D measurement (going in) = %f, %f\n", measurement[0], measurement[1]);
+			++i;
+		}
 	}
 
 	// read stereo edges
+	i = 0;
 	for (const auto& node : fs["stereo_edges"])
 	{
 		const int iP = node["vertexP"];
@@ -145,11 +162,16 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 		const auto measurement = getArray<double, 3>(node["measurement"]);
 		const double information = node["information"];
 
-		auto vertexP = optimizer->poseVertex(iP);
-		auto vertexL = optimizer->landmarkVertex(iL);
+		auto poseVertex = optimizer->poseVertex(iP);
+		auto landmarkVertex = optimizer->landmarkVertex(iL);
 
-		auto e = obj.create<cuba::StereoEdge>(measurement, information, vertexP, vertexL);
+		auto e = obj.create<cuba::StereoEdge>(measurement, information, poseVertex, landmarkVertex);
 		stereoEdgeSet->addEdge(e);
+
+		if (i < 10) {
+			printf("3D measurement (going in) = %f, %f, %f\n", measurement[0], measurement[1], measurement[2]);
+			++i;
+		}
 	}
 
 	// read camera parameters
@@ -160,8 +182,8 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 	camera.cy = fs["cy"];
 	camera.bf = fs["bf"];
 
-	optimizer->addEdgeSet<cuba::MonoEdgeSet>(std::move(monoEdgeSet));
-	optimizer->addEdgeSet<cuba::StereoEdgeSet>(std::move(stereoEdgeSet));
+	optimizer->addEdgeSet<cuba::MonoEdgeSet>(monoEdgeSet);
+	optimizer->addEdgeSet<cuba::StereoEdgeSet>(stereoEdgeSet);
 	optimizer->setCameraPrams(camera);
 
 	// "warm-up" to avoid overhead
