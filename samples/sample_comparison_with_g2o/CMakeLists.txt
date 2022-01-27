@@ -19,20 +19,18 @@ endif()
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${SAMPLE_UTILITY_DIR})
 
+# CUDA
+find_package(CUDA REQUIRED)
+include_directories(${CUDA_INCLUDE_DIRS})
+
 # OpenCV
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
-# Eigen
-find_package(Eigen3 REQUIRED)
-include_directories(${EIGEN3_INCLUDE_DIR})
 
 # g2o
 find_package(g2o REQUIRED)
-include_directories(${G2O_INCLUDE_DIR})
-include_directories(${G2O_INCLUDE_DIR}/g2o/EXTERNAL/csparse)
 
 file(GLOB srcs ./*.cpp ./*.h* ${SAMPLE_UTILITY_DIR}/*.cpp ${SAMPLE_UTILITY_DIR}/*.h*)
 add_executable(sample_comparison_with_g2o ${srcs})
-set(G2O_LIBS ${G2O_CORE_LIBRARY} ${G2O_STUFF_LIBRARY} ${G2O_SOLVER_EIGEN} ${G2O_TYPES_SBA} ${G2O_TYPES_SLAM3D})
-target_link_libraries(sample_comparison_with_g2o ${OpenCV_LIBS} ${G2O_LIBS} cuda_bundle_adjustment)
+target_link_libraries(sample_comparison_with_g2o opencv::opencv G2O::G2O cuda_bundle_adjustment)

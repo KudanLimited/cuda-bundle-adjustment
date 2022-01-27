@@ -13,6 +13,10 @@ if (WIN32)
 	add_definitions(-D_SILENCE_CXX17_NEGATORS_DEPRECATION_WARNING)
 endif()
 
+# CUDA
+find_package(CUDA REQUIRED)
+include_directories(${CUDA_INCLUDE_DIRS})
+
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${SAMPLE_UTILITY_DIR})
 
@@ -20,10 +24,7 @@ include_directories(${SAMPLE_UTILITY_DIR})
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
-# Eigen
-find_package(Eigen3 REQUIRED)
-include_directories(${EIGEN3_INCLUDE_DIR})
 
 file(GLOB srcs ./*.cpp ./*.h* ${SAMPLE_UTILITY_DIR}/*.cpp ${SAMPLE_UTILITY_DIR}/*.h*)
 add_executable(sample_ba_from_file ${srcs})
-target_link_libraries(sample_ba_from_file ${OpenCV_LIBS} cuda_bundle_adjustment)
+target_link_libraries(sample_ba_from_file opencv::opencv cuda_bundle_adjustment Eigen3::Eigen3)

@@ -9,15 +9,12 @@ include_directories(${CUBA_INCLUDE_DIR})
 find_package(CUDA REQUIRED)
 include_directories(${CUDA_INCLUDE_DIRS})
 
+
 CUDA_SELECT_NVCC_ARCH_FLAGS(ARCH_FLAGS "Auto")
 set(CUDA_ARCH "${ARCH_FLAGS}" CACHE STRING "Value of the NVCC -arch option." FORCE)
 set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} ${CUDA_ARCH} -lineinfo")
 
 message(STATUS "CUDA_ARCH: \"${CUDA_ARCH}\"")
-
-# Eigen
-find_package(Eigen3 REQUIRED)
-include_directories(${EIGEN3_INCLUDE_DIR})
 
 # Flags for each platform
 if (CMAKE_COMPILER_IS_GNUCXX)
@@ -36,7 +33,9 @@ endif()
 
 file(GLOB srcs ./*.cpp ./*.cu ./*.h ${CUBA_INCLUDE_DIR}/*.h)
 cuda_add_library(cuda_bundle_adjustment ${srcs})
+
 target_link_libraries(cuda_bundle_adjustment ${CUDA_cusparse_LIBRARY} ${CUDA_cusolver_LIBRARY} Eigen3::Eigen3)
+target_include_directories(cuda_bundle_adjustment PUBLIC "${CMAKE_SOURCE_DIR}/src")
 
 install(
 	TARGETS cuda_bundle_adjustment

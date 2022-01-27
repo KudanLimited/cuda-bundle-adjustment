@@ -5,13 +5,18 @@ project(CudaBundleAdjustment)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(ENABLE_SAMPLES "Build samples" ON)
-option(WITH_G2O       "Build sample with g2o (g2o needs to be installed)" OFF)
+set(ENABLE_SAMPLES TRUE)
+set(WITH_G2O  TRUE)
 option(USE_FLOAT32    "Use 32bit float in internal floating-point operations (default is 64bit float)" OFF)
+
+# Eigen
+find_package(Eigen3 REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR})
 
 add_subdirectory(src)
 
 if(ENABLE_SAMPLES)
+	message("Configuring samples...")
 	add_subdirectory(samples/sample_ba_from_file)
 	if(WITH_G2O)
 		add_subdirectory(samples/sample_comparison_with_g2o)

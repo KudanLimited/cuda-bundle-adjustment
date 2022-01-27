@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcuda_bundle_adjustment.a CMakeFiles/cuda_bundle_adjustment.dir/cuda_bundle_adjustment.cpp.o CMakeFiles/cuda_bundle_adjustment.dir/cuda_linear_solver.cpp.o CMakeFiles/cuda_bundle_adjustment.dir/sparse_block_matrix.cpp.o CMakeFiles/cuda_bundle_adjustment.dir/cuda_bundle_adjustment_generated_cuda_block_solver.cu.o
+/usr/bin/ranlib libcuda_bundle_adjustment.a

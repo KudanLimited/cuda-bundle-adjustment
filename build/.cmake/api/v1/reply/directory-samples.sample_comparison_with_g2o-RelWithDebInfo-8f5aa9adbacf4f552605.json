@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "samples/sample_comparison_with_g2o",
+		"source" : "samples/sample_comparison_with_g2o"
+	}
+}

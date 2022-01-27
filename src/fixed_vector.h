@@ -51,9 +51,15 @@ using Vec2d = Vec<Scalar, 2>;
 using Vec3d = Vec<Scalar, 3>;
 using Vec4d = Vec<Scalar, 4>;
 
+template<int DIM>
+using VecNd = Vec<Scalar, DIM>;
+
 using Vec2i = Vec<int, 2>;
 using Vec3i = Vec<int, 3>;
 using Vec4i = Vec<int, 4>;
+
+template<int DIM>
+using VecNi = Vec<int, DIM>;
 
 } // namespace cuba
 

@@ -1,0 +1,29 @@
+########### AGGREGATED COMPONENTS AND DEPENDENCIES FOR THE MULTI CONFIG #####################
+#############################################################################################
+
+set(zlib_COMPONENT_NAMES ${zlib_COMPONENT_NAMES} )
+list(REMOVE_DUPLICATES zlib_COMPONENT_NAMES)
+set(zlib_FIND_DEPENDENCY_NAMES ${zlib_FIND_DEPENDENCY_NAMES} )
+list(REMOVE_DUPLICATES zlib_FIND_DEPENDENCY_NAMES)
+
+########### VARIABLES #######################################################################
+#############################################################################################
+set(zlib_PACKAGE_FOLDER_RELWITHDEBINFO "/home/kudan/.conan/data/zlib/1.2.11/_/_/package/6b7ff26bfd4c2cf2ccba522bfba2d2e7820e40da")
+set(zlib_INCLUDE_DIRS_RELWITHDEBINFO "${zlib_PACKAGE_FOLDER_RELWITHDEBINFO}/include")
+set(zlib_RES_DIRS_RELWITHDEBINFO "${zlib_PACKAGE_FOLDER_RELWITHDEBINFO}/res")
+set(zlib_DEFINITIONS_RELWITHDEBINFO )
+set(zlib_SHARED_LINK_FLAGS_RELWITHDEBINFO )
+set(zlib_EXE_LINK_FLAGS_RELWITHDEBINFO )
+set(zlib_OBJECTS_RELWITHDEBINFO )
+set(zlib_COMPILE_DEFINITIONS_RELWITHDEBINFO )
+set(zlib_COMPILE_OPTIONS_C_RELWITHDEBINFO )
+set(zlib_COMPILE_OPTIONS_CXX_RELWITHDEBINFO )
+set(zlib_LIB_DIRS_RELWITHDEBINFO "${zlib_PACKAGE_FOLDER_RELWITHDEBINFO}/lib")
+set(zlib_LIBS_RELWITHDEBINFO z)
+set(zlib_SYSTEM_LIBS_RELWITHDEBINFO )
+set(zlib_FRAMEWORK_DIRS_RELWITHDEBINFO "${zlib_PACKAGE_FOLDER_RELWITHDEBINFO}/Frameworks")
+set(zlib_FRAMEWORKS_RELWITHDEBINFO )
+set(zlib_BUILD_MODULES_PATHS_RELWITHDEBINFO )
+set(zlib_BUILD_DIRS_RELWITHDEBINFO "${zlib_PACKAGE_FOLDER_RELWITHDEBINFO}/")
+
+set(zlib_COMPONENTS_RELWITHDEBINFO )
