@@ -40,68 +40,53 @@ public:
 		PROF_ITEM_NUM
 	};
 
-	struct PLIndex
-	{
-		int P, L;
-		PLIndex(int P = 0, int L = 0) : P(P), L(L) {}
-	};
-
 	void clear();
 
-	void initialize(std::array<BaseEdgeSet*, 6>& edgeSets, std::map<int, PoseVertex*>& vertexMapP, 
-		std::map<int, LandmarkVertex*>& vertexMapL, CameraParams* camera);
+	void initialize(CameraParams* camera, const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
 
-	void buildStructure(const std::array<BaseEdgeSet*, 6>& edgeSets);
+	void buildStructure(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
 
-	double computeErrors(const std::array<BaseEdgeSet*, 6>& edgeSets);
+	double computeErrors(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
 
-	void buildSystem(const std::array<BaseEdgeSet*, 6>& edgeSets);
+	void buildSystem(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
 	double maxDiagonal();
 
 	void setLambda(double lambda);
 	void restoreDiagonal();
 
 	bool solve();
-	void update();
+	void update(const VertexSetVec& vertexSets);
 
 	double computeScale(double lambda);
 
 	void push();
 	void pop();
 
-	void finalize();
+	void finalize(const VertexSetVec& vertexSets);
 	void getTimeProfile(TimeProfile& prof) const;
 
-private:
-
-	static inline uint8_t makeEdgeFlag(bool fixedP, bool fixedL);
+	static inline uint8_t makeEdgeFlag(bool fixedP, bool fixedL)
+	{
+		uint8_t flag = 0;
+		if (fixedP) flag |= EDGE_FLAG_FIXED_P;
+		if (fixedL) flag |= EDGE_FLAG_FIXED_L;
+		return flag;
+	}
 
 	////////////////////////////////////////////////////////////////////////////////////
 	// host buffers
 	////////////////////////////////////////////////////////////////////////////////////
 
+private:
+
 	// graph components
-	std::vector<PoseVertex*> verticesP_;
-	std::vector<LandmarkVertex*> verticesL_;
 	std::vector<BaseEdge*> baseEdges_;
-	int numP_, numL_, nedges_;
-
-	// solution vectors
-	std::vector<Vec4d> qs_;
-	std::vector<Vec3d> ts_;
-	std::vector<Vec3d> Xws_;
-
-	// edge information
-	std::vector<Scalar> omegas_;
-	std::vector<PLIndex> edge2PL_;
-	std::vector<uint8_t> edgeFlags_;
 
 	// block matrices
 	HplSparseBlockMatrix Hpl_;
 	HschurSparseBlockMatrix Hsc_;
 	SparseLinearSolver::Ptr linearSolver_;
 	std::vector<HplBlockPos> HplBlockPos_;
-	int nHplBlocks_;
 
 	////////////////////////////////////////////////////////////////////////////////////
 	// device buffers
@@ -109,8 +94,6 @@ private:
 
 	// solution vectors
 	GpuVec1d d_solution_, d_solutionBackup_;
-	GpuVec4d d_qs_;
-	GpuVec3d d_ts_, d_Xws_;
 
 	// edge information
 	GpuVec1i d_edge2Hpl_;

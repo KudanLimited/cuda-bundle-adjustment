@@ -24,8 +24,8 @@ class CubaConan(ConanFile):
     default_options = {
         "shared": False,
         "fPIC": True,
-        "with_samples": False,
-        "with_g2o": True,
+        "with_samples": True,
+        "with_g2o": False,
         "use_float32": False
     }
     _cmake = None

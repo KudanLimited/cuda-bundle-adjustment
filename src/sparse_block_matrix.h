@@ -26,7 +26,7 @@ namespace cuba
 {
 
 // forward declerations
-struct LandmarkVertex;
+class BaseVertex;
 
 template <int _BLOCK_ROWS, int _BLOCK_COLS, int ORDER>
 class SparseBlockMatrix
@@ -82,7 +82,7 @@ class HschurSparseBlockMatrix : public SparseBlockMatrix<PDIM, PDIM, ROW_MAJOR>
 {
 public:
 
-	void constructFromVertices(const std::vector<LandmarkVertex*>& verticesL);
+	void constructFromVertices(const std::vector<BaseVertex*>& verticesL);
 	void convertBSRToCSR();
 
 	const int* rowPtr() const { return rowPtr_.data(); }

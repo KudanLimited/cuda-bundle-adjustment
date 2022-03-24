@@ -74,6 +74,8 @@ public:
 
 	void upload(const T* h_data)
 	{
+		assert(h_data != nullptr);
+		assert(size_ > 0);
 		CUDA_CHECK(cudaMemcpy(data_, h_data, sizeof(T) * size_, cudaMemcpyHostToDevice));
 	}
 

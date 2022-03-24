@@ -29,7 +29,6 @@ limitations under the License.
 #include "g2o/types/slam3d/vertex_pointxyz.h"
 
 #include <cuda_bundle_adjustment.h>
-#include <object_creator.h>
 #include <optimisable_graph.h>
 #include <cuda_bundle_adjustment_types.h>
 
@@ -38,9 +37,6 @@ using OptimizerGPU = cuba::CudaBundleAdjustmentImpl;
 
 static void readGraph(const std::string& filename, OptimizerCPU& optimizerCPU, OptimizerGPU& optimizerGPU,
 	std::vector<int>& poseIds, std::vector<int>& landmarkIds);
-
-// use memory manager for vertices and edges, since CudaBundleAdjustment doesn't delete those pointers
-static cuba::ObjectCreator obj;
 
 int main(int argc, char** argv)
 {

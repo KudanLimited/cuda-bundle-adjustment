@@ -169,11 +169,15 @@ using GpuVec1d = GpuVec<Scalar>;
 using GpuVec2d = GpuVec<Vec2d>;
 using GpuVec3d = GpuVec<Vec3d>;
 using GpuVec4d = GpuVec<Vec4d>;
+using GpuVec6d = GpuVec<Vec6d>;
 
 using GpuVec1i = GpuVec<int>;
 using GpuVec2i = GpuVec<Vec2i>;
 using GpuVec3i = GpuVec<Vec3i>;
 using GpuVec4i = GpuVec<Vec4i>;
+
+using GpuVecQuatd = GpuVec<QuatD>;
+using GpuVecSe3d = GpuVec<Se3D>;
 
 using GpuVec1b = GpuVec<uint8_t>;
 

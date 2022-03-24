@@ -31,8 +31,22 @@ limitations under the License.
 namespace cuba
 {
 
+// forward declerations
+struct PoseVertex;
+struct LandmarkVertex;
+struct CameraParams;
+class BaseEdgeSet;
+class CudaBlockSolver;
+class CudaBundleAdjustmentImpl;
+class BaseVertexSet;
+class BaseVertex;
+
+
 template <class T>
 using UniquePtr = std::unique_ptr<T>;
+
+using EdgeSetVec = std::vector<BaseEdgeSet*>;
+using VertexSetVec = std::vector<BaseVertexSet*>;
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Statistics
@@ -52,16 +66,12 @@ using BatchStatistics = std::vector<BatchInfo>;
 */
 using TimeProfile = std::map<std::string, double>;
 
+template <typename T>
+static constexpr Scalar ScalarCast(T v) { return static_cast<Scalar>(v); }
+
 ////////////////////////////////////////////////////////////////////////////////////
 // Cuda Bundle Adjustment
 ////////////////////////////////////////////////////////////////////////////////////
-// forward declerations
-struct PoseVertex;
-struct LandmarkVertex;
-struct CameraParams;
-class BaseEdgeSet;
-class CudaBlockSolver;
-class CudaBundleAdjustmentImpl;
 
 /** @brief CUDA implementation of Bundle Adjustment.
 
@@ -108,17 +118,11 @@ public:
 	*/
 	virtual ~CudaBundleAdjustment();
 
-	virtual void addPoseVertex(PoseVertex* v) = 0;
-	virtual void addLandmarkVertex(LandmarkVertex* v) = 0;
-	virtual PoseVertex* poseVertex(int id) const = 0;
-	virtual LandmarkVertex* landmarkVertex(int id) const = 0;
-	virtual bool removePoseVertex(BaseEdgeSet* edgeSet, PoseVertex* v) = 0;
-	virtual bool removeLandmarkVertex(BaseEdgeSet* edgeSet, LandmarkVertex* v) = 0;
-	virtual size_t nposes() const = 0;
-	virtual size_t nlandmarks() const = 0;
-	virtual std::array<BaseEdgeSet*, 6>& getEdgeSets() = 0;
+	virtual EdgeSetVec& getEdgeSets() = 0;
 
 	virtual void setCameraPrams(const CameraParams& camera) = 0;
+
+	virtual size_t nVertices(const int id) = 0;
 };
 
 /** @brief Implementation of CudaBundleAdjustment.
@@ -137,33 +141,20 @@ public:
 	template <typename T>
 	bool addEdgeSet(T* edgeSet)
 	{
-		for(int i = 0; i < edgeSets.size(); ++i)
-		{
-			if (!edgeSets[i]) 
-			{
-				edgeSets[i] = edgeSet;
-				return true;
-			}
-		}
-		return false;
+		assert(edgeSet != nullptr);
+		edgeSets.push_back(edgeSet);
+		return true;
 	}
 
-	void addPoseVertex(PoseVertex* v) override;
-
-	void addLandmarkVertex(LandmarkVertex* v) override;
-	PoseVertex* poseVertex(int id) const override;
-
-	LandmarkVertex* landmarkVertex(int id) const override;
-
-	bool removePoseVertex(BaseEdgeSet* edgeSet, PoseVertex* v) override;
-
-	bool removeLandmarkVertex(BaseEdgeSet* edgeSet, LandmarkVertex* v) override;
-
-	size_t nposes() const override;
-
-	size_t nlandmarks() const override;
+	template <typename T>
+	bool addVertexSet(T* vertexSet)
+	{
+		assert(vertexSet != nullptr);
+		vertexSets.push_back(vertexSet);
+		return true;
+	}
 	
-	std::array<BaseEdgeSet*, 6>& getEdgeSets() override;
+	EdgeSetVec& getEdgeSets() override;
 
 	void setCameraPrams(const CameraParams& camera) override;
 
@@ -177,6 +168,8 @@ public:
 
 	const TimeProfile& timeProfile() override;
 
+	size_t nVertices(const int id) override;
+
 	~CudaBundleAdjustmentImpl();
 
 private:
@@ -184,10 +177,9 @@ private:
 	static inline double attenuation(double x) { return 1 - std::pow(2 * x - 1, 3); }
 	static inline double clamp(double v, double lo, double hi) { return std::max(lo, std::min(v, hi)); }
 
-	std::map<int, PoseVertex*> vertexMapP;  //!< connected pose vertices.
-	std::map<int, LandmarkVertex*> vertexMapL; //!< connected landmark vertices.
-
-	std::array<BaseEdgeSet*, 6> edgeSets = { nullptr };
+	
+	VertexSetVec vertexSets;
+	EdgeSetVec edgeSets;
 
 	std::unique_ptr<CudaBlockSolver> solver_;
 	std::unique_ptr<CameraParams> camera_;
