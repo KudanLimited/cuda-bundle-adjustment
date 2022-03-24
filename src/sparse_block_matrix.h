@@ -20,11 +20,13 @@ limitations under the License.
 #include <vector>
 #include <Eigen/Core>
 
-#include "cuda_bundle_adjustment_types.h"
 #include "constants.h"
 
 namespace cuba
 {
+
+// forward declerations
+class BaseVertex;
 
 template <int _BLOCK_ROWS, int _BLOCK_COLS, int ORDER>
 class SparseBlockMatrix
@@ -80,7 +82,7 @@ class HschurSparseBlockMatrix : public SparseBlockMatrix<PDIM, PDIM, ROW_MAJOR>
 {
 public:
 
-	void constructFromVertices(const std::vector<VertexL*>& verticesL);
+	void constructFromVertices(const std::vector<BaseVertex*>& verticesL);
 	void convertBSRToCSR();
 
 	const int* rowPtr() const { return rowPtr_.data(); }

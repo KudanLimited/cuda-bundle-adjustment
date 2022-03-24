@@ -28,7 +28,7 @@ limitations under the License.
 #include <Eigen/Sparse>
 
 #include "device_buffer.h"
-#include "cuda_block_solver.h"
+#include "cuda/cuda_block_solver.h"
 
 namespace cuba
 {

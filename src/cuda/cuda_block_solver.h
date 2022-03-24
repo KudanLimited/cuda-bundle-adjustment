@@ -18,6 +18,9 @@ limitations under the License.
 #define __CUDA_BLOCK_SOLVER_H__
 
 #include "device_matrix.h"
+#include "fixed_vector.h"
+#include "cuda/cuda_constants.h"
+#include "measurements.h"
 
 namespace cuba
 {
@@ -25,6 +28,13 @@ namespace cuba
 namespace gpu
 {
 
+template <int N>
+using Vecxd = Vec<Scalar, N>;
+
+template <int N>
+using GpuVecxd = GpuVec<Vecxd<N>>;
+
+// kernel functions
 void waitForKernelCompletion();
 
 void setCameraParameters(const Scalar* camera);
@@ -33,22 +43,6 @@ void buildHplStructure(GpuVec3i& blockpos, GpuHplBlockMat& Hpl, GpuVec1i& indexP
 
 void findHschureMulBlockIndices(const GpuHplBlockMat& Hpl, const GpuHscBlockMat& Hsc,
 	GpuVec3i& mulBlockIds);
-
-Scalar computeActiveErrors(const GpuVec4d& qs, const GpuVec3d& ts, const GpuVec3d& Xws,
-	const GpuVec2d& measurements, const GpuVec1d& omegas, const GpuVec2i& edge2PL,
-	GpuVec2d& errors, GpuVec3d& Xcs, Scalar* chi);
-
-Scalar computeActiveErrors(const GpuVec4d& qs, const GpuVec3d& ts, const GpuVec3d& Xws,
-	const GpuVec3d& measurements, const GpuVec1d& omegas, const GpuVec2i& edge2PL,
-	GpuVec3d& errors, GpuVec3d& Xcs, Scalar* chi);
-
-void constructQuadraticForm(const GpuVec3d& Xcs, const GpuVec4d& qs, const GpuVec2d& errors,
-	const GpuVec1d& omegas, const GpuVec2i& edge2PL, const GpuVec1i& edge2Hpl, const GpuVec1b& flags,
-	GpuPxPBlockVec& Hpp, GpuPx1BlockVec& bp, GpuLxLBlockVec& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl);
-
-void constructQuadraticForm(const GpuVec3d& Xcs, const GpuVec4d& qs, const GpuVec3d& errors,
-	const GpuVec1d& omegas, const GpuVec2i& edge2PL, const GpuVec1i& edge2Hpl, const GpuVec1b& flags,
-	GpuPxPBlockVec& Hpp, GpuPx1BlockVec& bp, GpuLxLBlockVec& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl);
 
 Scalar maxDiagonal(const GpuPxPBlockVec& Hpp, Scalar* maxD);
 
@@ -78,11 +72,41 @@ void permute(int size, const Scalar* src, Scalar* dst, const int* P);
 void schurComplementPost(const GpuLxLBlockVec& invHll, const GpuLx1BlockVec& bl,
 	const GpuHplBlockMat& Hpl, const GpuPx1BlockVec& xp, GpuLx1BlockVec& xl);
 
-void updatePoses(const GpuPx1BlockVec& xp, GpuVec4d& qs, GpuVec3d& ts);
+void updatePoses(const GpuPx1BlockVec& xp, GpuVecSe3d& estimate);
 
 void updateLandmarks(const GpuLx1BlockVec& xl, GpuVec3d& Xws);
 
 void computeScale(const GpuVec1d& x, const GpuVec1d& b, Scalar* scale, Scalar lambda);
+
+template <int M>
+void constructQuadraticForm_(const GpuVec3d& Xcs, const GpuVecSe3d& se3, GpuVecxd<M>& errors,
+	const GpuVec1d& omegas, const GpuVec2i& edge2PL, const GpuVec1i& edge2Hpl, const GpuVec1b& flags,
+	GpuPxPBlockVec& Hpp, GpuPx1BlockVec& bp, GpuLxLBlockVec& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl);
+
+template <int M>
+Scalar computeActiveErrors_(const GpuVecSe3d& poseEstimate, const GpuVec3d& landmarkEstimate,
+	const GpuVecxd<M>& measurements, const GpuVec1d& omegas, const GpuVec2i& edge2PL,
+	GpuVecxd<M>& errors, GpuVec3d& Xcs, Scalar* chi);
+
+Scalar computeActiveErrors_Line(const GpuVecSe3d& poseEstimate,
+	const GpuVec<PointToLineMatch<double>>& measurements, const GpuVec1d& omegas, const GpuVec2i& edge2PL,
+	GpuVec1d& errors, GpuVec3d& Xcs, Scalar* chi);
+
+Scalar computeActiveErrors_Plane(const GpuVecSe3d& poseEstimate,
+	const GpuVec<PointToPlaneMatch<double>>& measurements, const GpuVec1d& omegas, const GpuVec2i& edge2PL,
+	GpuVec1d& errors, GpuVec3d& Xcs, Scalar* chi);
+
+Scalar computeActiveErrors_PriorPose(const GpuVecSe3d& poseEstimate,
+	const GpuVecSe3d& measurements, const GpuVec1d& omegas, const GpuVec2i& edge2PL,
+	GpuVec6d& errors, GpuVec3d& Xcs, Scalar* chi);
+
+void constructQuadraticForm_Line(const GpuVecSe3d& se3, GpuVec1d& errors, const GpuVec<PointToLineMatch<double>>& measurements,
+	const GpuVec1d& omegas, const GpuVec2i& edge2PL, const GpuVec1i& edge2Hpl, const GpuVec1b& flags,
+	GpuPxPBlockVec& Hpp, GpuPx1BlockVec& bp, GpuLxLBlockVec& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl);
+
+void constructQuadraticForm_Plane(const GpuVecSe3d& se3, GpuVec1d& errors, const GpuVec<PointToPlaneMatch<double>>& measurements,
+	const GpuVec1d& omegas, const GpuVec2i& edge2PL, const GpuVec1i& edge2Hpl, const GpuVec1b& flags,
+	GpuPxPBlockVec& Hpp, GpuPx1BlockVec& bp, GpuLxLBlockVec& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl);
 
 } // namespace gpu
 

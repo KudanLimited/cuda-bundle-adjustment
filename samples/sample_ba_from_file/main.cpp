@@ -21,12 +21,11 @@ limitations under the License.
 #include <opencv2/core.hpp>
 
 #include <cuda_bundle_adjustment.h>
-#include <object_creator.h>
+#include <cuda_bundle_adjustment_types.h>
+#include <optimisable_graph.h>
+#include <icp_types.h>
 
 static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename);
-
-// use memory manager for vertices and edges, since CudaBundleAdjustment doesn't delete those pointers
-static cuba::ObjectCreator obj;
 
 int main(int argc, char** argv)
 {
@@ -43,9 +42,14 @@ int main(int argc, char** argv)
 	std::cout << "Done." << std::endl << std::endl;
 
 	std::cout << "=== Graph size : " << std::endl;
-	std::cout << "num poses      : " << optimizer->nposes() << std::endl;
-	std::cout << "num landmarks  : " << optimizer->nlandmarks() << std::endl;
-	std::cout << "num edges      : " << optimizer->nedges() << std::endl << std::endl;
+	std::cout << "num poses      : " << optimizer->nVertices(0) << std::endl;
+	std::cout << "num landmarks  : " << optimizer->nVertices(1) << std::endl;
+
+	auto& edgeSets = optimizer->getEdgeSets();
+	for (const auto* edgeSet : edgeSets)
+	{
+		std::cout << "num edges      : " << edgeSet->nedges() << std::endl << std::endl;
+	}
 
 	std::cout << "Running BA... " << std::flush;
 
@@ -75,9 +79,9 @@ int main(int argc, char** argv)
 }
 
 template <typename T, int N>
-static inline cuba::Array<T, N> getArray(const cv::FileNode& node)
+static inline cuba::maths::Vec<T, N> getArray(const cv::FileNode& node)
 {
-	cuba::Array<T, N> arr = {};
+	cuba::maths::Vec<T, N> arr = {};
 	int pos = 0;
 	for (const auto& v : node)
 	{
@@ -96,6 +100,12 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 	auto optimizer = cuba::CudaBundleAdjustment::create();
 
 	// read pose vertices
+	cuba::PoseVertexSet* poseVertexSet = new cuba::PoseVertexSet(false);
+	cuba::LandmarkVertexSet* landmarkVertexSet = new cuba::LandmarkVertexSet(true);
+
+	cuba::MonoEdgeSet* monoEdgeSet = new cuba::MonoEdgeSet(); 
+	cuba::StereoEdgeSet* stereoEdgeSet = new cuba::StereoEdgeSet(); 
+
 	for (const auto& node : fs["pose_vertices"])
 	{
 		const int id = node["id"];
@@ -103,9 +113,10 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 		const auto q = Eigen::Quaterniond(getArray<double, 4>(node["q"]));
 		const auto t = getArray<double, 3>(node["t"]);
 
-		auto v = obj.create<cuba::PoseVertex>(id, q, t, fixed);
-		optimizer->addPoseVertex(v);
+		cuba::PoseVertex* poseVertex = new cuba::PoseVertex(id, cuba::maths::Se3D(q, t), fixed);
+		poseVertexSet->addVertex<cuba::PoseVertex>(poseVertex);
 	}
+	optimizer->addVertexSet(poseVertexSet);
 
 	// read landmark vertices
 	for (const auto& node : fs["landmark_vertices"])
@@ -114,11 +125,13 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 		const int fixed = node["fixed"];
 		const auto Xw = getArray<double, 3>(node["Xw"]);
 
-		auto v = obj.create<cuba::LandmarkVertex>(id, Xw, fixed);
-		optimizer->addLandmarkVertex(v);
+		cuba::LandmarkVertex* landmarkVertex = new cuba::LandmarkVertex(id, Xw, fixed);
+		landmarkVertexSet->addVertex<cuba::LandmarkVertex>(landmarkVertex);
 	}
+	optimizer->addVertexSet(landmarkVertexSet);
 
 	// read monocular edges
+	int i = 0;
 	for (const auto& node : fs["monocular_edges"])
 	{
 		const int iP = node["vertexP"];
@@ -126,14 +139,19 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 		const auto measurement = getArray<double, 2>(node["measurement"]);
 		const double information = node["information"];
 
-		auto vertexP = optimizer->poseVertex(iP);
-		auto vertexL = optimizer->landmarkVertex(iL);
+		auto poseVertex = poseVertexSet->getVertex(iP);
+		auto landmarkVertex = landmarkVertexSet->getVertex(iL);
 
-		auto e = obj.create<cuba::MonoEdge>(measurement, information, vertexP, vertexL);
-		optimizer->addMonocularEdge(e);
+		cuba::MonoEdge* monoEdge = new cuba::MonoEdge();
+		monoEdge->setVertex(poseVertex, 0);
+		monoEdge->setVertex(landmarkVertex, 1);
+		monoEdge->setMeasurement(measurement);
+		monoEdge->setInformation(information);
+		monoEdgeSet->addEdge(monoEdge);
 	}
 
 	// read stereo edges
+	i = 0;
 	for (const auto& node : fs["stereo_edges"])
 	{
 		const int iP = node["vertexP"];
@@ -141,11 +159,15 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 		const auto measurement = getArray<double, 3>(node["measurement"]);
 		const double information = node["information"];
 
-		auto vertexP = optimizer->poseVertex(iP);
-		auto vertexL = optimizer->landmarkVertex(iL);
+		auto poseVertex = poseVertexSet->getVertex(iP);
+		auto landmarkVertex = landmarkVertexSet->getVertex(iL);
 
-		auto e = obj.create<cuba::StereoEdge>(measurement, information, vertexP, vertexL);
-		optimizer->addStereoEdge(e);
+		cuba::StereoEdge* stereoEdge = new cuba::StereoEdge();
+		stereoEdge->setVertex(poseVertex, 0);
+		stereoEdge->setVertex(landmarkVertex, 1);
+		stereoEdge->setMeasurement(measurement);
+		stereoEdge->setInformation(information);
+		stereoEdgeSet->addEdge(stereoEdge);
 	}
 
 	// read camera parameters
@@ -156,6 +178,8 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 	camera.cy = fs["cy"];
 	camera.bf = fs["bf"];
 
+	optimizer->addEdgeSet<cuba::MonoEdgeSet>(monoEdgeSet);
+	optimizer->addEdgeSet<cuba::StereoEdgeSet>(stereoEdgeSet);
 	optimizer->setCameraPrams(camera);
 
 	// "warm-up" to avoid overhead

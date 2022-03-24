@@ -26,18 +26,17 @@ limitations under the License.
 #include <g2o/core/optimization_algorithm_levenberg.h>
 #include <g2o/solvers/eigen/linear_solver_eigen.h>
 #include <g2o/types/sba/types_six_dof_expmap.h>
+#include "g2o/types/slam3d/vertex_pointxyz.h"
 
 #include <cuda_bundle_adjustment.h>
-#include <object_creator.h>
+#include <optimisable_graph.h>
+#include <cuda_bundle_adjustment_types.h>
 
 using OptimizerCPU = g2o::SparseOptimizer;
-using OptimizerGPU = cuba::CudaBundleAdjustment;
+using OptimizerGPU = cuba::CudaBundleAdjustmentImpl;
 
 static void readGraph(const std::string& filename, OptimizerCPU& optimizerCPU, OptimizerGPU& optimizerGPU,
 	std::vector<int>& poseIds, std::vector<int>& landmarkIds);
-
-// use memory manager for vertices and edges, since CudaBundleAdjustment doesn't delete those pointers
-static cuba::ObjectCreator obj;
 
 int main(int argc, char** argv)
 {
@@ -61,7 +60,16 @@ int main(int argc, char** argv)
 	std::cout << "=== Graph size : " << std::endl;
 	std::cout << "num poses      : " << optimizerGPU->nposes() << std::endl;
 	std::cout << "num landmarks  : " << optimizerGPU->nlandmarks() << std::endl;
-	std::cout << "num edges      : " << optimizerGPU->nedges() << std::endl << std::endl;
+	
+	auto& edgeSets = optimizerGPU->getEdgeSets();
+	for (const auto* edgeSet : edgeSets)
+	{
+		if (!edgeSet)
+		{
+			break;
+		}
+		std::cout << "num edges      : " << edgeSet->nedges() << std::endl << std::endl;
+	}
 
 	std::cout << "Running BA with CPU... " << std::flush;
 	const auto t0 = std::chrono::steady_clock::now();
@@ -174,6 +182,10 @@ static void readGraph(const std::string& filename, OptimizerCPU& optimizerCPU, O
 	camera.cy = fs["cy"];
 	camera.bf = fs["bf"];
 
+	// read pose vertices
+	cuba::MonoEdgeSet* monoEdgeSet = new cuba::MonoEdgeSet(); 
+	cuba::StereoEdgeSet* stereoEdgeSet = new cuba::StereoEdgeSet(); 
+
 	optimizerGPU.setCameraPrams(camera);
 
 	// read pose vertices
@@ -241,10 +253,10 @@ static void readGraph(const std::string& filename, OptimizerCPU& optimizerCPU, O
 		optimizerCPU.addEdge(ecpu);
 
 		// add monocular edge to GPU optimizer
-		auto vertexP = optimizerGPU.poseVertex(iP);
-		auto vertexL = optimizerGPU.landmarkVertex(iL);
-		auto egpu = obj.create<cuba::MonoEdge>(measurement, information, vertexP, vertexL);
-		optimizerGPU.addMonocularEdge(egpu);
+		auto poseVertex = optimizerGPU.poseVertex(iP);
+		auto landmarkVertex = optimizerGPU.landmarkVertex(iL);
+		auto egpu = obj.create<cuba::MonoEdge>(measurement, information, poseVertex, landmarkVertex);
+		monoEdgeSet->addEdge(egpu);
 	}
 
 	// read stereo edges
@@ -269,11 +281,14 @@ static void readGraph(const std::string& filename, OptimizerCPU& optimizerCPU, O
 		optimizerCPU.addEdge(ecpu);
 
 		// add stereo edge to GPU optimizer
-		auto vertexP = optimizerGPU.poseVertex(iP);
-		auto vertexL = optimizerGPU.landmarkVertex(iL);
-		auto egpu = obj.create<cuba::StereoEdge>(measurement, information, vertexP, vertexL);
-		optimizerGPU.addStereoEdge(egpu);
+		auto poseVertex = optimizerGPU.poseVertex(iP);
+		auto landmarkVertex = optimizerGPU.landmarkVertex(iL);
+		auto egpu = obj.create<cuba::StereoEdge>(measurement, information, poseVertex, landmarkVertex);
+		stereoEdgeSet->addEdge(egpu);
 	}
+
+	optimizerGPU.addEdgeSet<cuba::StereoEdgeSet>(stereoEdgeSet);
+	optimizerGPU.addEdgeSet<cuba::MonoEdgeSet>(monoEdgeSet);
 
 	// "warm-up" to avoid overhead
 	optimizerCPU.initializeOptimization();
