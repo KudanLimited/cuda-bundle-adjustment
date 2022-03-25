@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(sample_ba_from_file LANGUAGES CXX)
+project(sample_ba_from_file LANGUAGES CXX CUDA)
 
 set(SAMPLE_UTILITY_DIR ../utility)
 

@@ -76,7 +76,7 @@ public:
 };
 
 
-class LineEdge : cuba::Edge<1, cuba::PointToLineMatch<double>, cuba::PoseVertex>
+class LineEdge : public Edge<1, cuba::PointToLineMatch<double>, cuba::PoseVertex>
 {
 public:
 
