@@ -68,6 +68,21 @@ private:
 
 };
 
+class PlaneEdge : public Edge<1, cuba::PointToPlaneMatch<double>, cuba::PoseVertex>
+{
+public:
+
+    void* getMeasurement() override { return static_cast<void*>(&measurement); }
+};
+
+
+class LineEdge : cuba::Edge<1, cuba::PointToLineMatch<double>, cuba::PoseVertex>
+{
+public:
+
+    void* getMeasurement() override { return static_cast<void*>(&measurement); }
+};
+
 /*
 /
 class PriorPoseEdge : public EdgeSet<6, maths::Se3D, Se3D, PoseVertex>

@@ -29,6 +29,8 @@ public:
     /// A matched point, in platform coordinates.
     Vec3 pointP;
 
+    HOST_DEVICE PointToLineMatch() {};
+
     /**
      Constructor.
      @param start the first point which the line passes through.

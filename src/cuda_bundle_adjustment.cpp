@@ -15,6 +15,7 @@ limitations under the License.
 */
 
 #include "cuda_bundle_adjustment.h"
+#include "cuda_bundle_adjustment_types.h"
 
 #include <algorithm>
 #include <unordered_map>
@@ -35,8 +36,6 @@ namespace cuba
 
 using VertexMapP = std::map<int, PoseVertex*>;
 using VertexMapL = std::map<int, LandmarkVertex*>;
-using EdgeSet2D = std::unordered_set<Edge2D*>;
-using EdgeSet3D = std::unordered_set<Edge3D*>;
 using time_point = decltype(std::chrono::steady_clock::now());
 
 static inline time_point get_time_point()

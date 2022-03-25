@@ -379,7 +379,7 @@ public:
 
 	virtual bool allVerticesFixed() const = 0;
 
-	virtual void* getMeasurement() = 0;
+	virtual void* getMeasurement() { return nullptr; };
 
 	/** @brief Returns the dimension of measurement.
 	*/
@@ -442,8 +442,6 @@ public:
 
 	Information getInformation() const override { return info; }
 
-	void* getMeasurement() override { return static_cast<void*>(measurement.data()); }
-
 	/** @brief Returns the dimension of measurement.
 	*/
 	int dim() const override { return DIM; }
@@ -459,14 +457,6 @@ protected:
 	
 	BaseVertex* vertices[VertexSize];
 };
-
-/** @brief Edge with 2-dimensional measurement (monocular observation).
-*/
-using MonoEdge = Edge<2, maths::Vec2d, PoseVertex, LandmarkVertex>;
-
-/** @brief Edge with 3-dimensional measurement (stereo observation).
-*/
-using StereoEdge = Edge<3, maths::Vec3d, PoseVertex, LandmarkVertex>;
 
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -696,13 +686,6 @@ struct CameraParams
 	*/
 	CameraParams() : fx(0), fy(0), cx(0), cy(0), bf(0) {}
 };;
-
-////////////////////////////////////////////////////////////////////////////////////
-// Type alias
-////////////////////////////////////////////////////////////////////////////////////
-
-using Edge2D = MonoEdge;
-using Edge3D = StereoEdge;
 
 }
 

@@ -132,6 +132,21 @@ private:
 
 };
 
+/** @brief Edge with 2-dimensional measurement (monocular observation).
+*/
+class MonoEdge : public Edge<2, maths::Vec2d, PoseVertex, LandmarkVertex>
+{
+public:
+	void* getMeasurement() override { return static_cast<void*>(measurement.data()); }
+};
+
+/** @brief Edge with 3-dimensional measurement (stereo observation).
+*/
+class StereoEdge : public Edge<3, maths::Vec3d, PoseVertex, LandmarkVertex>
+{
+public:
+	void* getMeasurement() override { return static_cast<void*>(measurement.data()); }
+};
 
 } // namespace cuba
 
