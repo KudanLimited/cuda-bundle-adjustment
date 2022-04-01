@@ -1,6 +1,8 @@
 #ifndef _CUDA_SOLVER_H
 #define _CUDA_SOLVER_H
 
+#include <type_traits>
+
 #include <cuda_runtime.h>
 #include <cusparse.h>
 #include <cusolverSp.h>
@@ -8,11 +10,6 @@
 
 namespace cuba
 {
-
-template <typename T>
-static constexpr bool is_value_type_32f() { return std::is_same_v<T, float>; }
-template <typename T>
-static constexpr bool is_value_type_64f() { return std::is_same_v<T, double>; }
 
 struct CusparseHandle
 {

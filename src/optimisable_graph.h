@@ -18,6 +18,7 @@
 #include "device_matrix.h"
 #include "device_buffer.h"
 #include "cuda/cuda_block_solver.h"
+#include "maths.h"
 
 namespace cuba
 {
@@ -32,48 +33,16 @@ using Set = std::unordered_set<T>;
 // forward declerations
 class BaseEdge;
 
-namespace maths
-{
-template <class T, int N>
-using Vec = Eigen::Matrix<T, N, 1>;
-
-template <typename Scalar>
-using Vec2 = Vec<Scalar, 2>;
-template <typename Scalar>
-using Vec3 = Vec<Scalar, 3>;
-template <typename Scalar>
-using Vec4 = Vec<Scalar, 4>;
-
-using Vec2d = Vec2<double>;
-using Vec3d = Vec3<double>;
-using Vec4d = Vec4<double>;
-
-using Vec2f = Vec2<float>;
-using Vec3f = Vec3<float>;
-using Vec4f = Vec4<float>;
-
-template <typename Scalar>
-struct Se3
-{
-	Se3() = default;
-	Se3(const Eigen::Quaternion<Scalar>& r, const Vec3<Scalar>& t): r(r), t(t) {}
-	Eigen::Quaternion<Scalar> r;
-	Vec3<Scalar> t;
-};
-
-using Se3F = Se3<float>;
-using Se3D = Se3<double>;
-
-}
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Vertex
 ////////////////////////////////////////////////////////////////////////////////////
+
 class BaseVertex
 {
 public:
 
-	BaseVertex() = default;
+	BaseVertex() {};
 	virtual ~BaseVertex() {}
 
 	virtual int getId() const = 0;
@@ -94,23 +63,29 @@ public:
 
 	virtual bool isMarginilised() const = 0;
 
+	virtual void clearEdges() = 0;
+
 };
 
-template<typename T>
+template<typename T, bool Marginilised>
 class Vertex : public BaseVertex
 {
 public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
 	using EstimateType = T;
+	const bool marginilised = Marginilised;
 
 	Vertex() {}
 	virtual ~Vertex() {}
 
-	Vertex(int id, const EstimateType& est, bool fixed, bool m)
-		: estimate(est), fixed(fixed), id(id), marginilised(m), idx(-1) {}
+	Vertex(int id, const EstimateType& est, bool fixed = false)
+		: estimate(est), fixed(fixed), id(id), idx(-1) 
+	{}
 
-	Vertex(int id, bool fixed, bool m)
-		: fixed(fixed), id(id), marginilised(m), idx(-1) {}
+	Vertex(int id, bool fixed = false)
+		: fixed(fixed), id(id), idx(-1) 
+	{}
 
 	EstimateType& getEstimate() { return estimate; }
 
@@ -118,9 +93,17 @@ public:
 
 	Set<BaseEdge*>& getEdges() override { return edges; }
 
-	void addEdge(BaseEdge* edge) override { edges.insert(edge); }
+	void addEdge(BaseEdge* edge) override 
+	{ 
+		assert(edge != nullptr);
+		edges.insert(edge); 
+	}
 
-	void removeEdge(BaseEdge* edge) override { edges.erase(edge); }
+	void removeEdge(BaseEdge* edge) override 
+	{ 
+		assert(edge != nullptr);
+		edges.erase(edge); 
+	}
 
 	bool isFixed() const override { return fixed; }
 
@@ -134,6 +117,8 @@ public:
 
 	bool isMarginilised() const override { return marginilised; }
 
+	void clearEdges() override { edges.clear(); }
+
 protected:
 
 	EstimateType estimate;
@@ -141,90 +126,32 @@ protected:
 	int id;                  //!< ID of the vertex.
 	int idx;                  //!< ID of the vertex (internally used).
 	Set<BaseEdge*> edges;    //!< connected edges.
-	bool marginilised;
 };
 
-/** @brief Pose vertex struct.
-*/
-class PoseVertex : public Vertex<maths::Se3D>
-{
-public:
 
-	/** @brief The constructor.
-	*/
-	PoseVertex() {}
-	virtual ~PoseVertex() {}
+using PoseVertex = Vertex<maths::Se3D, false>;
+using LandmarkVertex = Vertex<maths::Vec3d, true>;
 
-	/** @brief The constructor.
-	@param id ID of the vertex.
-	@param q rotational component of the pose, represented by quaternions.
-	@param t translational component of the pose.
-	@param fixed if true, the state variables are fixed during optimization.
-	*/
-	PoseVertex(int id, const EstimateType& est, bool fixed = false) : Vertex(id, est, fixed, false)
-		{}
-
-	/** @brief The constructor.
-	@param id ID of the vertex.
-	@param fixed if true, the state variables are fixed during optimization.
-	*/
-	PoseVertex(int id, bool fixed = false) : Vertex(id, fixed, false)
-		{}
-	
-};
-
-/** @brief Landmark vertex struct.
-*/
-class LandmarkVertex : public Vertex<maths::Vec3d>
-{
-public:
-	/** @brief The constructor.
-	*/
-	LandmarkVertex() {}
-	virtual ~LandmarkVertex() {}
-
-	/** @brief The constructor.
-	@param id ID of the vertex.
-	@param Xw 3D position of the landmark.
-	@param fixed if true, the state variables are fixed during optimization.
-	*/
-	LandmarkVertex(int id, const EstimateType& est, bool fixed = false) : Vertex(id, est, fixed, true) 
-	{}
-
-	/** @brief The constructor.
-	@param id ID of the vertex.
-	@param fixed if true, the state variables are fixed during optimization.
-	*/
-	LandmarkVertex(int id, bool fixed = false) : Vertex(id, fixed, true) 
-	{}
-
-};
-
+////////////////////////////////////////////////////////////////////////////////////
+// Vertex set
+////////////////////////////////////////////////////////////////////////////////////
 
 class BaseVertexSet
 {
 public:
 
-	BaseVertexSet() = default;
+	BaseVertexSet() {};
 	virtual ~BaseVertexSet() {}
-
-	virtual BaseVertex* getVertex(const int id) const  = 0;
 
 	virtual bool removeVertex(BaseVertex* v, BaseEdgeSet* edgeSet, BaseVertexSet* vertexSet) = 0;
 
 	virtual size_t size() const = 0;
 
-	virtual void mapEstimateData(Scalar* d_dataPtr) = 0;
 	virtual size_t estimateDataSize() const = 0;
 
-	virtual void* getDeviceEstimateData() = 0;
 	virtual size_t getDeviceEstimateSize() = 0;
 
 	virtual bool isMarginilised() const = 0;
-
-	virtual void finalise() = 0;
-
-	virtual std::vector<BaseVertex*>& get() = 0;
 
 	virtual int getActiveSize() const = 0;
 
@@ -232,20 +159,26 @@ public:
 
 };
 
+template <typename T, typename E, typename D>
 class VertexSet : public BaseVertexSet
 {
 public:
 
+	using VertexType = T;
+	using EstimateType = E;
+	using DeviceType = D;
+	using DeviceVecType = GpuVec<DeviceType>;
+
 	VertexSet(bool marg) : marginilised(marg) {}
 	virtual ~VertexSet() {}
 
-	template <typename T>
 	void addVertex(T* vertex)
 	{
-		vertexMap.insert({ vertex->getId(), vertex });
+		assert(vertex != nullptr);
+		vertexMap.emplace(vertex->getId(), std::move(vertex));
 	}
 
-	BaseVertex* getVertex(const int id) const override;
+	T* getVertex(const int id) const;
 
 	bool removeVertex(BaseVertex* v, BaseEdgeSet* edgeSet, BaseVertexSet* vertexSet) override;
 	
@@ -253,98 +186,54 @@ public:
 
 	bool isMarginilised() const override { return marginilised; }
 
-	
 protected:
 
-	std::map<int, BaseVertex*> vertexMap;  //!< connected vertices.
-	bool marginilised;		 				//!< landmark vertices are marginilised during optimistaion (set to false for pose)
-};
+	std::map<int, VertexType*> vertexMap;   //!< connected vertices.
+	bool marginilised; 						//!< landmark vertices are marginilised during optimistaion (set to false for pose)
 
-class PoseVertexSet : public VertexSet
-{
-public:
+public: 
 
-	PoseVertexSet(bool marginilised) : VertexSet(marginilised), activeSize(0) 
-	{}
-	virtual ~PoseVertexSet() {}
+	// device functions
+	void mapEstimateData(Scalar* d_dataPtr);
 
-	void mapEstimateData(Scalar* d_dataPtr) override;
+	void finalise();
+
 	size_t estimateDataSize() const override { return estimates.size(); }
 
-	void* getDeviceEstimateData() override { return static_cast<void*>(d_estimate.data()); }
+	void* getDeviceEstimateData() { return static_cast<void*>(d_estimate.data()); }
 	size_t getDeviceEstimateSize() override { return d_estimate.size(); }
-	
-	void finalise() override; 
 
-	std::vector<BaseVertex*>& get() override { return verticesP; }
+	std::vector<T*>& get() { return vertices; }
 
-	GpuVecSe3d& getDeviceEstimates() { return d_estimate; } 
-	std::vector<Se3D>& getEstimates() { return estimates; }
+	DeviceVecType& getDeviceEstimates() { return d_estimate; } 
+	std::vector<DeviceType>& getEstimates() { return estimates; }
 	
 	int getActiveSize() const override { return activeSize; }
 
 	void clear() override
 	{
 		estimates.clear();
-		verticesP.clear();
+		vertices.clear();
 		activeSize = 0;
 	}
 
 private:
 
 	// gpu hosted estimate data vec
-	GpuVecSe3d d_estimate;
+	DeviceVecType d_estimate;
 	
-	// cpu estimate data
-	std::vector<Se3D> estimates;
+	// cpu-gpu estimate data
+	std::vector<DeviceType> estimates;
 
-	std::vector<BaseVertex*> verticesP;
+	std::vector<VertexType*> vertices;
 
-	int activeSize;
+	int activeSize = 0;
+
 };
 
-class LandmarkVertexSet : public VertexSet
-{
-public:
+using PoseVertexSet = VertexSet<PoseVertex, maths::Se3D, Se3D>;
+using LandmarkVertexSet = VertexSet<LandmarkVertex, maths::Vec3d, Vec3d>;
 
-	LandmarkVertexSet(bool marginilised) : VertexSet(marginilised), activeSize(0) {}
-	~LandmarkVertexSet() {}
-
-	void mapEstimateData(Scalar* d_dataPtr) override;
-	size_t estimateDataSize() const override { return estimates.size(); }
-
-	void* getDeviceEstimateData() override { return static_cast<void*>(d_estimate.data()); }
-	size_t getDeviceEstimateSize() override { return d_estimate.size(); }
-
-	void finalise() override;
-
-	std::vector<BaseVertex*>& get() override { return verticesL; }
-
-	int getActiveSize() const override { return activeSize; }
-
-	void clear() override
-	{
-		estimates.clear();
-		verticesL.clear();
-		activeSize = 0;
-	}
-
-	// non virtual functions
-	GpuVec3d& getDeviceEstimates() { return d_estimate; }
-	std::vector<Vec3d>& getEstimates() { return estimates; }
-
-private:
-
-	// gpu hosted estimate data vec
-	GpuVec3d d_estimate;
-	
-	// cpu estimate data
-	std::vector<Vec3d> estimates;
-
-	std::vector<BaseVertex*> verticesL;
-
-	int activeSize;
-};
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Edge
@@ -467,13 +356,13 @@ class BaseEdgeSet
 {
 public:
 
-	virtual void addEdge(BaseEdge* edge) = 0;
+	virtual void addEdge(std::unique_ptr<BaseEdge> edge) = 0;
 
 	virtual void removeEdge(BaseEdge* edge) = 0;
 
 	virtual size_t nedges() const = 0;
 
-	virtual std::unordered_set<BaseEdge*> get() const = 0;
+	virtual const std::unordered_set<std::unique_ptr<BaseEdge>>& get() = 0;
 
 	virtual const int dim() const = 0;
 	
@@ -486,6 +375,8 @@ public:
 	virtual void mapDevice(int* edge2HData) = 0;
 
 	virtual void clear() = 0;
+
+	virtual void clearEdges() = 0;
 
 	// device side virtual functions	
 	virtual void constructQuadraticForm(const VertexSetVec& vertexSets, GpuPxPBlockVec& Hpp, GpuPx1BlockVec& bp, 
@@ -506,21 +397,23 @@ public:
 
     static constexpr auto VertexSize = sizeof...(VertexTypes);
 
-	using VIndex = std::array<int, VertexSize>;
+	// Note: even though only this edgeset may denote a single vertex type,
+	// we always state two integers as this is what is expected on the GPU side
+	// If only one vertex is stated, the second element will be ignored.
+	using VIndex = std::array<int, 2>;
 
 	// cpu side 
 	EdgeSet() {}
 	virtual ~EdgeSet() {}
 
 	// vitual functions
-    void addEdge(BaseEdge* edge) override
+    void addEdge(std::unique_ptr<BaseEdge> edge) override
 	{
-		edges.insert(edge);
-		
 		for (int i = 0; i < VertexSize; ++i)
 		{
-			edge->getVertex(i)->addEdge(edge);
+			edge->getVertex(i)->addEdge(edge.get());
 		}
+		edges.insert(std::move(edge));
 	}
 
 	void removeEdge(BaseEdge* edge) override
@@ -533,9 +426,9 @@ public:
 				vertex->removeEdge(edge);
 			}
 		}
-		if (edges.count(edge))
+		if (edges.count(std::unique_ptr<BaseEdge>(edge)))
 		{
-			edges.erase(edge);
+			edges.erase(std::unique_ptr<BaseEdge>(edge));
 		}
 	}
 
@@ -544,7 +437,7 @@ public:
 		return edges.size();
 	}
 
-	std::unordered_set<BaseEdge*> get() const override
+	const std::unordered_set<std::unique_ptr<BaseEdge>>& get() override
 	{
 		return edges;
 	}
@@ -555,9 +448,11 @@ public:
 
 	const int dim() const override { return DIM; }
 
+	void clearEdges() override { edges.clear(); }
+
 protected:
 
-	std::unordered_set<BaseEdge*> edges;
+	std::unordered_set<std::unique_ptr<BaseEdge>> edges;
 
 public:
 	// device side
@@ -575,37 +470,32 @@ public:
 		edgeFlags.reserve(edgeSize);
 		hessianBlockPos.reserve(edgeSize);
 
-		for (auto* edge : edges)
+		for (const std::unique_ptr<BaseEdge>& edge : edges)
 		{
 			VIndex vec;
 			for (int i = 0; i < VertexSize; ++i)
 			{
 				BaseVertex* vertex = edge->getVertex(i);
-				// non-marginilised indices are first
+				// non-marginilised (pose) indices are first
 				if (!vertex->isMarginilised())
 				{
 					vec[0] = vertex->getIndex();
+					assert(vec[0] != -1);
 				}
-				else if (VertexSize == 2)
+				else 
 				{
 					vec[1] = vertex->getIndex();
-				}
-				else
-				{
-					vec[1] = 0;
+					assert(vec[1] != -1);
 				}
 			}
+			edge2PL.push_back(vec);
 
-			if (!edge->allVerticesFixed())
-			{
-				if (doSchur)
-				{
-					hessianBlockPos.push_back({ vec[0], vec[1], edgeId });
-				}
+			if (doSchur && !edge->allVerticesFixed())
+			{	
+				hessianBlockPos.push_back({ vec[0], vec[1], edgeId });
 			}
 
 			omegas.push_back(ScalarCast(edge->getInformation()));
-			edge2PL.push_back(vec);
 			measurements.emplace_back(*(static_cast<MeasurementType*>(edge->getMeasurement())));
 
 			if (VertexSize == 1) 
@@ -629,9 +519,12 @@ public:
 		d_errors.resize(edgeSize);
 		d_omegas.assign(edgeSize, omegas.data());
 		d_Xcs.resize(edgeSize);
-		d_edge2PL.assign(edgeSize, edge2PL.data());
 		d_edgeFlags.assign(edgeSize, edgeFlags.data());
-		d_edge2Hpl.map(edgeSize, edge2HData);
+		d_edge2PL.assign(edgeSize, edge2PL.data());
+		if (edge2HData)
+		{
+			d_edge2Hpl.map(edgeSize, edge2HData);
+		}
     }
 
 	void clear() override
@@ -682,6 +575,8 @@ struct CameraParams
 	*/
 	CameraParams() : fx(0), fy(0), cx(0), cy(0), bf(0) {}
 };;
+
+#include "optimisable_graph.hpp"
 
 }
 

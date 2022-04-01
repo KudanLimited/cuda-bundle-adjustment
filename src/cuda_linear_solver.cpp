@@ -62,11 +62,6 @@ void HppSparseLinearSolver::initialize(HppSparseBlockMatrix& Hpp)
 
 	cholesky_.resize(size);
 
-	// set permutation
-	P_.resize(size);
-	cholesky_.reordering(size, nnz, Hpp.rowPtr(), Hpp.colInd(), P_.data());
-	cholesky_.setPermutaion(size, P_.data());
-
 	// analyze
 	cholesky_.analyze(nnz, Hpp.rowPtr(), Hpp.colInd());
 }

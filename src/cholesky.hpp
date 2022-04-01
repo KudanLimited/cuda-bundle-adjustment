@@ -1,5 +1,6 @@
 
 
+
 template<typename T>
 void SparseCholesky<T>::init(cusolverSpHandle_t handle)
 {
@@ -12,15 +13,26 @@ void SparseCholesky<T>::init(cusolverSpHandle_t handle)
 template<typename T>
 void SparseCholesky<T>::allocateBuffer(const SparseSquareMatrixCSR<T>& A)
 {
+}
+
+template<>
+inline void SparseCholesky<float>::allocateBuffer(const SparseSquareMatrixCSR<float>& A)
+{
     size_t internalData, workSpace;
 
-    if constexpr (is_value_type_32f<T>())
-        cusolverSpScsrcholBufferInfo(handle_, A.size(), A.nnz(), A.desc(),
-            A.val(), A.rowPtr(), A.colInd(), info_, &internalData, &workSpace);
+    cusolverSpScsrcholBufferInfo(handle_, A.size(), A.nnz(), A.desc(),
+        A.val(), A.rowPtr(), A.colInd(), info_, &internalData, &workSpace);
 
-    if constexpr (is_value_type_64f<T>())
-        cusolverSpDcsrcholBufferInfo(handle_, A.size(), A.nnz(), A.desc(),
-            A.val(), A.rowPtr(), A.colInd(), info_, &internalData, &workSpace);
+    buffer_.resize(workSpace);
+}
+
+template<>
+inline void SparseCholesky<double>::allocateBuffer(const SparseSquareMatrixCSR<double>& A)
+{
+    size_t internalData, workSpace;
+
+    cusolverSpDcsrcholBufferInfo(handle_, A.size(), A.nnz(), A.desc(),
+        A.val(), A.rowPtr(), A.colInd(), info_, &internalData, &workSpace);
 
     buffer_.resize(workSpace);
 }
@@ -28,14 +40,29 @@ void SparseCholesky<T>::allocateBuffer(const SparseSquareMatrixCSR<T>& A)
 template<typename T>
 bool SparseCholesky<T>::hasZeroPivot(int* position) const
 {
-    const T tol = static_cast<T>(1e-14);
+    return false;
+}
+
+template<>
+inline bool SparseCholesky<float>::hasZeroPivot(int* position) const
+{
+    const float tol = static_cast<float>(1e-14);
     int singularity = -1;
 
-    if constexpr (is_value_type_32f<T>())
-        cusolverSpScsrcholZeroPivot(handle_, info_, tol, &singularity);
+    cusolverSpScsrcholZeroPivot(handle_, info_, tol, &singularity);
 
-    if constexpr (is_value_type_64f<T>())
-        cusolverSpDcsrcholZeroPivot(handle_, info_, tol, &singularity);
+    if (position)
+        *position = singularity;
+    return singularity >= 0;
+}
+
+template<>
+inline bool SparseCholesky<double>::hasZeroPivot(int* position) const
+{
+    const double tol = static_cast<double>(1e-14);
+    int singularity = -1;
+
+    cusolverSpDcsrcholZeroPivot(handle_, info_, tol, &singularity);
 
     if (position)
         *position = singularity;
@@ -53,25 +80,40 @@ bool SparseCholesky<T>::analyze(const SparseSquareMatrixCSR<T>& A)
 template<typename T>
 bool SparseCholesky<T>::factorize(SparseSquareMatrixCSR<T>& A)
 {
-    if constexpr (is_value_type_32f<T>())
-        cusolverSpScsrcholFactor(handle_, A.size(), A.nnz(), A.desc(),
-            A.val(), A.rowPtr(), A.colInd(), info_, buffer_.data());
+    return false;
+}
 
-    if constexpr (is_value_type_64f<T>())
-        cusolverSpDcsrcholFactor(handle_, A.size(), A.nnz(), A.desc(),
-            A.val(), A.rowPtr(), A.colInd(), info_, buffer_.data());
+template<>
+inline bool SparseCholesky<float>::factorize(SparseSquareMatrixCSR<float>& A)
+{
+    cusolverSpScsrcholFactor(handle_, A.size(), A.nnz(), A.desc(),
+        A.val(), A.rowPtr(), A.colInd(), info_, buffer_.data());
+    return !hasZeroPivot();
+}
 
+template<>
+inline bool SparseCholesky<double>::factorize(SparseSquareMatrixCSR<double>& A)
+{
+    cusolverSpDcsrcholFactor(handle_, A.size(), A.nnz(), A.desc(),
+        A.val(), A.rowPtr(), A.colInd(), info_, buffer_.data());
     return !hasZeroPivot();
 }
 
 template<typename T>
 void SparseCholesky<T>::solve(int size, const T* b, T* x)
 {
-    if constexpr (is_value_type_32f<T>())
-        cusolverSpScsrcholSolve(handle_, size, b, x, info_, buffer_.data());
+}
 
-    if constexpr (is_value_type_64f<T>())
-        cusolverSpDcsrcholSolve(handle_, size, b, x, info_, buffer_.data());
+template<>
+inline void SparseCholesky<float>::solve(int size, const float* b, float* x)
+{
+    cusolverSpScsrcholSolve(handle_, size, b, x, info_, buffer_.data());
+}
+
+template<>
+inline void SparseCholesky<double>::solve(int size, const double* b, double* x)
+{
+     cusolverSpDcsrcholSolve(handle_, size, b, x, info_, buffer_.data());
 }
 
 template<typename T>

@@ -32,8 +32,6 @@ namespace cuba
 {
 
 // forward declerations
-struct PoseVertex;
-struct LandmarkVertex;
 struct CameraParams;
 class BaseEdgeSet;
 class CudaBlockSolver;
@@ -60,7 +58,21 @@ struct BatchInfo
 	double chi2;             //!< total chi2 (objective function value)
 };
 
-using BatchStatistics = std::vector<BatchInfo>;
+class BatchStatistics
+{
+public:
+
+	BatchInfo& getStartStats() { assert(!stats.empty()); return stats[0]; }
+	BatchInfo& getLastStats() { assert(!stats.empty()); return stats.back(); }
+	BatchInfo& getStatEntry(const int idx) { assert(stats.size() < idx); return stats[idx]; }
+	void addStat(const BatchInfo& batchInfo) { stats.emplace_back(batchInfo); }
+	const std::vector<BatchInfo>& get() { return stats; }
+	void clear() { stats.clear(); }
+
+private:
+
+	std::vector<BatchInfo> stats;
+};
 
 /** @brief Time profile.
 */
@@ -80,7 +92,6 @@ It optimizes camera poses and landmarks (3D points) represented by a graph.
 
 @attention This class doesn't take responsibility for deleting pointers to vertices and edges
 added in the graph.
-
 
 */
 class CudaBundleAdjustment
@@ -102,13 +113,9 @@ public:
 	*/
 	virtual void optimize(int niterations) = 0;
 
-	/** @brief Clears the graph.
-	*/
-	virtual void clear() = 0;
-
 	/** @brief Returns the batch statistics.
 	*/
-	virtual const BatchStatistics& batchStatistics() const = 0;
+	virtual BatchStatistics& batchStatistics() = 0;
 
 	/** @brief Returns the time profile.
 	*/
@@ -123,6 +130,9 @@ public:
 	virtual void setCameraPrams(const CameraParams& camera) = 0;
 
 	virtual size_t nVertices(const int id) = 0;
+
+	virtual void clearEdgeSets() = 0;
+	virtual void clearVertexSets() = 0;
 };
 
 /** @brief Implementation of CudaBundleAdjustment.
@@ -162,13 +172,14 @@ public:
 
 	void optimize(int niterations) override;
 
-	void clear() override;
-
-	const BatchStatistics& batchStatistics() const override;
+	BatchStatistics& batchStatistics() override;
 
 	const TimeProfile& timeProfile() override;
 
 	size_t nVertices(const int id) override;
+
+	void clearEdgeSets() override;
+	void clearVertexSets() override;
 
 	~CudaBundleAdjustmentImpl();
 
@@ -177,7 +188,6 @@ private:
 	static inline double attenuation(double x) { return 1 - std::pow(2 * x - 1, 3); }
 	static inline double clamp(double v, double lo, double hi) { return std::max(lo, std::min(v, hi)); }
 
-	
 	VertexSetVec vertexSets;
 	EdgeSetVec edgeSets;
 

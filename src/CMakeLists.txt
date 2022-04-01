@@ -7,9 +7,9 @@ include_directories(${CUBA_INCLUDE_DIR})
 
 #CUDA_SELECT_NVCC_ARCH_FLAGS(ARCH_FLAGS "Auto")
 set(CUDA_ARCH "${ARCH_FLAGS}" CACHE STRING "Value of the NVCC -arch option." FORCE)
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} ${ARCH_FLAGS} -lineinfo")
-set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-cudart static")
- 
+set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} ${ARCH_FLAGS} -lineinfo --diag_suppress=esa_on_defaulted_function_ignored")
+set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-g -G -lineinfo")
+
 message(STATUS "CUDA_ARCH: \"${CUDA_ARCH}\"")
 
 # Flags for each platform

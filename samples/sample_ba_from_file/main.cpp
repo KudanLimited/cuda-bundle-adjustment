@@ -72,7 +72,9 @@ int main(int argc, char** argv)
 	std::cout << std::endl;
 
 	std::cout << "=== Objective function value : " << std::endl;
-	for (const auto& stat : optimizer->batchStatistics())
+	auto batch = optimizer->batchStatistics();
+	auto stats = batch.get();
+	for (const auto& stat : stats)
 		std::printf("iter: %2d, chi2: %.1f\n", stat.iteration + 1, stat.chi2);
 
 	return 0;
@@ -114,7 +116,7 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 		const auto t = getArray<double, 3>(node["t"]);
 
 		cuba::PoseVertex* poseVertex = new cuba::PoseVertex(id, cuba::maths::Se3D(q, t), fixed);
-		poseVertexSet->addVertex<cuba::PoseVertex>(poseVertex);
+		poseVertexSet->addVertex(poseVertex);
 	}
 	optimizer->addVertexSet(poseVertexSet);
 
@@ -126,7 +128,7 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 		const auto Xw = getArray<double, 3>(node["Xw"]);
 
 		cuba::LandmarkVertex* landmarkVertex = new cuba::LandmarkVertex(id, Xw, fixed);
-		landmarkVertexSet->addVertex<cuba::LandmarkVertex>(landmarkVertex);
+		landmarkVertexSet->addVertex(landmarkVertex);
 	}
 	optimizer->addVertexSet(landmarkVertexSet);
 
@@ -142,12 +144,12 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 		auto poseVertex = poseVertexSet->getVertex(iP);
 		auto landmarkVertex = landmarkVertexSet->getVertex(iL);
 
-		cuba::MonoEdge* monoEdge = new cuba::MonoEdge();
+		std::unique_ptr<cuba::MonoEdge> monoEdge = std::make_unique<cuba::MonoEdge>();
 		monoEdge->setVertex(poseVertex, 0);
 		monoEdge->setVertex(landmarkVertex, 1);
 		monoEdge->setMeasurement(measurement);
 		monoEdge->setInformation(information);
-		monoEdgeSet->addEdge(monoEdge);
+		monoEdgeSet->addEdge(std::move(monoEdge));
 	}
 
 	// read stereo edges
@@ -162,12 +164,12 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 		auto poseVertex = poseVertexSet->getVertex(iP);
 		auto landmarkVertex = landmarkVertexSet->getVertex(iL);
 
-		cuba::StereoEdge* stereoEdge = new cuba::StereoEdge();
+		std::unique_ptr<cuba::StereoEdge> stereoEdge = std::make_unique<cuba::StereoEdge>();
 		stereoEdge->setVertex(poseVertex, 0);
 		stereoEdge->setVertex(landmarkVertex, 1);
 		stereoEdge->setMeasurement(measurement);
 		stereoEdge->setInformation(information);
-		stereoEdgeSet->addEdge(stereoEdge);
+		stereoEdgeSet->addEdge(std::move(stereoEdge));
 	}
 
 	// read camera parameters

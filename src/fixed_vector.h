@@ -22,6 +22,7 @@ limitations under the License.
 #include <cuda_runtime.h>
 
 #include "scalar.h"
+#include "maths.h"
 
 namespace cuba
 {
@@ -33,6 +34,13 @@ struct Vec
 {
 	HOST_DEVICE Vec() {}
 	HOST_DEVICE Vec(const T* values) { for (int i = 0; i < N; i++) data[i] = values[i]; }
+
+	HOST_DEVICE Vec(maths::Vec<T, N>& vec) 
+	{ 
+		const T* values = vec.data();
+		for (int i = 0; i < N; i++) 
+			data[i] = values[i]; 
+	}
 
 	template <typename U>
 	HOST_DEVICE Vec(const U* values) { for (int i = 0; i < N; i++) data[i] = T(values[i]); }
@@ -50,6 +58,15 @@ struct Vec
 	}
 
 	HOST_DEVICE void copyTo(T* rhs) const { for (int i = 0; i < N; i++) rhs[i] = data[i]; }
+
+	HOST_DEVICE void copyTo(maths::Vec<T, N>& rhs) 
+	{ 
+		T* vec = rhs.data();
+		for (int i = 0; i < N; i++) 
+		{
+			vec[i] = data[i]; 
+		}
+	}
 
 	template <typename U>
 	HOST_DEVICE void copyTo(U* rhs) const { for (int i = 0; i < N; i++) rhs[i] = U(data[i]); }
@@ -143,6 +160,21 @@ struct Se3
 		}
 	}
 
+	HOST_DEVICE Se3(const maths::Se3<T>& se3) 
+	{ 
+		const T* rValues = se3.r.coeffs().data();
+		for (int i = 0; i < 4; i++) 
+		{
+			r.data[i] = rValues[i];  
+		}
+		
+		const T* tValues = se3.t.data();
+		for (int i = 0; i < 3; i++) 
+		{
+			t.data[i] = tValues[i]; 
+		}
+	}
+
 	HOST_DEVICE void copyTo(T* r_rhs, T* t_rhs) const 
 	{ 
 		for (int i = 0; i < 4; i++) 
@@ -152,6 +184,20 @@ struct Se3
 		for (int i = 0; i < 3; i++) 
 		{
 			t_rhs[i] = t.data[i]; 
+		}
+	}
+
+	HOST_DEVICE void copyTo(maths::Se3<T>& rhs) const 
+	{ 
+		T* rhs_r = rhs.r.coeffs().data();
+		for (int i = 0; i < 4; i++) 
+		{
+			rhs_r[i] = r.data[i]; 
+		}
+		T* rhs_t = rhs.t.data();
+		for (int i = 0; i < 3; i++) 
+		{
+			rhs_t[i] = t.data[i]; 
 		}
 	}
 

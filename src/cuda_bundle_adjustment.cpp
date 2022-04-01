@@ -34,8 +34,6 @@ limitations under the License.
 namespace cuba
 {
 
-using VertexMapP = std::map<int, PoseVertex*>;
-using VertexMapL = std::map<int, LandmarkVertex*>;
 using time_point = decltype(std::chrono::steady_clock::now());
 
 static inline time_point get_time_point()
@@ -51,19 +49,16 @@ static inline double get_duration(const time_point& from, const time_point& to)
 
 void CudaBlockSolver::initialize(CameraParams* camera, const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets)
 {
-	assert(camera != nullptr);
-
 	const auto t0 = get_time_point();
 
-	for (auto* edgeSet : edgeSets) 
+	for (BaseEdgeSet* edgeSet : edgeSets) 
 	{
 		edgeSet->clear();
 	}
-	for (auto* vertexSet : vertexSets) 
+	for (BaseVertexSet* vertexSet : vertexSets) 
 	{
 		vertexSet->clear();
-		// assuminh here that all vertex sets will at least contain a pose vertex set.
-		// Maybe this won't be the case in all instances?
+
 		if(vertexSet->isMarginilised())
 		{
 			// only perform schur if we have landmark vertices
@@ -71,14 +66,17 @@ void CudaBlockSolver::initialize(CameraParams* camera, const EdgeSetVec& edgeSet
 		}
 	}
 
-	// upload camera parameters to constant memory
-	std::vector<Scalar> cameraParams(5);
-	cameraParams[0] = ScalarCast(camera->fx);
-	cameraParams[1] = ScalarCast(camera->fy);
-	cameraParams[2] = ScalarCast(camera->cx);
-	cameraParams[3] = ScalarCast(camera->cy);
-	cameraParams[4] = ScalarCast(camera->bf);
-	gpu::setCameraParameters(cameraParams.data());
+	// upload camera parameters to constant memory if defined
+	if (camera)
+	{
+		std::vector<Scalar> cameraParams(5);
+		cameraParams[0] = ScalarCast(camera->fx);
+		cameraParams[1] = ScalarCast(camera->fy);
+		cameraParams[2] = ScalarCast(camera->cx);
+		cameraParams[3] = ScalarCast(camera->cy);
+		cameraParams[4] = ScalarCast(camera->bf);
+		gpu::setCameraParameters(cameraParams.data());
+	}
 
 	// create sparse linear solver
 	if (!linearSolver_)
@@ -110,9 +108,9 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 	size_t accumSizeP = 0;
 	std::for_each(vertexSets.begin(), vertexSets.end(), [&accumSizeL, &accumSizeP](BaseVertexSet* set) { 
 		if(set->isMarginilised()) {
-		accumSizeL += set->size(); 
-	} else {
-		accumSizeP += set->size(); 
+			accumSizeL += set->size(); 
+		} else {
+			accumSizeP += set->size(); 
 	}});
 	
 	// calculate the solutions....
@@ -123,28 +121,33 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 
 	std::vector<BaseVertex*> verticesP;
 	std::vector<BaseVertex*> verticesL;
-	verticesL.reserve(accumSizeL);
 	verticesP.reserve(accumSizeP);
+	if(accumSizeL > 0)
+	{
+		verticesL.reserve(accumSizeL);
+	}
 
 	size_t numP = 0;
 	size_t numL = 0;
 
 	int offset = 0;
-	for (auto* vertexSet : vertexSets)
+	for (BaseVertexSet* vertexSet : vertexSets)
 	{
-		assert(vertexSet != nullptr);
 		if (!vertexSet->isMarginilised())
 		{
-			PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSet);
+			PoseVertexSet* poseVertexSet = dynamic_cast<PoseVertexSet*>(vertexSet);
+			assert(poseVertexSet != nullptr);
 			poseVertexSet->mapEstimateData(d_solution_.data() + offset);
 			offset += poseVertexSet->getDeviceEstimateSize() * 7;
+			
 			auto& setData = poseVertexSet->get();			
 			verticesP.insert(verticesP.end(), setData.begin(), setData.end());
 			numP += vertexSet->getActiveSize();
 		}
 		else
 		{
-			LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSet);
+			LandmarkVertexSet* lmVertexSet = dynamic_cast<LandmarkVertexSet*>(vertexSet);
+			assert(lmVertexSet != nullptr);
 			lmVertexSet->mapEstimateData(d_solution_.data() + offset);
 			offset += lmVertexSet->getDeviceEstimateSize() * 3;
 
@@ -159,7 +162,7 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 	int nedges = 0;
 	size_t nVertexBlockPos = 0;
 	int edgeId = 0;
-	for (auto* edgeSet : edgeSets)
+	for (BaseEdgeSet* edgeSet : edgeSets)
 	{
 		edgeSet->init(edgeId, doSchure); 
 		nedges += edgeSet->nedges(); 
@@ -175,7 +178,7 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 		std::vector<HplBlockPos> hplBlockPos;
 		hplBlockPos.reserve(nVertexBlockPos);
 
-		for (auto* edgeSet : edgeSets)
+		for (BaseEdgeSet* edgeSet : edgeSets)
 		{
 			auto& block = edgeSet->getHessianBlockPos();
 			hplBlockPos.insert(hplBlockPos.end(), block.begin(), block.end());
@@ -212,6 +215,7 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 	}
 	else
 	{
+		Hpp_.resize(numP, numP);
 		Hpp_.constructFromVertices(verticesP);
 		Hpp_.convertBSRToCSR();
 	}
@@ -237,7 +241,12 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 	for (int i = 0; i < edgeSets.size(); ++i)
 	{
 		// upload the graph data to the device
-		edgeSets[i]->mapDevice(d_edge2Hpl_.data() + prevEdgeSize);
+		int* edge2HplPtr = nullptr;
+		if (doSchure)
+		{
+			edge2HplPtr = d_edge2Hpl_.data() + prevEdgeSize;
+		}
+		edgeSets[i]->mapDevice(edge2HplPtr);
 		prevEdgeSize += edgeSets[i]->nedges();
 	}
 
@@ -402,7 +411,7 @@ void CudaBlockSolver::update(const VertexSetVec& vertexSets)
 {
 	const auto t0 = get_time_point();
 
-	for (auto* vertexSet : vertexSets)
+	for (BaseVertexSet* vertexSet : vertexSets)
 	{
 		if (!vertexSet->isMarginilised())
 		{
@@ -444,9 +453,20 @@ void CudaBlockSolver::pop()
 
 void CudaBlockSolver::finalize(const VertexSetVec& vertexSets)
 {
-	for (auto* vertexSet : vertexSets)
+	for (BaseVertexSet* vertexSet : vertexSets)
 	{
-		vertexSet->finalise();
+		if (!vertexSet->isMarginilised())
+		{
+			PoseVertexSet* poseVertexSet = dynamic_cast<PoseVertexSet*>(vertexSet);
+			assert(poseVertexSet != nullptr);
+			poseVertexSet->finalise();
+		}
+		else
+		{
+			LandmarkVertexSet* lmVertexSet = dynamic_cast<LandmarkVertexSet*>(vertexSet);
+			assert(lmVertexSet != nullptr);
+			lmVertexSet->finalise();
+		}
 	}
 }
 
@@ -467,7 +487,9 @@ void CudaBlockSolver::getTimeProfile(TimeProfile& prof) const
 
 	prof.clear();
 	for (int i = 0; i < PROF_ITEM_NUM; i++)
+	{
 		prof[profileItemString[i]] = profItems_[i];
+	}
 }
 
 // CudaBundleAdjustmentImpl functions
@@ -557,7 +579,7 @@ void CudaBundleAdjustmentImpl::optimize(int niterations)
 			}
 		}
 
-		stats_.push_back({ iteration, F });
+		stats_.addStat({ iteration, F });
 
 		if (q == maxq || rho <= 0 || !std::isfinite(lambda))
 		{
@@ -570,32 +592,42 @@ void CudaBundleAdjustmentImpl::optimize(int niterations)
 	solver_->getTimeProfile(timeProfile_);
 }
 
-void CudaBundleAdjustmentImpl::clear() 
+void CudaBundleAdjustmentImpl::clearEdgeSets() 
 {	
 	for (auto* edgeSet : edgeSets)
 	{
-		for (auto* edge : edgeSet->get())
-		{
-			delete edge;
-			edge = nullptr;
-		}
-		delete edgeSet;
-		edgeSet = nullptr;
+		edgeSet->clearEdges();
 	}
-	for (auto* vertexSet : vertexSets)
-	{
-		for (auto* vertex : vertexSet->get())
-		{
-			delete vertex;
-			vertex = nullptr;
-		}
-		delete vertexSet;
-		vertexSet = nullptr;
-	}
-
+	edgeSets.clear();
 }
 
-const BatchStatistics& CudaBundleAdjustmentImpl::batchStatistics() const 
+void CudaBundleAdjustmentImpl::clearVertexSets()
+{
+	for (BaseVertexSet* vertexSet : vertexSets)
+	{
+		if(!vertexSet->isMarginilised())
+		{
+			PoseVertexSet* poseVertexSet = dynamic_cast<PoseVertexSet*>(vertexSet);
+			for (auto* vertex : poseVertexSet->get())
+			{
+				delete vertex;
+				vertex = nullptr;
+			}
+		}
+		else
+		{
+			LandmarkVertexSet* lmVertexSet = dynamic_cast<LandmarkVertexSet*>(vertexSet);
+			for (auto* vertex : lmVertexSet->get())
+			{
+				delete vertex;
+				vertex = nullptr;
+			}
+		}
+	}
+	vertexSets.clear();
+}
+
+BatchStatistics& CudaBundleAdjustmentImpl::batchStatistics() 
 {
 	return stats_;
 }
@@ -606,12 +638,13 @@ const TimeProfile& CudaBundleAdjustmentImpl::timeProfile()
 }
 
 CudaBundleAdjustmentImpl::CudaBundleAdjustmentImpl() :
-	solver_(std::make_unique<CudaBlockSolver>()), camera_(std::make_unique<CameraParams>())
+	solver_(std::make_unique<CudaBlockSolver>())
 {}
 
 CudaBundleAdjustmentImpl::~CudaBundleAdjustmentImpl()
 {
-	clear();
+	clearVertexSets();
+	clearEdgeSets();
 }
 
 CudaBundleAdjustment::Ptr CudaBundleAdjustment::create()

@@ -18,8 +18,6 @@ namespace cuba
 // forward declerations
 class BaseEdge;
 class BaseEdgeSet;
-struct PoseVertex;
-struct LandmarkVertex;
 
 /** @brief Implementation of Block solver.
 */
@@ -40,8 +38,6 @@ public:
 		PROF_ITEM_SOLVE_HPP,
 		PROF_ITEM_NUM
 	};
-
-	void clear();
 
 	void initialize(CameraParams* camera, const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
 

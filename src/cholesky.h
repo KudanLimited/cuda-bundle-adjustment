@@ -1,6 +1,8 @@
 #ifndef _CHOLESKY_H
 #define _CHOLESKY_H
 
+#include <type_traits>
+
 #include "device_buffer.h"
 #include "cuda_solver.h"
 #include "sparse_square_matrix_csr.h"

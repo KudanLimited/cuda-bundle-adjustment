@@ -22,6 +22,8 @@ class LineEdgeSet : public EdgeSet<1, PointToLineMatch<double>, PointToLineMatch
 {
 public:
 
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
 	LineEdgeSet() {}
 	~LineEdgeSet() {}
 
@@ -47,6 +49,8 @@ class PlaneEdgeSet : public EdgeSet<1, PointToPlaneMatch<double>, PointToPlaneMa
 {
 public:
 
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
 	PlaneEdgeSet() {}
 	~PlaneEdgeSet() {}
 
@@ -71,6 +75,7 @@ private:
 class PlaneEdge : public Edge<1, cuba::PointToPlaneMatch<double>, cuba::PoseVertex>
 {
 public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     void* getMeasurement() override { return static_cast<void*>(&measurement); }
 };
@@ -79,7 +84,8 @@ public:
 class LineEdge : public Edge<1, cuba::PointToLineMatch<double>, cuba::PoseVertex>
 {
 public:
-
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    
     void* getMeasurement() override { return static_cast<void*>(&measurement); }
 };
 
