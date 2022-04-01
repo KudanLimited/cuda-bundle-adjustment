@@ -53,7 +53,7 @@ void HplSparseBlockMatrix::constructFromBlockPos(std::vector<HplBlockPos>& block
 		browInd[nnzPerCol[pos.col]++] = pos.row;
 }
 
-void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex*>& verticesL)
+void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex*>& vertices)
 {
 	struct BlockPos { int row, col; };
 
@@ -67,17 +67,17 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
 	blockpos.reserve(brows_ * bcols_);
 
 	int countmul = 0;
-	for (auto vL : verticesL)
+	for (auto v : vertices)
 	{
-		if (vL->isFixed())
+		if (v->isFixed())
 		{
 			continue;
 		}
 
 		indices.clear();
-		for (const auto e : vL->getEdges())
+		for (const auto e : v->getEdges())
 		{
-			const auto vP = e->getVertex(0);	// Note: assuming pose vertices are in idx 0 of the array - need to use a better method!
+			const auto vP = e->getVertex(0);	// Note: assuming pose vertices are in idx 0 of the array - need to use a better method! check if not marginilised
 			if (!vP->isFixed())
 			{
 				indices.push_back(vP->getIndex());
@@ -108,7 +108,6 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
 
 	// set nonzero blocks
 	nblocks_ = static_cast<int>(blockpos.size());
-	printf("nblock=%i\n", nblocks_);
 
 	std::sort(std::begin(blockpos), std::end(blockpos), [](const BlockPos& lhs, const BlockPos& rhs)
 	{

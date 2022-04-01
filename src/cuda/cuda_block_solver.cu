@@ -1797,7 +1797,6 @@ __global__ void constructQuadraticFormKernel_Plane(int nedges,
 
 	const Scalar omega = omegas[iE];
 	const int iP = edge2PL[iE][0];
-	const int iPL = edge2Hpl[iE];
 	const int flag = flags[iE];
 	const PointToPlaneMatch<double> measurement = measurements[iE];
 
@@ -1832,7 +1831,6 @@ __global__ void constructQuadraticFormKernel_Line(int nedges,
 
 	const Scalar omega = omegas[iE];
 	const int iP = edge2PL[iE][0];
-	const int iPL = edge2Hpl[iE];
 	const int flag = flags[iE];
 	const PointToLineMatch<double> measurement = measurements[iE];
 

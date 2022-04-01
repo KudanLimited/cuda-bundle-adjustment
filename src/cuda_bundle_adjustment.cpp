@@ -62,6 +62,13 @@ void CudaBlockSolver::initialize(CameraParams* camera, const EdgeSetVec& edgeSet
 	for (auto* vertexSet : vertexSets) 
 	{
 		vertexSet->clear();
+		// assuminh here that all vertex sets will at least contain a pose vertex set.
+		// Maybe this won't be the case in all instances?
+		if(vertexSet->isMarginilised())
+		{
+			// only perform schur if we have landmark vertices
+			this->doSchure = true;
+		}
 	}
 
 	// upload camera parameters to constant memory
@@ -76,7 +83,14 @@ void CudaBlockSolver::initialize(CameraParams* camera, const EdgeSetVec& edgeSet
 	// create sparse linear solver
 	if (!linearSolver_)
 	{
-		linearSolver_ = SparseLinearSolver::create();
+		if(doSchure)
+		{
+			linearSolver_ = std::make_unique<HscSparseLinearSolver>();
+		}
+		else
+		{
+			linearSolver_ = std::make_unique<HppSparseLinearSolver>();
+		}
 	}
 
 	profItems_.assign(PROF_ITEM_NUM, 0);
@@ -140,69 +154,84 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 		}
 	}
 
+
 	// setup the edge set estimation data
 	int nedges = 0;
 	size_t nVertexBlockPos = 0;
 	int edgeId = 0;
 	for (auto* edgeSet : edgeSets)
 	{
-		edgeSet->init(edgeId); 
-		nVertexBlockPos += edgeSet->getHessianBlockPosSize(); 
+		edgeSet->init(edgeId, doSchure); 
 		nedges += edgeSet->nedges(); 
+		if (doSchure)
+		{
+			nVertexBlockPos += edgeSet->getHessianBlockPosSize(); 
+		}
 	}
 
-	// build Hpl block matrix structure	
-	std::vector<HplBlockPos> hplBlockPos;
-	hplBlockPos.reserve(nVertexBlockPos);
-
-	for (auto* edgeSet : edgeSets)
+	if (doSchure)
 	{
-		auto& block = edgeSet->getHessianBlockPos();
-		hplBlockPos.insert(hplBlockPos.end(), block.begin(), block.end());
+		// build Hpl block matrix structure	
+		std::vector<HplBlockPos> hplBlockPos;
+		hplBlockPos.reserve(nVertexBlockPos);
+
+		for (auto* edgeSet : edgeSets)
+		{
+			auto& block = edgeSet->getHessianBlockPos();
+			hplBlockPos.insert(hplBlockPos.end(), block.begin(), block.end());
+		}
+		
+		d_HplBlockPos_.assign(nVertexBlockPos, hplBlockPos.data());
+		d_Hpl_.resize(numP, numL);
+		d_Hpl_.resizeNonZeros(d_HplBlockPos_.size());
+		d_nnzPerCol_.resize(accumSizeL + 1);
+		d_edge2Hpl_.resize(nedges);
+
+		gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_);
+
+		// build Hschur block matrix structure
+		Hsc_.resize(numP, numP);
+		Hsc_.constructFromVertices(verticesL);
+		Hsc_.convertBSRToCSR();
+
+		d_Hsc_.resize(numP, numP);
+		d_Hsc_.resizeNonZeros(Hsc_.nblocks());
+		d_Hsc_.upload(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
+
+		d_HscCSR_.resize(Hsc_.nnzSymm());
+		d_BSR2CSR_.assign(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
+
+		d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
+		gpu::findHschureMulBlockIndices(d_Hpl_, d_Hsc_, d_HscMulBlockIds_);
+
+		d_bsc_.resize(numP);
+		d_Hpl_invHll_.resize(nVertexBlockPos);
+		d_Hll_.resize(numL);
+		d_HllBackup_.resize(numL);
+		d_invHll_.resize(numL);
 	}
-	
-	d_HplBlockPos_.assign(nVertexBlockPos, hplBlockPos.data());
-	d_Hpl_.resize(numP, numL);
-	d_Hpl_.resizeNonZeros(d_HplBlockPos_.size());
-	d_nnzPerCol_.resize(numL + 1);
-	d_edge2Hpl_.resize(nedges);
-
-	gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_);
-
-	// build Hschur block matrix structure
-	Hsc_.resize(numP, numP);
-	Hsc_.constructFromVertices(verticesL);
-	Hsc_.convertBSRToCSR();
-
-	d_Hsc_.resize(numP, numP);
-	d_Hsc_.resizeNonZeros(Hsc_.nblocks());
-	d_Hsc_.upload(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
-
-	d_HscCSR_.resize(Hsc_.nnzSymm());
-	d_BSR2CSR_.assign(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
-
-	d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
-	gpu::findHschureMulBlockIndices(d_Hpl_, d_Hsc_, d_HscMulBlockIds_);
+	else
+	{
+		Hpp_.constructFromVertices(verticesP);
+		Hpp_.convertBSRToCSR();
+	}
 
 	// allocate device buffers
-	d_x_.resize(numP * PDIM + numL * LDIM);
-	d_b_.resize(numP * PDIM + numL * LDIM);
+	d_x_.resize(numP * PDIM + accumSizeL * LDIM);
+	d_b_.resize(numP * PDIM + accumSizeL * LDIM);
 
 	d_xp_.map(numP, d_x_.data());
 	d_bp_.map(numP, d_b_.data());
-	d_xl_.map(numL, d_x_.data() + numP * PDIM);
-	d_bl_.map(numL, d_b_.data() + numP * PDIM);
+	
+	if(doSchure)
+	{
+		d_xl_.map(numL, d_x_.data() + numP * PDIM);
+		d_bl_.map(numL, d_b_.data() + numP * PDIM);
+	}
 
 	d_Hpp_.resize(numP);
-	d_Hll_.resize(numL);
-
 	d_HppBackup_.resize(numP);
-	d_HllBackup_.resize(numL);
-
-	d_bsc_.resize(numP);
-	d_invHll_.resize(numL);
-	d_Hpl_invHll_.resize(nVertexBlockPos);
-
+	
 	// upload edge information to device memory
 	int prevEdgeSize = 0;
 	for (int i = 0; i < edgeSets.size(); ++i)
@@ -216,13 +245,26 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 
 	const auto t1 = get_time_point();
 
-	// analyze pattern of Hschur matrix (symbolic decomposition)
-	linearSolver_->initialize(Hsc_);
+	if (doSchure)
+	{
+		HscSparseLinearSolver* sparseLinearSolver = static_cast<HscSparseLinearSolver*>(linearSolver_.get());
 
-	const auto t2 = get_time_point();
+		// analyze pattern of Hschur matrix (symbolic decomposition)
+		sparseLinearSolver->initialize(Hsc_);
+
+		const auto t2 = get_time_point();
+		profItems_[PROF_ITEM_DECOMP_SYMBOLIC] += get_duration(t1, t2);
+	}
+	else
+	{
+		HppSparseLinearSolver* sparseLinearSolver = static_cast<HppSparseLinearSolver*>(linearSolver_.get());
+		sparseLinearSolver->initialize(Hpp_);
+
+		const auto t2 = get_time_point();
+		profItems_[PROF_ITEM_SOLVE_HPP] += get_duration(t1, t2);
+	}
 
 	profItems_[PROF_ITEM_BUILD_STRUCTURE] += get_duration(t0, t1);
-	profItems_[PROF_ITEM_DECOMP_SYMBOLIC] += get_duration(t1, t2);
 }
 
 double CudaBlockSolver::computeErrors(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets)
@@ -256,9 +298,13 @@ void CudaBlockSolver::buildSystem(const EdgeSetVec& edgeSets, const VertexSetVec
 	////////////////////////////////////////////////////////////////////////////////////
 
 	d_Hpp_.fillZero();
-	d_Hll_.fillZero();
 	d_bp_.fillZero();
-	d_bl_.fillZero();
+	
+	if(doSchure)
+	{
+		d_Hll_.fillZero();
+		d_bl_.fillZero();
+	}
 
 	for (auto* edgeSet : edgeSets)
 	{
@@ -273,24 +319,47 @@ double CudaBlockSolver::maxDiagonal()
 {
 	DeviceBuffer<Scalar> d_buffer(16);
 	const Scalar maxP = gpu::maxDiagonal(d_Hpp_, d_buffer);
-	const Scalar maxL = gpu::maxDiagonal(d_Hll_, d_buffer);
-	return std::max(maxP, maxL);
+	if(doSchure)
+	{
+		const Scalar maxL = gpu::maxDiagonal(d_Hll_, d_buffer);
+		return std::max(maxP, maxL);
+	}
+	return maxP;
 }
 
 void CudaBlockSolver::setLambda(double lambda)
 {
 	gpu::addLambda(d_Hpp_, ScalarCast(lambda), d_HppBackup_);
-	gpu::addLambda(d_Hll_, ScalarCast(lambda), d_HllBackup_);
+	if(doSchure)
+	{
+		gpu::addLambda(d_Hll_, ScalarCast(lambda), d_HllBackup_);
+	}
 }
 
 void CudaBlockSolver::restoreDiagonal()
 {
 	gpu::restoreDiagonal(d_Hpp_, d_HppBackup_);
-	gpu::restoreDiagonal(d_Hll_, d_HllBackup_);
+	if(doSchure)
+	{
+		gpu::restoreDiagonal(d_Hll_, d_HllBackup_);
+	}
 }
 
 bool CudaBlockSolver::solve()
 {
+	if (!doSchure)
+	{
+		const auto t1 = get_time_point();
+		const bool success = linearSolver_->solve(d_Hpp_.values(), d_bp_.values(), d_xp_.values());
+		const auto t2 = get_time_point();
+		if (!success)
+		{
+			return false;
+		}
+		profItems_[PROF_ITEM_SOLVE_HPP] += get_duration(t1, t2);
+		return true;
+	}
+
 	const auto t0 = get_time_point();
 
 	////////////////////////////////////////////////////////////////////////////////////
@@ -392,7 +461,8 @@ void CudaBlockSolver::getTimeProfile(TimeProfile& prof) const
 		"4: Schur Complement",
 		"5: Symbolic Decomposition",
 		"6: Numerical Decomposition",
-		"7: Update Solution"
+		"7: Hpp linear solver (only for non-landmark optimistaion runs)",
+		"8: Update Solution"
 	};
 
 	prof.clear();

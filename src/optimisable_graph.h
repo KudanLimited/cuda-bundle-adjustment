@@ -481,7 +481,7 @@ public:
 
 	virtual size_t getHessianBlockPosSize() const = 0;
 
-	virtual void init(int& edgeId) = 0;
+	virtual void init(int& edgeId, bool doSchur) = 0;
 
 	virtual void mapDevice(int* edge2HData) = 0;
 
@@ -565,7 +565,7 @@ public:
 	using ErrorVec = typename std::conditional<(DIM == 1), GpuVec1d, GpuVec<VecNd<DIM>>>::type;
 	using MeasurementVec = GpuVec<GpuMeasurementType>;
 
-    void init(int& edgeId) override
+    void init(int& edgeId, bool doSchur) override
     {
 		size_t edgeSize = edges.size();
 
@@ -598,11 +598,7 @@ public:
 
 			if (!edge->allVerticesFixed())
 			{
-				if (VertexSize == 1)
-				{
-					hessianBlockPos.push_back({ vec[0], 0, edgeId });
-				}
-				else
+				if (doSchur)
 				{
 					hessianBlockPos.push_back({ vec[0], vec[1], edgeId });
 				}

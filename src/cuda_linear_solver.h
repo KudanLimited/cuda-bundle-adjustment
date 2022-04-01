@@ -18,9 +18,14 @@ limitations under the License.
 #define __CUDA_LINEAR_SOLVER_H__
 
 #include <memory>
+#include <iostream>
+
+#include <Eigen/Core>
+#include <Eigen/Sparse>
 
 #include "scalar.h"
 #include "sparse_block_matrix.h"
+#include "cholesky.h"
 
 namespace cuba
 {
@@ -29,13 +34,45 @@ class SparseLinearSolver
 {
 public:
 
-	using Ptr = std::unique_ptr<SparseLinearSolver>;
-	static Ptr create();
-
-	virtual void initialize(const HschurSparseBlockMatrix& Hsc) = 0;
 	virtual bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) = 0;
 
-	virtual ~SparseLinearSolver();
+	virtual ~SparseLinearSolver() {}
+
+};
+
+class HscSparseLinearSolver : public SparseLinearSolver
+{
+public:
+
+	using SparseMatrixCSR = Eigen::SparseMatrix<Scalar, Eigen::RowMajor>;
+	using PermutationMatrix = Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic>;
+	using Cholesky = CuSparseCholeskySolver<Scalar>;
+
+	void initialize(HschurSparseBlockMatrix& Hsc);
+
+	bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) override;
+
+private:
+
+	std::vector<int> P_;
+	Cholesky cholesky_;
+};
+
+
+class HppSparseLinearSolver : public SparseLinearSolver
+{
+public:
+
+	using Cholesky = CuSparseCholeskySolver<Scalar>;
+
+	void initialize(HppSparseBlockMatrix& Hpp);
+
+	bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) override;
+
+private:
+
+	std::vector<int> P_;
+	Cholesky cholesky_;
 };
 
 } // namespace cuba

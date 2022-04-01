@@ -37,6 +37,7 @@ public:
 		PROF_ITEM_DECOMP_SYMBOLIC,
 		PROF_ITEM_DECOMP_NUMERICAL,
 		PROF_ITEM_UPDATE,
+		PROF_ITEM_SOLVE_HPP,
 		PROF_ITEM_NUM
 	};
 
@@ -79,13 +80,16 @@ public:
 
 private:
 
+	bool doSchure;
+
 	// graph components
 	std::vector<BaseEdge*> baseEdges_;
 
 	// block matrices
 	HplSparseBlockMatrix Hpl_;
+	HppSparseBlockMatrix Hpp_;
 	HschurSparseBlockMatrix Hsc_;
-	SparseLinearSolver::Ptr linearSolver_;
+	std::unique_ptr<SparseLinearSolver> linearSolver_;
 	std::vector<HplBlockPos> HplBlockPos_;
 
 	////////////////////////////////////////////////////////////////////////////////////

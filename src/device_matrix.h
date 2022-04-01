@@ -154,6 +154,9 @@ public:
 	int size() const { return size_; }
 	int elemSize() const { return size_ * BLOCK_AREA; }
 
+	int rows() const { return BLOCK_ROWS; }
+	int cols() const { return BLOCK_COLS; }
+
 	operator BlockPtrT() const { return BlockPtrT((T*)values_.data()); }
 
 private:
