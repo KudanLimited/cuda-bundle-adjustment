@@ -37,23 +37,29 @@ void HplSparseBlockMatrix::constructFromBlockPos(std::vector<HplBlockPos>& block
 	});
 
 	for (const auto& pos : blockpos)
+	{
 		nnzPerCol[pos.col]++;
+	}
 
 	// set colPtr
 	bcolPtr.resize(bcols_ + 1);
 	bcolPtr[0] = 0;
 	for (int c = 0; c < bcols_; c++)
+	{
 		bcolPtr[c + 1] = bcolPtr[c] + nnzPerCol[c];
+	}
 	nblocks_ = bcolPtr[bcols_];
 
 	// set rowInd
 	nnzPerCol = bcolPtr;
 	browInd.resize(nblocks_);
 	for (const auto& pos : blockpos)
+	{
 		browInd[nnzPerCol[pos.col]++] = pos.row;
+	}
 }
 
-void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex*>& verticesL)
+void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex*>& vertices)
 {
 	struct BlockPos { int row, col; };
 
@@ -67,17 +73,17 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
 	blockpos.reserve(brows_ * bcols_);
 
 	int countmul = 0;
-	for (auto vL : verticesL)
+	for (auto v : vertices)
 	{
-		if (vL->isFixed())
+		if (v->isFixed())
 		{
 			continue;
 		}
 
 		indices.clear();
-		for (const auto e : vL->getEdges())
+		for (const auto e : v->getEdges())
 		{
-			const auto vP = e->getVertex(0);	// Note: assuming pose vertices are in idx 0 of the array - need to use a better method!
+			const BaseVertex* vP = e->getVertex(0);	// Note: assuming pose vertices are in idx 0 of the array - need to use a better method! check if not marginilised
 			if (!vP->isFixed())
 			{
 				indices.push_back(vP->getIndex());
@@ -98,7 +104,6 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
 					blockpos.push_back({ rowId, colId });
 					ptrMap[colId] = 1;
 				}
-
 				countmul++;
 			}
 		}
@@ -108,7 +113,6 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
 
 	// set nonzero blocks
 	nblocks_ = static_cast<int>(blockpos.size());
-	printf("nblock=%i\n", nblocks_);
 
 	std::sort(std::begin(blockpos), std::end(blockpos), [](const BlockPos& lhs, const BlockPos& rhs)
 	{
@@ -119,12 +123,16 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
 	nnzPerRow_.resize(brows_);
 	nnzPerRow_.setZero();
 	for (int i = 0; i < nblocks_; i++)
+	{
 		nnzPerRow_[blockpos[i].row]++;
+	}
 
 	browPtr_.resize(brows_ + 1);
 	browPtr_[0] = 0;
 	for (int r = 0; r < brows_; r++)
+	{
 		browPtr_[r + 1] = browPtr_[r] + nnzPerRow_[r];
+	}
 
 	// set colInd
 	nnzPerRow_ = browPtr_;
@@ -164,24 +172,34 @@ void HschurSparseBlockMatrix::convertBSRToCSR()
 			if (blockRowId == blockColId)
 			{
 				for (int dr = 0; dr < PDIM; dr++)
+				{
 					nnzPerRow_[dstRowId0 + dr] += PDIM;
+				}
 			}
 			else
 			{
 				for (int dr = 0; dr < PDIM; dr++)
+				{
 					nnzPerRow_[dstRowId0 + dr] += PDIM;
+				}
 				for (int dc = 0; dc < PDIM; dc++)
+				{
 					nnzPerRow_[dstColId0 + dc] += PDIM;
+				}
 			}
 		}
 	}
 
 	rowPtr_[0] = 0;
 	for (int r = 0; r < drows; r++)
+	{
 		rowPtr_[r + 1] = rowPtr_[r] + nnzPerRow_[r];
+	}
 
 	for (int r = 0; r < drows; r++)
+	{
 		nnzPerRow_[r] = rowPtr_[r];
+	}
 
 	for (int blockRowId = 0; blockRowId < brows_; blockRowId++)
 	{

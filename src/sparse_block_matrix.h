@@ -78,7 +78,7 @@ public:
 	void constructFromBlockPos(std::vector<HplBlockPos>& blockpos);
 };
 
-class HschurSparseBlockMatrix : public SparseBlockMatrix<PDIM, PDIM, ROW_MAJOR>
+class PoseSparseBlockMatrix : public SparseBlockMatrix<PDIM, PDIM, ROW_MAJOR>
 {
 public:
 
@@ -98,6 +98,9 @@ private:
 	int nmultiplies_;
 	Eigen::VectorXi rowPtr_, colInd_, nnzPerRow_, BSR2CSR_;
 };
+
+using HschurSparseBlockMatrix = PoseSparseBlockMatrix;
+using HppSparseBlockMatrix = PoseSparseBlockMatrix;
 
 } // namespace cuba
 

@@ -1,17 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(cuda_bundle_adjustment LANGUAGES CXX)
+project(cuda_bundle_adjustment LANGUAGES CXX CUDA)
 
 set(CUBA_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 include_directories(${CUBA_INCLUDE_DIR})
 
-# CUDA
-find_package(CUDA REQUIRED)
-include_directories(${CUDA_INCLUDE_DIRS})
-
-CUDA_SELECT_NVCC_ARCH_FLAGS(ARCH_FLAGS "Auto")
+#CUDA_SELECT_NVCC_ARCH_FLAGS(ARCH_FLAGS "Auto")
 set(CUDA_ARCH "${ARCH_FLAGS}" CACHE STRING "Value of the NVCC -arch option." FORCE)
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} ${ARCH_FLAGS} -lineinfo")
+set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} ${ARCH_FLAGS} -lineinfo --diag_suppress=esa_on_defaulted_function_ignored")
+set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-g -G -lineinfo")
 
 message(STATUS "CUDA_ARCH: \"${CUDA_ARCH}\"")
 
@@ -19,6 +16,9 @@ message(STATUS "CUDA_ARCH: \"${CUDA_ARCH}\"")
 if (CMAKE_COMPILER_IS_GNUCXX)
 	set(CMAKE_CXX_FLAGS "-O3 -Wall")
 endif()
+
+find_package(CUDA REQUIRED)
+include_directories(${CUDA_INCLUDE_DIRS})
 
 if (WIN32)
 	set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -dc -Xcompiler \"/wd 4819\" -Xcompiler \"/wd 4244\"")
@@ -35,11 +35,14 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
 endif()
 
 file(GLOB_RECURSE srcs ./*.cpp ./*.cu ./*.h ${CUBA_INCLUDE_DIR}/*.h)
-cuda_add_library(cuda_bundle_adjustment ${srcs})
+add_library(cuda_bundle_adjustment STATIC ${srcs})
 
 target_compile_features(cuda_bundle_adjustment PUBLIC cxx_std_11)
-target_link_libraries(cuda_bundle_adjustment ${CUDA_cusparse_LIBRARY} ${CUDA_cusolver_LIBRARY} Eigen3::Eigen3)
+target_link_libraries(cuda_bundle_adjustment PUBLIC ${CUDA_cusparse_LIBRARY} ${CUDA_cusolver_LIBRARY} Eigen3::Eigen3)
 target_include_directories(cuda_bundle_adjustment PUBLIC "${CMAKE_SOURCE_DIR}/src")
+#set_target_properties(cuda_bundle_adjustment PROPERTIES CUDA_SEPARABLE_COMPILATION ON) 
+#set_target_properties(cuda_bundle_adjustment PROPERTIES POSITION_INDEPENDENT_CODE ON)
+#set_target_properties(cuda_bundle_adjustment PROPERTIES CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 
 install(
 	TARGETS cuda_bundle_adjustment

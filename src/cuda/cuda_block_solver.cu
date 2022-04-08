@@ -142,6 +142,32 @@ __device__ inline Matx<T, ROWS, COLS> operator*(const T& f, const Matx<T, ROWS, 
 	return result;
 }
 
+template <typename T, int ROWS, int COLS, int INNER>
+__device__ inline Matx<T, ROWS, COLS> operator*(
+    const Matx<T, ROWS, INNER>& m1,
+    const Matx<T, INNER, COLS>& m2)
+{
+    Matx<T, ROWS, COLS> result;
+    T* resultPtr = result.data;
+    const T* m1RowPtr = m1.data;
+    for (int rowIndex = 0; rowIndex < ROWS; ++rowIndex)
+    {
+        for (int colIndex = 0; colIndex < COLS; ++colIndex)
+        {
+            const T* m1Ptr = m1RowPtr;
+            const T* m2Ptr = m2.data + colIndex;
+            for (int innerIndex = 0; innerIndex < INNER; ++innerIndex)
+            {
+                *resultPtr += *m1Ptr++ * *m2Ptr;
+                m2Ptr += COLS;
+            }
+            ++resultPtr;
+        }
+        m1RowPtr += INNER;
+    }
+    return result;
+}
+
 template <typename T, int ROWS, int COLS>
 __device__ inline Matx<T, ROWS, COLS> operator+(const Matx<T, ROWS, COLS>& m, const T& f) 
 { 
@@ -211,8 +237,6 @@ __device__ inline Scalar dot_<1>(const Scalar* a, const Scalar* b) { return a[0]
 template <int N, int S1, int S2>
 __device__ inline Scalar dot_stride_(const Scalar* a, const Scalar* b)
 {
-	static_assert(S1 == PDIM || S1 == LDIM, "S1 must be PDIM or LDIM");
-	static_assert(S2 == 1 || S2 == PDIM, "S2 must be 1 or PDIM");
 	return dot_stride_<N - 1, S1, S2>(a, b) + a[S1 * (N - 1)] * b[S2 * (N - 1)];
 }
 
@@ -1601,8 +1625,7 @@ __device__ inline Matx<Scalar, 1, 6> computeJacobians_Plane(const Se3D& est, con
     Jse3exp.setBlock<3, 3, 3, 3>(0, 0, Yx);
 
     // Multiply them all together and we're done (maybe!)
-	Matx<Scalar, 1 ,6> J;
-	MatMulMat<3, 1, 6>(Jdot.data, Jse3exp.data, J.data);
+	Matx<Scalar, 1 ,6> J = Jdot * Jse3exp;
 	return J;
 
 }
@@ -1657,7 +1680,6 @@ __device__ inline Matx<Scalar, 1, 6> computeJacobians_Line(const Se3D& est, cons
 ////////////////////////////////////////////////////////////////////////////////////
 // ICP custom edge - Kernel functions
 ////////////////////////////////////////////////////////////////////////////////////
-template <int MDIM>
 __global__ void computeActiveErrorsKernel_Line(int nedges,
 	const Se3D* poseEstimate, const PointToLineMatch<double>* measurements,
 	const Scalar* omegas, const Vec2i* edge2PL, Scalar* errors, Vec3d* Xcs, Scalar* chi)
@@ -1698,7 +1720,6 @@ __global__ void computeActiveErrorsKernel_Line(int nedges,
 		atomicAdd(chi, cache[0]);
 }
 
-template <int MDIM>
 __global__ void computeActiveErrorsKernel_Plane(int nedges,
 	const Se3D* poseEstimate, const PointToPlaneMatch<double>* measurements,
 	const Scalar* omegas, const Vec2i* edge2PL, Scalar* errors, Vec3d* Xcs, Scalar* chi)
@@ -1797,7 +1818,6 @@ __global__ void constructQuadraticFormKernel_Plane(int nedges,
 
 	const Scalar omega = omegas[iE];
 	const int iP = edge2PL[iE][0];
-	const int iPL = edge2Hpl[iE];
 	const int flag = flags[iE];
 	const PointToPlaneMatch<double> measurement = measurements[iE];
 
@@ -1812,7 +1832,6 @@ __global__ void constructQuadraticFormKernel_Plane(int nedges,
 	{
 		// Hpp += = JPT*Ω*JP
 		MatTMulMat<PDIM, MDIM, PDIM, ACCUM_ATOMIC>(JP.data, JP.data, Hpp.at(iP), omega);
-
 		// bp += = JPT*Ω*r
 		MatTMulVec<PDIM, MDIM, ACCUM_ATOMIC>(JP.data, error.data, bp.at(iP), omega);
 	}
@@ -1832,7 +1851,6 @@ __global__ void constructQuadraticFormKernel_Line(int nedges,
 
 	const Scalar omega = omegas[iE];
 	const int iP = edge2PL[iE][0];
-	const int iPL = edge2Hpl[iE];
 	const int flag = flags[iE];
 	const PointToLineMatch<double> measurement = measurements[iE];
 
@@ -1868,7 +1886,7 @@ Scalar computeActiveErrors_Line(const GpuVecSe3d& poseEstimate,
 		return 0;
 
 	CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-	computeActiveErrorsKernel_Line<1><<<grid, block>>>(nedges, poseEstimate, measurements, omegas,
+	computeActiveErrorsKernel_Line<<<grid, block>>>(nedges, poseEstimate, measurements, omegas,
 		edge2PL, errors, Xcs, chi);
 	CUDA_CHECK(cudaGetLastError());
 
@@ -1890,7 +1908,7 @@ Scalar computeActiveErrors_Plane(const GpuVecSe3d& poseEstimate,
 		return 0;
 
 	CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-	computeActiveErrorsKernel_Plane<1><<<grid, block>>>(nedges, poseEstimate, measurements, omegas,
+	computeActiveErrorsKernel_Plane<<<grid, block>>>(nedges, poseEstimate, measurements, omegas,
 		edge2PL, errors, Xcs, chi);
 	CUDA_CHECK(cudaGetLastError());
 

@@ -35,6 +35,8 @@ class StereoEdgeSet : public EdgeSet<3, maths::Vec3d, Vec3d, PoseVertex, Landmar
 {
 public:
 
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
 	StereoEdgeSet() {}
 	~StereoEdgeSet() {}
 
@@ -86,6 +88,8 @@ class MonoEdgeSet : public EdgeSet<2, maths::Vec2d, Vec2d, PoseVertex, LandmarkV
 {
 public:
 
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
 	MonoEdgeSet() {}
 	~MonoEdgeSet() {}
 	
@@ -132,6 +136,25 @@ private:
 
 };
 
+/** @brief Edge with 2-dimensional measurement (monocular observation).
+*/
+class MonoEdge : public Edge<2, maths::Vec2d, PoseVertex, LandmarkVertex>
+{
+public:
+ 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+	void* getMeasurement() override { return static_cast<void*>(measurement.data()); }
+};
+
+/** @brief Edge with 3-dimensional measurement (stereo observation).
+*/
+class StereoEdge : public Edge<3, maths::Vec3d, PoseVertex, LandmarkVertex>
+{
+public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+	void* getMeasurement() override { return static_cast<void*>(measurement.data()); }
+};
 
 } // namespace cuba
 
