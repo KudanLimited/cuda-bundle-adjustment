@@ -57,6 +57,8 @@ public:
 
 	int size() const { return size_; }
 	int nnz() const { return nnz_; }
+	int cols() const { return size_; }
+	int rows() const { return size_; }
 
 	cusparseMatDescr_t desc() const { return desc_; }
 
@@ -66,7 +68,7 @@ private:
 	DeviceBuffer<int> rowPtr_;
 	DeviceBuffer<int> colInd_;
 	int size_, nnz_;
-	CusparseMatDescriptor desc_;
+	CuMatDescriptor desc_;
 };
 
 

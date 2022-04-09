@@ -144,12 +144,12 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 		auto poseVertex = poseVertexSet->getVertex(iP);
 		auto landmarkVertex = landmarkVertexSet->getVertex(iL);
 
-		std::unique_ptr<cuba::MonoEdge> monoEdge = std::make_unique<cuba::MonoEdge>();
+		cuba::MonoEdge* monoEdge = new cuba::MonoEdge();
 		monoEdge->setVertex(poseVertex, 0);
 		monoEdge->setVertex(landmarkVertex, 1);
 		monoEdge->setMeasurement(measurement);
 		monoEdge->setInformation(information);
-		monoEdgeSet->addEdge(std::move(monoEdge));
+		monoEdgeSet->addEdge(monoEdge);
 	}
 
 	// read stereo edges
@@ -164,12 +164,12 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 		auto poseVertex = poseVertexSet->getVertex(iP);
 		auto landmarkVertex = landmarkVertexSet->getVertex(iL);
 
-		std::unique_ptr<cuba::StereoEdge> stereoEdge = std::make_unique<cuba::StereoEdge>();
+		cuba::StereoEdge* stereoEdge = new cuba::StereoEdge();
 		stereoEdge->setVertex(poseVertex, 0);
 		stereoEdge->setVertex(landmarkVertex, 1);
 		stereoEdge->setMeasurement(measurement);
 		stereoEdge->setInformation(information);
-		stereoEdgeSet->addEdge(std::move(stereoEdge));
+		stereoEdgeSet->addEdge(stereoEdge);
 	}
 
 	// read camera parameters

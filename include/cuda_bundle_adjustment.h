@@ -133,6 +133,8 @@ public:
 
 	virtual void clearEdgeSets() = 0;
 	virtual void clearVertexSets() = 0;
+
+	virtual void setVerbose(bool status) = 0;
 };
 
 /** @brief Implementation of CudaBundleAdjustment.
@@ -181,12 +183,19 @@ public:
 	void clearEdgeSets() override;
 	void clearVertexSets() override;
 
+	void setVerbose(bool status) override
+	{
+		verbose = status;
+	}
+
 	~CudaBundleAdjustmentImpl();
 
 private:
 
 	static inline double attenuation(double x) { return 1 - std::pow(2 * x - 1, 3); }
 	static inline double clamp(double v, double lo, double hi) { return std::max(lo, std::min(v, hi)); }
+
+	bool verbose = false;
 
 	VertexSetVec vertexSets;
 	EdgeSetVec edgeSets;

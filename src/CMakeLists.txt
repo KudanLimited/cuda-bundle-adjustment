@@ -8,8 +8,11 @@ include_directories(${CUBA_INCLUDE_DIR})
 #CUDA_SELECT_NVCC_ARCH_FLAGS(ARCH_FLAGS "Auto")
 set(CUDA_ARCH "${ARCH_FLAGS}" CACHE STRING "Value of the NVCC -arch option." FORCE)
 set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} ${ARCH_FLAGS} -lineinfo --diag_suppress=esa_on_defaulted_function_ignored")
-set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-g -G -lineinfo")
-
+if (DEBUG_CUDA)
+	set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-g -G -lineinfo")
+else()
+	set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-lineinfo")
+endif()
 message(STATUS "CUDA_ARCH: \"${CUDA_ARCH}\"")
 
 # Flags for each platform
@@ -40,9 +43,6 @@ add_library(cuda_bundle_adjustment STATIC ${srcs})
 target_compile_features(cuda_bundle_adjustment PUBLIC cxx_std_11)
 target_link_libraries(cuda_bundle_adjustment PUBLIC ${CUDA_cusparse_LIBRARY} ${CUDA_cusolver_LIBRARY} Eigen3::Eigen3)
 target_include_directories(cuda_bundle_adjustment PUBLIC "${CMAKE_SOURCE_DIR}/src")
-#set_target_properties(cuda_bundle_adjustment PROPERTIES CUDA_SEPARABLE_COMPILATION ON) 
-#set_target_properties(cuda_bundle_adjustment PROPERTIES POSITION_INDEPENDENT_CODE ON)
-#set_target_properties(cuda_bundle_adjustment PROPERTIES CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 
 install(
 	TARGETS cuda_bundle_adjustment

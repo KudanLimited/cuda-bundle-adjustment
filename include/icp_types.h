@@ -34,7 +34,7 @@ public:
     }
 
     void constructQuadraticForm(const VertexSetVec& vertexSets,
-		GpuPxPBlockVec& Hpp, GpuPx1BlockVec& bp, GpuLxLBlockVec& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl) override
+	    GpuHppBlockMat& Hpp, GpuPx1BlockVec& bp, GpuHllBlockMat& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);    
         GpuVecSe3d se3_data = poseVertexSet->getDeviceEstimates();
@@ -61,7 +61,7 @@ public:
     }
 
     void constructQuadraticForm(const VertexSetVec& vertexSets,
-		GpuPxPBlockVec& Hpp, GpuPx1BlockVec& bp, GpuLxLBlockVec& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl) override
+		GpuHppBlockMat& Hpp, GpuPx1BlockVec& bp, GpuHllBlockMat& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);    
         GpuVecSe3d se3_data = poseVertexSet->getDeviceEstimates();

@@ -356,13 +356,13 @@ class BaseEdgeSet
 {
 public:
 
-	virtual void addEdge(std::unique_ptr<BaseEdge> edge) = 0;
+	virtual void addEdge(BaseEdge* edge) = 0;
 
 	virtual void removeEdge(BaseEdge* edge) = 0;
 
 	virtual size_t nedges() const = 0;
 
-	virtual const std::unordered_set<std::unique_ptr<BaseEdge>>& get() = 0;
+	virtual const std::unordered_set<BaseEdge*>& get() = 0;
 
 	virtual const int dim() const = 0;
 	
@@ -379,8 +379,8 @@ public:
 	virtual void clearEdges() = 0;
 
 	// device side virtual functions	
-	virtual void constructQuadraticForm(const VertexSetVec& vertexSets, GpuPxPBlockVec& Hpp, GpuPx1BlockVec& bp, 
-		GpuLxLBlockVec& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl) {}
+	virtual void constructQuadraticForm(const VertexSetVec& vertexSets, GpuHppBlockMat& Hpp, GpuPx1BlockVec& bp, 
+		GpuHllBlockMat& Hll, GpuLx1BlockVec& bl, GpuHplBlockMat& Hpl) {}
 
 	virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi) { return 0; }
 };
@@ -407,13 +407,13 @@ public:
 	virtual ~EdgeSet() {}
 
 	// vitual functions
-    void addEdge(std::unique_ptr<BaseEdge> edge) override
+    void addEdge(BaseEdge* edge) override
 	{
 		for (int i = 0; i < VertexSize; ++i)
 		{
-			edge->getVertex(i)->addEdge(edge.get());
+			edge->getVertex(i)->addEdge(edge);
 		}
-		edges.insert(std::move(edge));
+		edges.insert(edge);
 	}
 
 	void removeEdge(BaseEdge* edge) override
@@ -426,9 +426,9 @@ public:
 				vertex->removeEdge(edge);
 			}
 		}
-		if (edges.count(std::unique_ptr<BaseEdge>(edge)))
+		if (edges.count(edge))
 		{
-			edges.erase(std::unique_ptr<BaseEdge>(edge));
+			edges.erase(edge);
 		}
 	}
 
@@ -437,7 +437,7 @@ public:
 		return edges.size();
 	}
 
-	const std::unordered_set<std::unique_ptr<BaseEdge>>& get() override
+	const std::unordered_set<BaseEdge*>& get() override
 	{
 		return edges;
 	}
@@ -452,7 +452,7 @@ public:
 
 protected:
 
-	std::unordered_set<std::unique_ptr<BaseEdge>> edges;
+	std::unordered_set<BaseEdge*> edges;
 
 public:
 	// device side
@@ -470,7 +470,7 @@ public:
 		edgeFlags.reserve(edgeSize);
 		hessianBlockPos.reserve(edgeSize);
 
-		for (const std::unique_ptr<BaseEdge>& edge : edges)
+		for (BaseEdge* edge : edges)
 		{
 			VIndex vec;
 			for (int i = 0; i < VertexSize; ++i)

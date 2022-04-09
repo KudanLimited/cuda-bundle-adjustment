@@ -87,7 +87,7 @@ void CudaBlockSolver::initialize(CameraParams* camera, const EdgeSetVec& edgeSet
 		}
 		else
 		{
-			linearSolver_ = std::make_unique<HppSparseLinearSolver>();
+			linearSolver_ = std::make_unique<DenseLinearSolver>();
 		}
 	}
 
@@ -159,13 +159,13 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 
 
 	// setup the edge set estimation data
-	int nedges = 0;
+	nedges_ = 0;
 	size_t nVertexBlockPos = 0;
 	int edgeId = 0;
 	for (BaseEdgeSet* edgeSet : edgeSets)
 	{
 		edgeSet->init(edgeId, doSchure); 
-		nedges += edgeSet->nedges(); 
+		nedges_ += edgeSet->nedges(); 
 		if (doSchure)
 		{
 			nVertexBlockPos += edgeSet->getHessianBlockPosSize(); 
@@ -188,7 +188,7 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 		d_Hpl_.resize(numP, numL);
 		d_Hpl_.resizeNonZeros(d_HplBlockPos_.size());
 		d_nnzPerCol_.resize(accumSizeL + 1);
-		d_edge2Hpl_.resize(nedges);
+		d_edge2Hpl_.resize(nedges_);
 
 		gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_);
 
@@ -209,7 +209,7 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 
 		d_bsc_.resize(numP);
 		d_Hpl_invHll_.resize(nVertexBlockPos);
-		d_Hll_.resize(numL);
+		d_Hll_.resize(numL, numL);
 		d_HllBackup_.resize(numL);
 		d_invHll_.resize(numL);
 	}
@@ -218,6 +218,10 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 		Hpp_.resize(numP, numP);
 		Hpp_.constructFromVertices(verticesP);
 		Hpp_.convertBSRToCSR();
+
+		d_Hpp_.resize(numP, numP);
+		d_Hpp_.resizeNonZeros(Hpp_.nblocks());
+		d_Hpp_.upload(nullptr, Hpp_.outerIndices(), Hpp_.innerIndices());
 	}
 
 	// allocate device buffers
@@ -233,7 +237,7 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 		d_bl_.map(numL, d_b_.data() + numP * PDIM);
 	}
 
-	d_Hpp_.resize(numP);
+	//d_Hpp_.resize(numP);
 	d_HppBackup_.resize(numP);
 	
 	// upload edge information to device memory
@@ -266,7 +270,7 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 	}
 	else
 	{
-		HppSparseLinearSolver* sparseLinearSolver = static_cast<HppSparseLinearSolver*>(linearSolver_.get());
+		DenseLinearSolver* sparseLinearSolver = static_cast<DenseLinearSolver*>(linearSolver_.get());
 		sparseLinearSolver->initialize(Hpp_);
 
 		const auto t2 = get_time_point();
@@ -525,13 +529,16 @@ void CudaBundleAdjustmentImpl::optimize(int niterations)
 	const int maxq = 10;
 	const double tau = 1e-5;
 
-	double nu = 2;
-	double lambda = 0;
-	double F = 0;
+	double nu = 2.0;
+	double lambda = 0.0;
+	double F = 0.0;
+	double cumTime = 0.0;
 
 	// Levenberg-Marquardt iteration
 	for (int iteration = 0; iteration < niterations; iteration++)
 	{
+		auto t0 = get_time_point();
+
 		if (iteration == 0)
 		{
 			solver_->buildStructure(edgeSets, vertexSets);
@@ -548,7 +555,7 @@ void CudaBundleAdjustmentImpl::optimize(int niterations)
 		}
 
 		int q = 0;
-		double rho = -1;
+		double rho = -1.0;
 		for (; q < maxq && rho < 0; q++)
 		{
 			solver_->push();
@@ -558,6 +565,7 @@ void CudaBundleAdjustmentImpl::optimize(int niterations)
 			const bool success = solver_->solve();
 
 			solver_->update(vertexSets);
+			solver_->restoreDiagonal();
 
 			const double Fhat = solver_->computeErrors(edgeSets, vertexSets);
 			const double scale = solver_->computeScale(lambda) + 1e-3;
@@ -574,14 +582,20 @@ void CudaBundleAdjustmentImpl::optimize(int niterations)
 			{
 				lambda *= nu;
 				nu *= 2;
-				solver_->restoreDiagonal();
 				solver_->pop();
 			}
 		}
 
 		stats_.addStat({ iteration, F });
+		if (verbose)
+		{
+			auto t1 = get_time_point();
+			auto dt = get_duration(t0, t1);
+			cumTime += dt;
+			printf("iteration= %i; time = %.5f [sec];  cum time= %.5f  chi2= %f;  lambda= %f   rho= %f	nedges= %i\n", iteration, dt, cumTime, F, lambda, rho, solver_->nedges());
+		}
 
-		if (q == maxq || rho <= 0 || !std::isfinite(lambda))
+		if (q == maxq || rho <= 1e-4 || !std::isfinite(lambda))
 		{
 			break;
 		}

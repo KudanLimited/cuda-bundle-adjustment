@@ -70,6 +70,8 @@ public:
 		return flag;
 	}
 
+	int nedges() const { return nedges_; }
+
 	////////////////////////////////////////////////////////////////////////////////////
 	// host buffers
 	////////////////////////////////////////////////////////////////////////////////////
@@ -77,6 +79,8 @@ public:
 private:
 
 	bool doSchure;
+	
+	int nedges_;
 
 	// graph components
 	std::vector<BaseEdge*> baseEdges_;
@@ -85,7 +89,7 @@ private:
 	HplSparseBlockMatrix Hpl_;
 	HppSparseBlockMatrix Hpp_;
 	HschurSparseBlockMatrix Hsc_;
-	std::unique_ptr<SparseLinearSolver> linearSolver_;
+	std::unique_ptr<LinearSolver> linearSolver_;
 	std::vector<HplBlockPos> HplBlockPos_;
 
 	////////////////////////////////////////////////////////////////////////////////////
@@ -106,8 +110,8 @@ private:
 	// coefficient matrix of linear system
 	// | Hpp  Hpl ||Δxp| = |-bp|
 	// | HplT Hll ||Δxl|   |-bl|
-	GpuPxPBlockVec d_Hpp_;
-	GpuLxLBlockVec d_Hll_;
+	GpuHppBlockMat d_Hpp_;
+	GpuHllBlockMat d_Hll_;
 	GpuHplBlockMat d_Hpl_;
 	GpuVec3i d_HplBlockPos_;
 	GpuVec1d d_b_;
@@ -127,6 +131,7 @@ private:
 
 	// conversion matrix storage format BSR to CSR
 	GpuVec1d d_HscCSR_;
+	GpuVec1d d_HppCSR_;
 	GpuVec1i d_BSR2CSR_;
 
 	// temporary buffer
