@@ -131,7 +131,9 @@ CuSparseCholeskySolver<T>::CuSparseCholeskySolver(int size)
     init();
 
     if (size > 0)
+    {
         resize(size);
+    }
 }
 
 template<typename T>
@@ -155,7 +157,9 @@ void CuSparseCholeskySolver<T>::setPermutaion(int size, const int* P)
 {
     h_PT.resize(size);
     for (int i = 0; i < size; i++)
+    {
         h_PT[P[i]] = i;
+    }
 
     d_P.assign(size, P);
     d_PT.assign(size, h_PT.data());
@@ -233,9 +237,6 @@ void CuSparseCholeskySolver<T>::permute(int size, const T* src, T* dst, const in
 template<typename T>
 void CuSparseCholeskySolver<T>::reordering(int size, int nnz, const int* csrRowPtr, const int* csrColInd, int* P) const
 {
-    //cusolverSpXcsrsymrcmHost(cusolver, size, nnz, Acsr.desc(), csrRowPtr, csrColInd, P);
-    //cusolverSpXcsrsymamdHost(cusolver, size, nnz, Acsr.desc(), csrRowPtr, csrColInd, P);
-    //cusolverSpXcsrsymmdqHost(cusolver, size, nnz, Acsr.desc(), csrRowPtr, csrColInd, P);
     cusolverSpXcsrmetisndHost(cusolver, size, nnz, Acsr.desc(), csrRowPtr, csrColInd, nullptr, P);
 }
 
@@ -250,3 +251,180 @@ void CuSparseCholeskySolver<T>::downloadCSR(int* csrRowPtr, int* csrColInd)
 {
     Acsr.download(nullptr, csrRowPtr, csrColInd);
 }
+
+/**********************************************************************************************************
+ * Dense cholesky functions
+ *********************************************************************************************************/
+template<typename T>
+void DenseCholesky<T>::init(cusolverDnHandle_t dnHandle, cusparseHandle_t spHandle)
+{
+    dnHandle_ = dnHandle;
+    spHandle_ = spHandle;
+}
+
+template<typename T>
+void DenseCholesky<T>::allocateBuffer(SparseSquareMatrixCSR<T>& A, DenseSquareMatrix<T>& B)
+{
+}
+
+template<>
+inline void DenseCholesky<float>::allocateBuffer(SparseSquareMatrixCSR<float>& A, DenseSquareMatrix<float>& B)
+{
+    CHECK_CUSPARSE(cusparseCreateCsr(&spMatDescr, A.rows(), A.cols(), A.nnz(), A.rowPtr(), A.colInd(), A.val(), CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F));
+    CHECK_CUSPARSE(cusparseCreateDnMat(&dnMatDescr, B.rows(), B.cols(), B.ld(), B.val(), CUDA_R_32F, CUSPARSE_ORDER_COL));
+
+    size_t bufferSize = 0;
+    CHECK_CUSPARSE(cusparseSparseToDense_bufferSize(spHandle_, spMatDescr, dnMatDescr, CUSPARSE_SPARSETODENSE_ALG_DEFAULT, &bufferSize));
+    denseBuffer_.resize(bufferSize);
+
+    int sytBufferSize = 0;
+    CHECK_CUSOLVER(cusolverDnSsytrf_bufferSize(dnHandle_, B.rows(), B.val(), B.ld(), &sytBufferSize));
+    buffer_.resize(sytBufferSize);
+    info_.resize(1);
+    ipiv_.resize(B.rows());
+}
+
+template<>
+inline void DenseCholesky<double>::allocateBuffer(SparseSquareMatrixCSR<double>& A, DenseSquareMatrix<double>& B)
+{
+    CHECK_CUSPARSE(cusparseCreateCsr(&spMatDescr, A.rows(), A.cols(), A.nnz(), A.rowPtr(), A.colInd(), A.val(), CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, CUDA_R_64F));
+    CHECK_CUSPARSE(cusparseCreateDnMat(&dnMatDescr, B.rows(), B.cols(), B.ld(), B.val(), CUDA_R_64F, CUSPARSE_ORDER_COL));
+
+    size_t bufferSize = 0;
+    CHECK_CUSPARSE(cusparseSparseToDense_bufferSize(spHandle_, spMatDescr, dnMatDescr, CUSPARSE_SPARSETODENSE_ALG_DEFAULT, &bufferSize));
+    denseBuffer_.resize(bufferSize);
+    
+    int sytBufferSize = 0;
+    //CHECK_CUSOLVER(cusolverDnDsytrf_bufferSize(dnHandle_, B.rows(), B.val(), B.ld(), &sytBufferSize));
+    CHECK_CUSOLVER(cusolverDnDgetrf_bufferSize(dnHandle_, B.rows(), B.cols(), B.val(), B.ld(), &sytBufferSize));
+    buffer_.resize(sytBufferSize);
+    info_.resize(1);
+    ipiv_.resize(B.rows());
+}
+
+template <typename T>
+inline void DenseCholesky<T>::sparseToDense(const SparseSquareMatrixCSR<T>& A, DenseSquareMatrix<T>& B)
+{
+    CHECK_CUSPARSE(cusparseSparseToDense(spHandle_, spMatDescr, dnMatDescr, CUSPARSE_SPARSETODENSE_ALG_DEFAULT, denseBuffer_.data()));
+}
+
+template<typename T>
+bool DenseCholesky<T>::factorize(DenseSquareMatrix<T>& A)
+{
+    return false;
+}
+
+template<>
+inline bool DenseCholesky<float>::factorize(DenseSquareMatrix<float>& A)
+{
+    CHECK_CUSOLVER(cusolverDnSsytrf(dnHandle_, CUBLAS_FILL_MODE_LOWER, A.rows(), A.val(), A.ld(), ipiv_.data(), buffer_.data(), buffer_.size(), info_.data()));
+    CUDA_CHECK(cudaMemcpy(&h_info, info_.data(), sizeof(int), cudaMemcpyDeviceToHost));
+    if (h_info != 0)
+    {
+        return false;
+    }
+    return true;
+}
+
+template<>
+inline bool DenseCholesky<double>::factorize(DenseSquareMatrix<double>& A)
+{
+    //CHECK_CUSOLVER(cusolverDnDsytrf(dnHandle_, CUBLAS_FILL_MODE_LOWER, A.rows(), A.val(), A.ld(), ipiv_.data(), buffer_.data(), buffer_.size(), info_.data()));
+    CHECK_CUSOLVER(cusolverDnDgetrf(dnHandle_, A.rows(), A.cols(), A.val(), A.ld(), buffer_.data(), ipiv_.data(), info_.data()));
+    CUDA_CHECK(cudaMemcpy(&h_info, info_.data(), sizeof(int), cudaMemcpyDeviceToHost));
+    if (h_info != 0)
+    {
+        return false;
+    }
+    return true;
+}
+
+template<typename T>
+void DenseCholesky<T>::solve(const DenseSquareMatrix<T>& A, const T* b, T* x)
+{
+}
+
+template<>
+inline void DenseCholesky<float>::solve(const DenseSquareMatrix<float>& A, const float* b, float* x)
+{
+    int size = A.rows();
+    int ld = A.ld();
+    
+    CUDA_CHECK(cudaMemcpy(x, b, sizeof(float) * size, cudaMemcpyDeviceToDevice));
+    CHECK_CUSOLVER(cusolverDnSgetrs(dnHandle_, CUBLAS_OP_N, size, 1, A.val(), ld, ipiv_.data(), x, size, info_.data()));
+}
+
+template<>
+inline void DenseCholesky<double>::solve(const DenseSquareMatrix<double>& A, const double* b, double* x)
+{
+    int size = A.rows();
+    int ld = A.ld();
+
+    CUDA_CHECK(cudaMemcpy(x, b, sizeof(double) * size, cudaMemcpyDeviceToDevice));
+    CHECK_CUSOLVER(cusolverDnDgetrs(dnHandle_, CUBLAS_OP_N, size, 1, A.val(), ld, ipiv_.data(), x, size, info_.data()));
+}
+
+template<typename T>
+DenseCholesky<T>::~DenseCholesky() 
+{
+}
+
+template<typename T>
+CuDenseCholeskySolver<T>::CuDenseCholeskySolver(int size)
+{
+    init();
+
+    if (size > 0)
+    {
+        resize(size);
+    }
+}
+
+template<typename T>
+void CuDenseCholeskySolver<T>::init()
+{
+    cholesky.init(cusolver, cusparse);
+    information = Info::SUCCESS;
+}
+
+template<typename T>
+void CuDenseCholeskySolver<T>::resize(int size)
+{
+    Acsr.resize(size);
+    Adense.resize(size);
+}
+
+template<typename T>
+void CuDenseCholeskySolver<T>::allocate(int nnz, const int* csrRowPtr, const int* csrColInd)
+{
+    Acsr.resizeNonZeros(nnz);
+    Acsr.upload(nullptr, csrRowPtr, csrColInd);
+    cholesky.allocateBuffer(Acsr, Adense);
+}
+
+template<typename T>
+void CuDenseCholeskySolver<T>::factorize(const T* d_A)
+{
+    CUDA_CHECK(cudaMemcpy(Acsr.val(), d_A, sizeof(Scalar) * Acsr.nnz(), cudaMemcpyDeviceToDevice));
+    cholesky.sparseToDense(Acsr, Adense);
+
+    // A = L * LH
+    if (!cholesky.factorize(Adense))
+    {
+        information = Info::NUMERICAL_ISSUE;
+    }
+}
+
+template<typename T>
+void CuDenseCholeskySolver<T>::solve(const T* d_b, T* d_x)
+{
+    // solve A * x = b
+    cholesky.solve(Adense, d_b, d_x);
+}
+
+template<typename T>
+typename CuDenseCholeskySolver<T>::Info CuDenseCholeskySolver<T>::info() const
+{
+    return information;
+}
+

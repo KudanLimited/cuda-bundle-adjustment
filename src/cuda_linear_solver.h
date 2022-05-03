@@ -30,17 +30,17 @@ limitations under the License.
 namespace cuba
 {
 
-class SparseLinearSolver
+class LinearSolver
 {
 public:
 
 	virtual bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) = 0;
 
-	virtual ~SparseLinearSolver() {}
+	virtual ~LinearSolver() {}
 
 };
 
-class HscSparseLinearSolver : public SparseLinearSolver
+class HscSparseLinearSolver : public LinearSolver
 {
 public:
 
@@ -59,7 +59,7 @@ private:
 };
 
 
-class HppSparseLinearSolver : public SparseLinearSolver
+class HppSparseLinearSolver : public LinearSolver
 {
 public:
 
@@ -72,6 +72,21 @@ public:
 private:
 
 	std::vector<int> P_;
+	Cholesky cholesky_;
+};
+
+class DenseLinearSolver : public LinearSolver
+{
+public:
+
+	using Cholesky = CuDenseCholeskySolver<Scalar>;
+
+	void initialize(HppSparseBlockMatrix& Hpp);
+
+	bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) override;
+
+private:
+
 	Cholesky cholesky_;
 };
 

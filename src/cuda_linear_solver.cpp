@@ -81,6 +81,30 @@ bool HppSparseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* 
 	return true;
 }
 
+void DenseLinearSolver::initialize(HppSparseBlockMatrix& Hpp)
+{
+	const int size = Hpp.rows();
+	const int nnz = Hpp.nnzSymm();
+
+	cholesky_.resize(size);
+	cholesky_.allocate(nnz, Hpp.rowPtr(), Hpp.colInd());
+}
+
+bool DenseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x)
+{
+	cholesky_.factorize(d_A);
+
+	if (cholesky_.info() != Cholesky::SUCCESS)
+	{
+		std::cerr << "factorize failed" << std::endl;
+		return false;
+	}
+
+	cholesky_.solve(d_b, d_x);
+
+	return true;
+}
+
 
 
 } // namespace cuba

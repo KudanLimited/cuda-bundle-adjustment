@@ -48,10 +48,7 @@ void VertexSet<T, EstimateType, DeviceType>::finalise()
 
 	for (size_t i = 0; i < vertices.size(); i++)
 	{
-		T* v = dynamic_cast<T*>(vertices[i]);
-        assert(v != nullptr);
-        EstimateType& estimate = v->getEstimate();
-        estimates[i].copyTo(estimate);
+        estimates[i].copyTo(vertices[i]->getEstimate());
 	}
 }
 

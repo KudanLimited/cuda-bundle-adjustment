@@ -78,11 +78,11 @@ public:
 	void constructFromBlockPos(std::vector<HplBlockPos>& blockpos);
 };
 
-class PoseSparseBlockMatrix : public SparseBlockMatrix<PDIM, PDIM, ROW_MAJOR>
+class PoseSparseBlockMatrix : public SparseBlockMatrix<PDIM, PDIM, COL_MAJOR>
 {
 public:
 
-	void constructFromVertices(const std::vector<BaseVertex*>& verticesL);
+	void constructFromVertices(const std::vector<BaseVertex*>& vertices);
 	void convertBSRToCSR();
 
 	const int* rowPtr() const { return rowPtr_.data(); }

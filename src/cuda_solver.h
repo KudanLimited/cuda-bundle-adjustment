@@ -7,6 +7,7 @@
 #include <cusparse.h>
 #include <cusolverSp.h>
 #include <cusolverSp_LOWLEVEL_PREVIEW.h>
+#include <cusolverDn.h>
 
 namespace cuba
 {
@@ -15,44 +16,56 @@ struct CusparseHandle
 {
 	CusparseHandle() { init(); }
 	~CusparseHandle() { destroy(); }
-	void init() { cusparseCreate(&handle); }
-	void destroy() { cusparseDestroy(handle); }
+	void init() { CHECK_CUSPARSE(cusparseCreate(&handle)); }
+	void destroy() { CHECK_CUSPARSE(cusparseDestroy(handle)); }
 	operator cusparseHandle_t() const { return handle; }
 	CusparseHandle(const CusparseHandle&) = delete;
 	CusparseHandle& operator=(const CusparseHandle&) = delete;
 	cusparseHandle_t handle;
 };
 
-struct CusolverHandle
+struct CusparseSolverHandle
 {
-	CusolverHandle() { init(); }
-	~CusolverHandle() { destroy(); }
-	void init() { cusolverSpCreate(&handle); }
-	void destroy() { cusolverSpDestroy(handle); }
+	CusparseSolverHandle() { init(); }
+	~CusparseSolverHandle() { destroy(); }
+	void init() { CHECK_CUSOLVER(cusolverSpCreate(&handle)); }
+	void destroy() { CHECK_CUSOLVER(cusolverSpDestroy(handle)); }
 	operator cusolverSpHandle_t() const { return handle; }
-	CusolverHandle(const CusolverHandle&) = delete;
-	CusolverHandle& operator=(const CusolverHandle&) = delete;
+	CusparseSolverHandle(const CusparseSolverHandle&) = delete;
+	CusparseSolverHandle& operator=(const CusparseSolverHandle&) = delete;
 	cusolverSpHandle_t handle;
 };
 
-struct CusparseMatDescriptor
+struct CuMatDescriptor
 {
-	CusparseMatDescriptor() { init(); }
-	~CusparseMatDescriptor() { destroy(); }
+	CuMatDescriptor() { init(); }
+	~CuMatDescriptor() { destroy(); }
 
 	void init()
 	{
-		cusparseCreateMatDescr(&desc);
-		cusparseSetMatType(desc, CUSPARSE_MATRIX_TYPE_GENERAL);
-		cusparseSetMatIndexBase(desc, CUSPARSE_INDEX_BASE_ZERO);
-		cusparseSetMatDiagType(desc, CUSPARSE_DIAG_TYPE_NON_UNIT);
+		CHECK_CUSPARSE(cusparseCreateMatDescr(&desc));
+		CHECK_CUSPARSE(cusparseSetMatType(desc, CUSPARSE_MATRIX_TYPE_GENERAL));
+		CHECK_CUSPARSE(cusparseSetMatIndexBase(desc, CUSPARSE_INDEX_BASE_ZERO));
+		CHECK_CUSPARSE(cusparseSetMatDiagType(desc, CUSPARSE_DIAG_TYPE_NON_UNIT));
 	}
 
 	void destroy() { cusparseDestroyMatDescr(desc); }
 	operator cusparseMatDescr_t() const { return desc; }
-	CusparseMatDescriptor(const CusparseMatDescriptor&) = delete;
-	CusparseMatDescriptor& operator=(const CusparseMatDescriptor&) = delete;
+	CuMatDescriptor(const CuMatDescriptor&) = delete;
+	CuMatDescriptor& operator=(const CuMatDescriptor&) = delete;
 	cusparseMatDescr_t desc;
+};
+
+struct CuDenseSolverHandle
+{
+	CuDenseSolverHandle() { init(); }
+	~CuDenseSolverHandle() { destroy(); }
+	void init() { CHECK_CUSOLVER(cusolverDnCreate(&handle)); }
+	void destroy() { CHECK_CUSOLVER(cusolverDnDestroy(handle)); }
+	operator cusolverDnHandle_t() const { return handle; }
+	CuDenseSolverHandle(const CuDenseSolverHandle&) = delete;
+	CuDenseSolverHandle& operator=(const CuDenseSolverHandle&) = delete;
+	cusolverDnHandle_t handle;
 };
 
 }

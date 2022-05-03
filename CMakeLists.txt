@@ -5,7 +5,7 @@ project(CudaBundleAdjustment)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(ENABLE_SAMPLES TRUE)
+set(ENABLE_SAMPLES FALSE)
 set(WITH_G2O  FALSE)
 option(USE_FLOAT32    "Use 32bit float in internal floating-point operations (default is 64bit float)" OFF)
 

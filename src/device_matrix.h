@@ -42,7 +42,7 @@ private:
 	T* data_;
 };
 
-template <typename T, int BLOCK_ROWS, int BLOCK_COLS, int ORDER>
+template <typename T, int BLOCK_ROWS, int BLOCK_COLS, int ORDER = COL_MAJOR>
 class DeviceBlockMatrix
 {
 public:
@@ -185,6 +185,8 @@ using GpuVecSe3d = GpuVec<Se3D>;
 using GpuVec1b = GpuVec<uint8_t>;
 
 using GpuHplBlockMat = DeviceBlockMatrix<Scalar, PDIM, LDIM, COL_MAJOR>;
+using GpuHppBlockMat = DeviceBlockMatrix<Scalar, PDIM, PDIM, COL_MAJOR>;
+using GpuHllBlockMat = DeviceBlockMatrix<Scalar, LDIM, LDIM, COL_MAJOR>;
 using GpuHscBlockMat = DeviceBlockMatrix<Scalar, PDIM, PDIM, ROW_MAJOR>;
 
 using GpuPxPBlockVec = DeviceBlockVector<Scalar, PDIM, PDIM>;
