@@ -16,95 +16,93 @@ limitations under the License.
 
 #include "cuda_linear_solver.h"
 
-#include <vector>
-
-#include "device_buffer.h"
 #include "cuda/cuda_block_solver.h"
+#include "device_buffer.h"
+
+#include <vector>
 
 namespace cuba
 {
-
 void HscSparseLinearSolver::initialize(HschurSparseBlockMatrix& Hsc)
 {
-	const int size = Hsc.rows();
-	const int nnz = Hsc.nnzSymm();
+    const int size = Hsc.rows();
+    const int nnz = Hsc.nnzSymm();
 
-	cholesky_.resize(size);
+    cholesky_.resize(size);
 
-	// set permutation
-	P_.resize(size);
-	cholesky_.reordering(size, nnz, Hsc.rowPtr(), Hsc.colInd(), P_.data());
-	cholesky_.setPermutaion(size, P_.data());
+    // set permutation
+    P_.resize(size);
+    cholesky_.reordering(size, nnz, Hsc.rowPtr(), Hsc.colInd(), P_.data());
+    cholesky_.setPermutaion(size, P_.data());
 
-	// analyze
-	cholesky_.analyze(nnz, Hsc.rowPtr(), Hsc.colInd());
+    // analyze
+    cholesky_.analyze(nnz, Hsc.rowPtr(), Hsc.colInd());
 }
 
 bool HscSparseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x)
 {
-	cholesky_.factorize(d_A);
+    cholesky_.factorize(d_A);
 
-	if (cholesky_.info() != Cholesky::SUCCESS)
-	{
-		std::cerr << "factorize failed" << std::endl;
-		return false;
-	}
+    if (cholesky_.info() != Cholesky::SUCCESS)
+    {
+        std::cerr << "factorize failed" << std::endl;
+        return false;
+    }
 
-	cholesky_.solve(d_b, d_x);
+    cholesky_.solve(d_b, d_x);
 
-	return true;
+    return true;
 }
 
 void HppSparseLinearSolver::initialize(HppSparseBlockMatrix& Hpp)
 {
-	const int size = Hpp.rows();
-	const int nnz = Hpp.nnzSymm();
+    const int size = Hpp.rows();
+    const int nnz = Hpp.nnzSymm();
 
-	cholesky_.resize(size);
+    cholesky_.resize(size);
 
-	// analyze
-	cholesky_.analyze(nnz, Hpp.rowPtr(), Hpp.colInd());
+    // analyze
+    cholesky_.analyze(nnz, Hpp.rowPtr(), Hpp.colInd());
 }
 
 bool HppSparseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x)
 {
-	cholesky_.factorize(d_A);
+    cholesky_.factorize(d_A);
 
-	if (cholesky_.info() != Cholesky::SUCCESS)
-	{
-		std::cerr << "factorize failed" << std::endl;
-		return false;
-	}
+    if (cholesky_.info() != Cholesky::SUCCESS)
+    {
+        std::cerr << "factorize failed" << std::endl;
+        return false;
+    }
 
-	cholesky_.solve(d_b, d_x);
+    cholesky_.solve(d_b, d_x);
 
-	return true;
+    return true;
 }
 
 void DenseLinearSolver::initialize(HppSparseBlockMatrix& Hpp)
 {
-	const int size = Hpp.rows();
-	const int nnz = Hpp.nnzSymm();
+    const int size = Hpp.rows();
+    const int nnz = Hpp.nnzSymm();
 
-	cholesky_.resize(size);
-	cholesky_.allocate(nnz, Hpp.rowPtr(), Hpp.colInd());
+    cholesky_.resize(size);
+    cholesky_.allocate(nnz, Hpp.rowPtr(), Hpp.colInd());
 }
 
 bool DenseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x)
 {
-	cholesky_.factorize(d_A);
+    cholesky_.factorize(d_A);
 
-	if (cholesky_.info() != Cholesky::SUCCESS)
-	{
-		std::cerr << "factorize failed" << std::endl;
-		return false;
-	}
+    if (cholesky_.info() != Cholesky::SUCCESS)
+    {
+        std::cerr << "factorize failed" << std::endl;
+        return false;
+    }
 
-	cholesky_.solve(d_b, d_x);
+    cholesky_.solve(d_b, d_x);
 
-	return true;
+    return true;
 }
-
 
 
 } // namespace cuba

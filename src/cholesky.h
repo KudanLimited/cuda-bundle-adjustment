@@ -1,169 +1,160 @@
 #ifndef _CHOLESKY_H
 #define _CHOLESKY_H
 
-#include <type_traits>
-
-#include "device_buffer.h"
+#include "cuda/cuda_block_solver.h"
 #include "cuda_solver.h"
+#include "dense_square_matrix.h"
+#include "device_buffer.h"
 #include "macro.h"
 #include "sparse_square_matrix_csr.h"
-#include "dense_square_matrix.h"
-#include "cuda/cuda_block_solver.h"
 
 #include <cuda_runtime.h>
 
+#include <type_traits>
+
 namespace cuba
 {
-
 template <typename T>
 class SparseCholesky
 {
 public:
+    void init(cusolverSpHandle_t handle);
 
-	void init(cusolverSpHandle_t handle);
+    void allocateBuffer(const SparseSquareMatrixCSR<T>& A);
 
-	void allocateBuffer(const SparseSquareMatrixCSR<T>& A);
+    bool hasZeroPivot(int* position = nullptr) const;
 
-	bool hasZeroPivot(int* position = nullptr) const;
+    bool analyze(const SparseSquareMatrixCSR<T>& A);
 
-	bool analyze(const SparseSquareMatrixCSR<T>& A);
+    bool factorize(SparseSquareMatrixCSR<T>& A);
 
-	bool factorize(SparseSquareMatrixCSR<T>& A);
+    void solve(int size, const T* b, T* x);
 
-	void solve(int size, const T* b, T* x);
+    void destroy();
 
-	void destroy();
-
-	~SparseCholesky();
+    ~SparseCholesky();
 
 private:
-
-	cusolverSpHandle_t handle_;
-	csrcholInfo_t info_;
-	DeviceBuffer<unsigned char> buffer_;
+    cusolverSpHandle_t handle_;
+    csrcholInfo_t info_;
+    DeviceBuffer<unsigned char> buffer_;
 };
 
 template <typename T>
 class CuSparseCholeskySolver
 {
 public:
+    enum Info
+    {
+        SUCCESS,
+        NUMERICAL_ISSUE
+    };
 
-	enum Info
-	{
-		SUCCESS,
-		NUMERICAL_ISSUE
-	};
+    CuSparseCholeskySolver(int size = 0);
 
-	CuSparseCholeskySolver(int size = 0);
+    void init();
 
-	void init();
+    void resize(int size);
 
-	void resize(int size);
+    void setPermutaion(int size, const int* P);
 
-	void setPermutaion(int size, const int* P);
+    void analyze(int nnz, const int* csrRowPtr, const int* csrColInd);
 
-	void analyze(int nnz, const int* csrRowPtr, const int* csrColInd);
+    void factorize(const T* d_A);
 
-	void factorize(const T* d_A);
+    void solve(const T* d_b, T* d_x);
 
-	void solve(const T* d_b, T* d_x);
+    void permute(int size, const T* src, T* dst, const int* P);
 
-	void permute(int size, const T* src, T* dst, const int* P);
+    void reordering(int size, int nnz, const int* csrRowPtr, const int* csrColInd, int* P) const;
 
-	void reordering(int size, int nnz, const int* csrRowPtr, const int* csrColInd, int* P) const;
+    Info info() const;
 
-	Info info() const;
-
-	void downloadCSR(int* csrRowPtr, int* csrColInd);
+    void downloadCSR(int* csrRowPtr, int* csrColInd);
 
 private:
+    SparseSquareMatrixCSR<T> Acsr;
+    DeviceBuffer<T> d_y, d_z, d_tmp;
+    DeviceBuffer<int> d_P, d_PT, d_map;
+    DeviceBuffer<int> d_tmpRowPtr, d_tmpColInd, d_nnzPerRow;
 
-	SparseSquareMatrixCSR<T> Acsr;
-	DeviceBuffer<T> d_y, d_z, d_tmp;
-	DeviceBuffer<int> d_P, d_PT, d_map;
-	DeviceBuffer<int> d_tmpRowPtr, d_tmpColInd, d_nnzPerRow;
+    CusparseHandle cusparse;
+    CusparseSolverHandle cusolver;
 
-	CusparseHandle cusparse;
-	CusparseSolverHandle cusolver;
+    SparseCholesky<T> cholesky;
 
-	SparseCholesky<T> cholesky;
+    std::vector<int> h_PT;
 
-	std::vector<int> h_PT;
-
-	Info information;
-	bool doOrdering;
+    Info information;
+    bool doOrdering;
 };
 
 template <typename T>
 class DenseCholesky
 {
 public:
+    void init(cusolverDnHandle_t handle, cusparseHandle_t spHandle);
 
-	void init(cusolverDnHandle_t handle, cusparseHandle_t spHandle);
+    void allocateBuffer(SparseSquareMatrixCSR<T>& A, DenseSquareMatrix<T>& B);
 
-	void allocateBuffer(SparseSquareMatrixCSR<T>& A, DenseSquareMatrix<T>& B);
+    void sparseToDense(const SparseSquareMatrixCSR<T>& A, DenseSquareMatrix<T>& B);
 
-	void sparseToDense(const SparseSquareMatrixCSR<T>& A, DenseSquareMatrix<T>& B);
+    bool factorize(DenseSquareMatrix<T>& A);
 
-	bool factorize(DenseSquareMatrix<T>& A);
+    void solve(const DenseSquareMatrix<T>& A, const T* b, T* x);
 
-	void solve(const DenseSquareMatrix<T>& A, const T* b, T* x);
-
-	~DenseCholesky();
+    ~DenseCholesky();
 
 private:
+    cusolverDnHandle_t dnHandle_;
+    cusparseHandle_t spHandle_;
 
-	cusolverDnHandle_t dnHandle_;
-	cusparseHandle_t spHandle_;
+    int h_info;
+    DeviceBuffer<T> buffer_, denseBuffer_;
+    DeviceBuffer<int> info_, ipiv_;
 
-	int h_info;
-	DeviceBuffer<T> buffer_, denseBuffer_;
-	DeviceBuffer<int> info_, ipiv_;
-
-	cusparseSpMatDescr_t spMatDescr;
-	cusparseDnMatDescr_t dnMatDescr;
+    cusparseSpMatDescr_t spMatDescr;
+    cusparseDnMatDescr_t dnMatDescr;
 };
 
 template <typename T>
 class CuDenseCholeskySolver
 {
 public:
+    enum Info
+    {
+        SUCCESS,
+        NUMERICAL_ISSUE
+    };
 
-	enum Info
-	{
-		SUCCESS,
-		NUMERICAL_ISSUE
-	};
+    CuDenseCholeskySolver(int size = 0);
 
-	CuDenseCholeskySolver(int size = 0);
+    void init();
 
-	void init();
+    void resize(int size);
 
-	void resize(int size);
+    void allocate(int nnz, const int* csrRowPtr, const int* csrColInd);
 
-	void allocate(int nnz, const int* csrRowPtr, const int* csrColInd);
+    void factorize(const T* d_A);
 
-	void factorize(const T* d_A);
+    void solve(const T* d_b, T* d_x);
 
-	void solve(const T* d_b, T* d_x);
-
-	Info info() const;
+    Info info() const;
 
 private:
+    CusparseHandle cusparse;
+    CuDenseSolverHandle cusolver;
 
-	CusparseHandle cusparse;
-	CuDenseSolverHandle cusolver;
+    DenseSquareMatrix<T> Adense;
+    SparseSquareMatrixCSR<T> Acsr;
 
-	DenseSquareMatrix<T> Adense;
-	SparseSquareMatrixCSR<T> Acsr;
+    DenseCholesky<T> cholesky;
 
-	DenseCholesky<T> cholesky;
-
-	Info information;
+    Info information;
 };
 
 #include "cholesky.hpp"
 
-}
+} // namespace cuba
 
 #endif // _CHOLESKY_H

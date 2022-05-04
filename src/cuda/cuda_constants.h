@@ -7,7 +7,6 @@ namespace cuba
 {
 namespace gpu
 {
-
 ////////////////////////////////////////////////////////////////////////////////////
 // Type alias
 ////////////////////////////////////////////////////////////////////////////////////
@@ -25,6 +24,6 @@ constexpr int BLOCK_ACTIVE_ERRORS = 512;
 constexpr int BLOCK_MAX_DIAGONAL = 512;
 constexpr int BLOCK_COMPUTE_SCALE = 512;
 
-}
-}
+} // namespace gpu
+} // namespace cuba
 #endif //__CUDA_CONSTANTS_H__

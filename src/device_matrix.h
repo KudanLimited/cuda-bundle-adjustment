@@ -17,10 +17,10 @@ limitations under the License.
 #ifndef __DEVICE_MATRIX_H__
 #define __DEVICE_MATRIX_H__
 
-#include "scalar.h"
 #include "constants.h"
-#include "fixed_vector.h"
 #include "device_buffer.h"
+#include "fixed_vector.h"
+#include "scalar.h"
 
 namespace cuba
 {
@@ -31,138 +31,123 @@ template <typename T, int BLOCK_ROWS, int BLOCK_COLS>
 class BlockPtr
 {
 public:
-
-	static const int BLOCK_AREA = BLOCK_ROWS * BLOCK_COLS;
-	__device__ BlockPtr(T* data) : data_(data) {}
-	__device__ T* at(int i) { return data_ + i * BLOCK_AREA; }
-	__device__ const T* at(int i) const { return data_ + i * BLOCK_AREA; }
+    static const int BLOCK_AREA = BLOCK_ROWS * BLOCK_COLS;
+    __device__ BlockPtr(T* data) : data_(data) {}
+    __device__ T* at(int i) { return data_ + i * BLOCK_AREA; }
+    __device__ const T* at(int i) const { return data_ + i * BLOCK_AREA; }
 
 private:
-
-	T* data_;
+    T* data_;
 };
 
 template <typename T, int BLOCK_ROWS, int BLOCK_COLS, int ORDER = COL_MAJOR>
 class DeviceBlockMatrix
 {
 public:
+    static const int BLOCK_AREA = BLOCK_ROWS * BLOCK_COLS;
+    using BlockPtrT = BlockPtr<T, BLOCK_ROWS, BLOCK_COLS>;
 
-	static const int BLOCK_AREA = BLOCK_ROWS * BLOCK_COLS;
-	using BlockPtrT = BlockPtr<T, BLOCK_ROWS, BLOCK_COLS>;
+    DeviceBlockMatrix() : rows_(0), cols_(0), nnz_(0), outerSize_(0), innerSize_(0) {}
+    DeviceBlockMatrix(int rows, int cols) : nnz_(0) { resize(rows, cols); }
 
-	DeviceBlockMatrix() : rows_(0), cols_(0), nnz_(0), outerSize_(0), innerSize_(0) {}
-	DeviceBlockMatrix(int rows, int cols) : nnz_(0) { resize(rows, cols); }
+    void resize(int rows, int cols)
+    {
+        rows_ = rows;
+        cols_ = cols;
+        outerSize_ = ORDER == ROW_MAJOR ? rows : cols;
+        innerSize_ = ORDER == ROW_MAJOR ? cols : rows;
+        outerIndices_.resize(outerSize_ + 1);
+    }
 
-	void resize(int rows, int cols)
-	{
-		rows_ = rows;
-		cols_ = cols;
-		outerSize_ = ORDER == ROW_MAJOR ? rows : cols;
-		innerSize_ = ORDER == ROW_MAJOR ? cols : rows;
-		outerIndices_.resize(outerSize_ + 1);
-	}
+    void resizeNonZeros(int nnz)
+    {
+        nnz_ = nnz;
+        values_.resize(nnz * BLOCK_AREA);
+        innerIndices_.resize(nnz);
+    }
 
-	void resizeNonZeros(int nnz)
-	{
-		nnz_ = nnz;
-		values_.resize(nnz * BLOCK_AREA);
-		innerIndices_.resize(nnz);
-	}
+    void upload(const T* values, const int* outerIndices, const int* innerIndices)
+    {
+        if (values)
+            values_.upload(values);
+        if (outerIndices)
+            outerIndices_.upload(outerIndices);
+        if (innerIndices)
+            innerIndices_.upload(innerIndices);
+    }
 
-	void upload(const T* values, const int* outerIndices, const int* innerIndices)
-	{
-		if (values)
-			values_.upload(values);
-		if (outerIndices)
-			outerIndices_.upload(outerIndices);
-		if (innerIndices)
-			innerIndices_.upload(innerIndices);
-	}
+    void download(T* values, int* outerIndices, int* innerIndices) const
+    {
+        if (values)
+            values_.download(values);
+        if (outerIndices)
+            outerIndices_.download(outerIndices);
+        if (innerIndices)
+            innerIndices_.download(innerIndices);
+    }
 
-	void download(T* values, int* outerIndices, int* innerIndices) const
-	{
-		if (values)
-			values_.download(values);
-		if (outerIndices)
-			outerIndices_.download(outerIndices);
-		if (innerIndices)
-			innerIndices_.download(innerIndices);
-	}
+    void fillZero() { values_.fillZero(); }
 
-	void fillZero()
-	{
-		values_.fillZero();
-	}
+    T* values() { return values_.data(); }
+    int* outerIndices() { return outerIndices_.data(); }
+    int* innerIndices() { return innerIndices_.data(); }
 
-	T* values() { return values_.data(); }
-	int* outerIndices() { return outerIndices_.data(); }
-	int* innerIndices() { return innerIndices_.data(); }
+    const T* values() const { return values_.data(); }
+    const int* outerIndices() const { return outerIndices_.data(); }
+    const int* innerIndices() const { return innerIndices_.data(); }
 
-	const T* values() const { return values_.data(); }
-	const int* outerIndices() const { return outerIndices_.data(); }
-	const int* innerIndices() const { return innerIndices_.data(); }
+    int rows() const { return rows_; }
+    int cols() const { return cols_; }
+    int nnz() const { return nnz_; }
 
-	int rows() const { return rows_; }
-	int cols() const { return cols_; }
-	int nnz() const { return nnz_; }
-
-	operator BlockPtrT() const { return BlockPtrT((T*)values_.data()); }
+    operator BlockPtrT() const { return BlockPtrT((T*)values_.data()); }
 
 private:
-
-	DeviceBuffer<T> values_;
-	DeviceBuffer<int> outerIndices_, innerIndices_;
-	int rows_, cols_, nnz_, outerSize_, innerSize_;
+    DeviceBuffer<T> values_;
+    DeviceBuffer<int> outerIndices_, innerIndices_;
+    int rows_, cols_, nnz_, outerSize_, innerSize_;
 };
 
 template <typename T, int BLOCK_ROWS, int BLOCK_COLS>
 class DeviceBlockVector
 {
 public:
+    static const int BLOCK_AREA = BLOCK_ROWS * BLOCK_COLS;
+    using BlockPtrT = BlockPtr<T, BLOCK_ROWS, BLOCK_COLS>;
 
-	static const int BLOCK_AREA = BLOCK_ROWS * BLOCK_COLS;
-	using BlockPtrT = BlockPtr<T, BLOCK_ROWS, BLOCK_COLS>;
+    DeviceBlockVector() : size_(0) {}
+    DeviceBlockVector(int size) { resize(size); }
 
-	DeviceBlockVector() : size_(0) {}
-	DeviceBlockVector(int size) { resize(size); }
+    void resize(int size)
+    {
+        size_ = size;
+        values_.resize(size * BLOCK_AREA);
+    }
 
-	void resize(int size)
-	{
-		size_ = size;
-		values_.resize(size * BLOCK_AREA);
-	}
+    void map(int size, T* data)
+    {
+        size_ = size;
+        values_.map(size * BLOCK_AREA, data);
+    }
 
-	void map(int size, T* data)
-	{
-		size_ = size;
-		values_.map(size * BLOCK_AREA, data);
-	}
+    void fillZero() { values_.fillZero(); }
 
-	void fillZero()
-	{
-		values_.fillZero();
-	}
+    void copyTo(DeviceBlockVector& rhs) const { values_.copyTo(rhs.values()); }
 
-	void copyTo(DeviceBlockVector& rhs) const
-	{
-		values_.copyTo(rhs.values());
-	}
+    T* values() { return values_.data(); }
+    const T* values() const { return values_.data(); }
 
-	T* values() { return values_.data(); }
-	const T* values() const { return values_.data(); }
+    int size() const { return size_; }
+    int elemSize() const { return size_ * BLOCK_AREA; }
 
-	int size() const { return size_; }
-	int elemSize() const { return size_ * BLOCK_AREA; }
+    int rows() const { return BLOCK_ROWS; }
+    int cols() const { return BLOCK_COLS; }
 
-	int rows() const { return BLOCK_ROWS; }
-	int cols() const { return BLOCK_COLS; }
-
-	operator BlockPtrT() const { return BlockPtrT((T*)values_.data()); }
+    operator BlockPtrT() const { return BlockPtrT((T*)values_.data()); }
 
 private:
-
-	DeviceBuffer<T> values_;
-	int size_;
+    DeviceBuffer<T> values_;
+    int size_;
 };
 
 template <typename T>

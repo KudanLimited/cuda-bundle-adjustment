@@ -8,10 +8,8 @@
 
 namespace cuba
 {
-
 namespace maths
 {
-
 template <class T, int N>
 using Vec = Eigen::Matrix<T, N, 1>;
 
@@ -34,13 +32,13 @@ template <typename Scalar>
 struct Se3
 {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    
-	Se3() = default;
-    ~Se3() {}
-	Se3(const Eigen::Quaternion<Scalar>& r, const Vec3<Scalar>& t): r(r), t(t) {}
 
-	Eigen::Quaternion<Scalar> r;
-	Vec3<Scalar> t;
+    Se3() = default;
+    ~Se3() {}
+    Se3(const Eigen::Quaternion<Scalar>& r, const Vec3<Scalar>& t) : r(r), t(t) {}
+
+    Eigen::Quaternion<Scalar> r;
+    Vec3<Scalar> t;
 };
 
 using Se3F = Se3<float>;

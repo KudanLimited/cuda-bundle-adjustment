@@ -17,20 +17,19 @@ limitations under the License.
 #ifndef __CUDA_BUNDLE_ADJUSTMENT_H__
 #define __CUDA_BUNDLE_ADJUSTMENT_H__
 
-#include <memory>
-#include <vector>
-#include <map>
-#include <array>
-#include <string>
-#include <cmath>
-
-#include "device_matrix.h"
 #include "device_buffer.h"
+#include "device_matrix.h"
+
+#include <array>
+#include <cmath>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
 
 
 namespace cuba
 {
-
 // forward declerations
 struct CameraParams;
 class BaseEdgeSet;
@@ -51,35 +50,48 @@ using VertexSetVec = std::vector<BaseVertexSet*>;
 ////////////////////////////////////////////////////////////////////////////////////
 
 /** @brief information about optimization.
-*/
+ */
 struct BatchInfo
 {
-	int iteration;           //!< iteration number
-	double chi2;             //!< total chi2 (objective function value)
+    int iteration; //!< iteration number
+    double chi2; //!< total chi2 (objective function value)
 };
 
 class BatchStatistics
 {
 public:
-
-	BatchInfo& getStartStats() { assert(!stats.empty()); return stats[0]; }
-	BatchInfo& getLastStats() { assert(!stats.empty()); return stats.back(); }
-	BatchInfo& getStatEntry(const int idx) { assert(stats.size() < idx); return stats[idx]; }
-	void addStat(const BatchInfo& batchInfo) { stats.emplace_back(batchInfo); }
-	const std::vector<BatchInfo>& get() { return stats; }
-	void clear() { stats.clear(); }
+    BatchInfo& getStartStats()
+    {
+        assert(!stats.empty());
+        return stats[0];
+    }
+    BatchInfo& getLastStats()
+    {
+        assert(!stats.empty());
+        return stats.back();
+    }
+    BatchInfo& getStatEntry(const int idx)
+    {
+        assert(stats.size() < idx);
+        return stats[idx];
+    }
+    void addStat(const BatchInfo& batchInfo) { stats.emplace_back(batchInfo); }
+    const std::vector<BatchInfo>& get() { return stats; }
+    void clear() { stats.clear(); }
 
 private:
-
-	std::vector<BatchInfo> stats;
+    std::vector<BatchInfo> stats;
 };
 
 /** @brief Time profile.
-*/
+ */
 using TimeProfile = std::map<std::string, double>;
 
 template <typename T>
-static constexpr Scalar ScalarCast(T v) { return static_cast<Scalar>(v); }
+static constexpr Scalar ScalarCast(T v)
+{
+    return static_cast<Scalar>(v);
+}
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Cuda Bundle Adjustment
@@ -97,114 +109,111 @@ added in the graph.
 class CudaBundleAdjustment
 {
 public:
+    using Ptr = UniquePtr<CudaBundleAdjustmentImpl>;
 
-	using Ptr = UniquePtr<CudaBundleAdjustmentImpl>;
+    /** @brief Creates an instance of CudaBundleAdjustment.
+     */
+    static Ptr create();
 
-	/** @brief Creates an instance of CudaBundleAdjustment.
-	*/
-	static Ptr create();
+    /** @brief Initializes the graph.
+     */
+    virtual void initialize() = 0;
 
-	/** @brief Initializes the graph.
-	*/
-	virtual void initialize() = 0;
+    /** @brief Optimizes the graph.
+    @param niterations number of iterations for Levenberg-Marquardt algorithm.
+    */
+    virtual void optimize(int niterations) = 0;
 
-	/** @brief Optimizes the graph.
-	@param niterations number of iterations for Levenberg-Marquardt algorithm.
-	*/
-	virtual void optimize(int niterations) = 0;
+    /** @brief Returns the batch statistics.
+     */
+    virtual BatchStatistics& batchStatistics() = 0;
 
-	/** @brief Returns the batch statistics.
-	*/
-	virtual BatchStatistics& batchStatistics() = 0;
+    /** @brief Returns the time profile.
+     */
+    virtual const TimeProfile& timeProfile() = 0;
 
-	/** @brief Returns the time profile.
-	*/
-	virtual const TimeProfile& timeProfile() = 0;
+    /** @brief the destructor.
+     */
+    virtual ~CudaBundleAdjustment();
 
-	/** @brief the destructor.
-	*/
-	virtual ~CudaBundleAdjustment();
+    virtual EdgeSetVec& getEdgeSets() = 0;
 
-	virtual EdgeSetVec& getEdgeSets() = 0;
+    virtual void setCameraPrams(const CameraParams& camera) = 0;
 
-	virtual void setCameraPrams(const CameraParams& camera) = 0;
+    virtual size_t nVertices(const int id) = 0;
 
-	virtual size_t nVertices(const int id) = 0;
+    virtual void clearEdgeSets() = 0;
+    virtual void clearVertexSets() = 0;
 
-	virtual void clearEdgeSets() = 0;
-	virtual void clearVertexSets() = 0;
-
-	virtual void setVerbose(bool status) = 0;
+    virtual void setVerbose(bool status) = 0;
 };
 
 /** @brief Implementation of CudaBundleAdjustment.
-*/
+ */
 class CudaBundleAdjustmentImpl : public CudaBundleAdjustment
 {
 public:
+    /**
+     * @brief constructor
+     */
+    CudaBundleAdjustmentImpl();
 
-	/**
-	 * @brief constructor
-	 */
-	CudaBundleAdjustmentImpl();
+    /** @brief adds a new graph to the optimiser with a custom edge
+     */
+    template <typename T>
+    bool addEdgeSet(T* edgeSet)
+    {
+        assert(edgeSet != nullptr);
+        edgeSets.push_back(edgeSet);
+        return true;
+    }
 
-	/** @brief adds a new graph to the optimiser with a custom edge 
-	*/
-	template <typename T>
-	bool addEdgeSet(T* edgeSet)
-	{
-		assert(edgeSet != nullptr);
-		edgeSets.push_back(edgeSet);
-		return true;
-	}
+    template <typename T>
+    bool addVertexSet(T* vertexSet)
+    {
+        assert(vertexSet != nullptr);
+        vertexSets.push_back(vertexSet);
+        return true;
+    }
 
-	template <typename T>
-	bool addVertexSet(T* vertexSet)
-	{
-		assert(vertexSet != nullptr);
-		vertexSets.push_back(vertexSet);
-		return true;
-	}
-	
-	EdgeSetVec& getEdgeSets() override;
+    EdgeSetVec& getEdgeSets() override;
 
-	void setCameraPrams(const CameraParams& camera) override;
+    void setCameraPrams(const CameraParams& camera) override;
 
-	void initialize() override;
+    void initialize() override;
 
-	void optimize(int niterations) override;
+    void optimize(int niterations) override;
 
-	BatchStatistics& batchStatistics() override;
+    BatchStatistics& batchStatistics() override;
 
-	const TimeProfile& timeProfile() override;
+    const TimeProfile& timeProfile() override;
 
-	size_t nVertices(const int id) override;
+    size_t nVertices(const int id) override;
 
-	void clearEdgeSets() override;
-	void clearVertexSets() override;
+    void clearEdgeSets() override;
+    void clearVertexSets() override;
 
-	void setVerbose(bool status) override
-	{
-		verbose = status;
-	}
+    void setVerbose(bool status) override { verbose = status; }
 
-	~CudaBundleAdjustmentImpl();
+    ~CudaBundleAdjustmentImpl();
 
 private:
+    static inline double attenuation(double x) { return 1 - std::pow(2 * x - 1, 3); }
+    static inline double clamp(double v, double lo, double hi)
+    {
+        return std::max(lo, std::min(v, hi));
+    }
 
-	static inline double attenuation(double x) { return 1 - std::pow(2 * x - 1, 3); }
-	static inline double clamp(double v, double lo, double hi) { return std::max(lo, std::min(v, hi)); }
+    bool verbose = false;
 
-	bool verbose = false;
+    VertexSetVec vertexSets;
+    EdgeSetVec edgeSets;
 
-	VertexSetVec vertexSets;
-	EdgeSetVec edgeSets;
+    std::unique_ptr<CudaBlockSolver> solver_;
+    std::unique_ptr<CameraParams> camera_;
 
-	std::unique_ptr<CudaBlockSolver> solver_;
-	std::unique_ptr<CameraParams> camera_;
-
-	BatchStatistics stats_;
-	TimeProfile timeProfile_;
+    BatchStatistics stats_;
+    TimeProfile timeProfile_;
 };
 
 } // namespace cuba
