@@ -7,8 +7,6 @@
 
 namespace cuba
 {
-
-
 /**
  A line class representing the geometric representation of an infinite line in some 3D space.
  */
@@ -56,11 +54,7 @@ public:
         return r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
     }
 
-    HOST_DEVICE ScalarType norm(const Vec3& r)
-    {
-        return std::sqrt(normSquared(r));
-    }
-
+    HOST_DEVICE ScalarType norm(const Vec3& r) { return std::sqrt(normSquared(r)); }
 };
 
 template <typename Scalar>
@@ -104,6 +98,6 @@ public:
 };
 
 
-}
+} // namespace cuba
 
 #endif

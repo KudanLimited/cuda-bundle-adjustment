@@ -17,77 +17,67 @@ limitations under the License.
 #ifndef __CUDA_LINEAR_SOLVER_H__
 #define __CUDA_LINEAR_SOLVER_H__
 
-#include <memory>
-#include <iostream>
+#include "cholesky.h"
+#include "scalar.h"
+#include "sparse_block_matrix.h"
 
 #include <Eigen/Core>
 #include <Eigen/Sparse>
-
-#include "scalar.h"
-#include "sparse_block_matrix.h"
-#include "cholesky.h"
+#include <iostream>
+#include <memory>
 
 namespace cuba
 {
-
 class LinearSolver
 {
 public:
+    virtual bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) = 0;
 
-	virtual bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) = 0;
-
-	virtual ~LinearSolver() {}
-
+    virtual ~LinearSolver() {}
 };
 
 class HscSparseLinearSolver : public LinearSolver
 {
 public:
+    using SparseMatrixCSR = Eigen::SparseMatrix<Scalar, Eigen::RowMajor>;
+    using PermutationMatrix = Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic>;
+    using Cholesky = CuSparseCholeskySolver<Scalar>;
 
-	using SparseMatrixCSR = Eigen::SparseMatrix<Scalar, Eigen::RowMajor>;
-	using PermutationMatrix = Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic>;
-	using Cholesky = CuSparseCholeskySolver<Scalar>;
+    void initialize(HschurSparseBlockMatrix& Hsc);
 
-	void initialize(HschurSparseBlockMatrix& Hsc);
-
-	bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) override;
+    bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) override;
 
 private:
-
-	std::vector<int> P_;
-	Cholesky cholesky_;
+    std::vector<int> P_;
+    Cholesky cholesky_;
 };
 
 
 class HppSparseLinearSolver : public LinearSolver
 {
 public:
+    using Cholesky = CuSparseCholeskySolver<Scalar>;
 
-	using Cholesky = CuSparseCholeskySolver<Scalar>;
+    void initialize(HppSparseBlockMatrix& Hpp);
 
-	void initialize(HppSparseBlockMatrix& Hpp);
-
-	bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) override;
+    bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) override;
 
 private:
-
-	std::vector<int> P_;
-	Cholesky cholesky_;
+    std::vector<int> P_;
+    Cholesky cholesky_;
 };
 
 class DenseLinearSolver : public LinearSolver
 {
 public:
+    using Cholesky = CuDenseCholeskySolver<Scalar>;
 
-	using Cholesky = CuDenseCholeskySolver<Scalar>;
+    void initialize(HppSparseBlockMatrix& Hpp);
 
-	void initialize(HppSparseBlockMatrix& Hpp);
-
-	bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) override;
+    bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) override;
 
 private:
-
-	Cholesky cholesky_;
+    Cholesky cholesky_;
 };
 
 } // namespace cuba

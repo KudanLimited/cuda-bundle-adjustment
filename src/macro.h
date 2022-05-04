@@ -19,27 +19,36 @@ limitations under the License.
 
 #include <cstdio>
 
-#define CUDA_CHECK(err) \
-do {\
-	if (err != cudaSuccess) { \
-		printf("[CUDA Error] %s (code: %d) at %s:%d\n", cudaGetErrorString(err), err, __FILE__, __LINE__); \
-	} \
-} while (0)
+#define CUDA_CHECK(err)                                                                            \
+    do                                                                                             \
+    {                                                                                              \
+        if (err != cudaSuccess)                                                                    \
+        {                                                                                          \
+            printf(                                                                                \
+                "[CUDA Error] %s (code: %d) at %s:%d\n",                                           \
+                cudaGetErrorString(err),                                                           \
+                err,                                                                               \
+                __FILE__,                                                                          \
+                __LINE__);                                                                         \
+        }                                                                                          \
+    } while (0)
 
-#define CHECK_CUSPARSE(func)                                                   \
-{                                                                              \
-    cusparseStatus_t status = (func);                                          \
-    if (status != CUSPARSE_STATUS_SUCCESS) {                                   \
-        printf("CUSPARSE API failed with error (%d) at line %d\n", status, __LINE__); \
-    }                                                                          \
-}
+#define CHECK_CUSPARSE(func)                                                                       \
+    {                                                                                              \
+        cusparseStatus_t status = (func);                                                          \
+        if (status != CUSPARSE_STATUS_SUCCESS)                                                     \
+        {                                                                                          \
+            printf("CUSPARSE API failed with error (%d) at line %d\n", status, __LINE__);          \
+        }                                                                                          \
+    }
 
-#define CHECK_CUSOLVER(func)                                                   \
-{                                                                              \
-    cusolverStatus_t status = (func);                                          \
-    if (status != CUSOLVER_STATUS_SUCCESS) {                                   \
-        printf("CUSOLVER API failed with error (%d) at line %d\n", status, __LINE__);  \
-    }                                                                          \
-}
+#define CHECK_CUSOLVER(func)                                                                       \
+    {                                                                                              \
+        cusolverStatus_t status = (func);                                                          \
+        if (status != CUSOLVER_STATUS_SUCCESS)                                                     \
+        {                                                                                          \
+            printf("CUSOLVER API failed with error (%d) at line %d\n", status, __LINE__);          \
+        }                                                                                          \
+    }
 
 #endif // !__MACRO_H__
