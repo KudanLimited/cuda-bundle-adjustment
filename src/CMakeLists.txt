@@ -5,15 +5,11 @@ project(cuda_bundle_adjustment LANGUAGES CXX CUDA)
 set(CUBA_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 include_directories(${CUBA_INCLUDE_DIR})
 
-#CUDA_SELECT_NVCC_ARCH_FLAGS(ARCH_FLAGS "Auto")
-set(CUDA_ARCH "${ARCH_FLAGS}" CACHE STRING "Value of the NVCC -arch option." FORCE)
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} ${ARCH_FLAGS} -lineinfo --diag_suppress=esa_on_defaulted_function_ignored")
 if (DEBUG_CUDA)
 	set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-g -G -lineinfo")
 else()
 	set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-lineinfo")
 endif()
-message(STATUS "CUDA_ARCH: \"${CUDA_ARCH}\"")
 
 # Flags for each platform
 if (CMAKE_COMPILER_IS_GNUCXX)
@@ -24,7 +20,7 @@ find_package(CUDA REQUIRED)
 include_directories(${CUDA_INCLUDE_DIRS})
 
 if (WIN32)
-	set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -dc -Xcompiler \"/wd 4819\" -Xcompiler \"/wd 4244\"")
+	set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -dc -Xcompiler \"/wd 4819\" -Xcompiler \"/wd 4244\"")
 	add_compile_options(/wd4819)
 	add_definitions(-D_SILENCE_CXX17_NEGATORS_DEPRECATION_WARNING)
 endif()
@@ -34,8 +30,10 @@ if (USE_FLOAT32)
 endif()
 
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set(CMAKE_CUDA_ARCHITECTURES 61)
+  set(CMAKE_CUDA_ARCHITECTURES 75)
 endif()
+
+message(STATUS "CUDA_ARCH: \"${CMAKE_CUDA_ARCHITECTURES}\"")
 
 file(GLOB_RECURSE srcs ./*.cpp ./*.cu ./*.h ${CUBA_INCLUDE_DIR}/*.h)
 add_library(cuda_bundle_adjustment STATIC ${srcs})
