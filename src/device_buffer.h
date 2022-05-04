@@ -21,6 +21,8 @@ limitations under the License.
 
 #include <cuda_runtime.h>
 
+#include <cassert>
+
 namespace cuba
 {
 template <typename T>
