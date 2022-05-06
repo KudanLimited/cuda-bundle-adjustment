@@ -6,12 +6,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(ENABLE_SAMPLES FALSE)
-set(WITH_G2O  FALSE)
+set(WITH_G2O FALSE)
 option(USE_FLOAT32    "Use 32bit float in internal floating-point operations (default is 64bit float)" OFF)
 
 # Eigen
-find_package(Eigen3 REQUIRED)
-include_directories(${EIGEN3_INCLUDE_DIR})
+find_package(Eigen3 CONFIG REQUIRED)
+include_directories(${eigen_INCLUDE_DIRS_RELWITHDEBINFO})
+message("${eigen_INCLUDE_DIRS_RELWITHDEBINFO}")
 
 add_subdirectory(src)
 

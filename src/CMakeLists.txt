@@ -6,9 +6,9 @@ set(CUBA_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 include_directories(${CUBA_INCLUDE_DIR})
 
 if (DEBUG_CUDA)
-	set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-g -G -lineinfo")
+	set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -g -G -lineinfo")
 else()
-	set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-lineinfo")
+	set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lineinfo")
 endif()
 
 # Flags for each platform
@@ -20,9 +20,10 @@ find_package(CUDA REQUIRED)
 include_directories(${CUDA_INCLUDE_DIRS})
 
 if (WIN32)
-	set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -dc -Xcompiler \"/wd 4819\" -Xcompiler \"/wd 4244\"")
-	add_compile_options(/wd4819)
-	add_definitions(-D_SILENCE_CXX17_NEGATORS_DEPRECATION_WARNING)
+	#set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -dc -Xcompiler \"/wd 4819\" -Xcompiler \"/wd 4244\"")
+	#add_compile_options(/wd4819)
+	set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -dc")
+	add_definitions(-D_SILENCE_CXX17_NEGATORS_DEPRECATION_WARNING -D_USE_MATH_DEFINES)
 endif()
 
 if (USE_FLOAT32)
@@ -41,6 +42,8 @@ add_library(cuda_bundle_adjustment STATIC ${srcs})
 target_compile_features(cuda_bundle_adjustment PUBLIC cxx_std_11)
 target_link_libraries(cuda_bundle_adjustment PUBLIC ${CUDA_cusparse_LIBRARY} ${CUDA_cusolver_LIBRARY} Eigen3::Eigen3)
 target_include_directories(cuda_bundle_adjustment PUBLIC "${CMAKE_SOURCE_DIR}/src")
+set_property(TARGET cuda_bundle_adjustment PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+set_target_properties(cuda_bundle_adjustment PROPERTIES CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 
 install(
 	TARGETS cuda_bundle_adjustment
