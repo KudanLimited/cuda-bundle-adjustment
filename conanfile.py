@@ -4,7 +4,7 @@ from pathlib import Path
 import os
 
 
-class CubaConan(ConanFile):
+class CugoConan(ConanFile):
     name = "cuba"
     license = "Apache License 2.0"
     author = "fixstars"
@@ -22,7 +22,7 @@ class CubaConan(ConanFile):
         "use_float32": [True, False]
     }
     default_options = {
-        "shared": False,
+        "shared": True,
         "fPIC": True,
         "with_samples": True,
         "with_g2o": False,
@@ -51,6 +51,7 @@ class CubaConan(ConanFile):
         tc.variables["ENABLE_SAMPLES"] = self.options.with_samples
         tc.variables["WITH_G2O"] = self.options.with_g2o
         tc.variables["USE_FLOAT32"] = self.options.use_float32
+        tc.variables["BUILD_CUGO_SHARED"] = bool(self.options.shared)
         
         tc.generate()
 
@@ -72,6 +73,6 @@ class CubaConan(ConanFile):
 
     def package_info(self):
         self.cpp_info.libs = tools.collect_libs(self)
-        self.cpp_info.set_property("cmake_file_name", "cuba")
-        self.cpp_info.set_property("cmake_target_name", "cuba::cuba")
+        self.cpp_info.set_property("cmake_file_name", "cugo")
+        self.cpp_info.set_property("cmake_target_name", "cugo::cugo")
 

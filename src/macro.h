@@ -51,4 +51,29 @@ limitations under the License.
         }                                                                                          \
     }
 
+
+#ifdef WIN32
+    #ifdef BUILDING_DLL
+        #ifdef __GNUC__
+            #define GUGO_API __attribute__((dllexport))
+        #else
+            #define CUGO_API __declspec(dllexport)
+        #endif
+    #else
+        #ifdef __GNUC__
+            #define GUGO_API __attribute__((dllimport))
+        #else
+            #define CUGO_API __declspec(dllimport)
+        #endif
+    #endif
+#else
+    #if __GNUC__>=4
+        #define CUGO_API __attribute__((visibility("default")))
+    #else
+        #define CUGO_API
+    #endif
+#endif
+
+
+
 #endif // !__MACRO_H__
