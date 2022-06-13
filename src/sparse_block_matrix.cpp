@@ -20,7 +20,7 @@ limitations under the License.
 
 #include <algorithm>
 
-namespace cuba
+namespace cugo
 {
 void HplSparseBlockMatrix::constructFromBlockPos(std::vector<HplBlockPos>& blockpos)
 {
@@ -257,4 +257,4 @@ void HschurSparseBlockMatrix::convertBSRToCSR()
     }
 }
 
-} // namespace cuba
+} // namespace cugo

@@ -17,7 +17,7 @@ limitations under the License.
 #ifndef __CONSTANTS_H__
 #define __CONSTANTS_H__
 
-namespace cuba
+namespace cugo
 {
 static constexpr int PDIM = 6;
 static constexpr int LDIM = 3;
@@ -34,6 +34,6 @@ enum EdgeFlag
     EDGE_FLAG_FIXED_P = 2
 };
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // !__CONSTANTS_H__

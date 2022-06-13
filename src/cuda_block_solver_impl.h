@@ -12,7 +12,7 @@
 #include <vector>
 
 
-namespace cuba
+namespace cugo
 {
 // forward declerations
 class BaseEdge;
@@ -145,6 +145,6 @@ private:
     std::vector<double> profItems_;
 };
 
-} // namespace cuba
+} // namespace cugo
 
 #endif

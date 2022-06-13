@@ -25,7 +25,7 @@ limitations under the License.
 
 #include <algorithm>
 
-namespace cuba
+namespace cugo
 {
 namespace gpu
 {
@@ -2186,4 +2186,4 @@ void constructQuadraticForm_Line(
 }
 
 } // namespace gpu
-} // namespace cuba
+} // namespace cugo

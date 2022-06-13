@@ -12,7 +12,7 @@
 
 #include <type_traits>
 
-namespace cuba
+namespace cugo
 {
 template <typename T>
 class SparseCholesky
@@ -155,6 +155,6 @@ private:
 
 #include "cholesky.hpp"
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // _CHOLESKY_H

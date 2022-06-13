@@ -19,7 +19,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace cuba
+namespace cugo
 {
 ////////////////////////////////////////////////////////////////////////////////////
 // Type alias
@@ -570,6 +570,6 @@ struct CameraParams
 
 #include "optimisable_graph.hpp"
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // __OPTIMISABLE_GRAPH_H__

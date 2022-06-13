@@ -23,7 +23,7 @@ limitations under the License.
 
 #include <cassert>
 
-namespace cuba
+namespace cugo
 {
 template <typename T>
 class DeviceBuffer
@@ -109,6 +109,6 @@ private:
     bool allocated_;
 };
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // !__DEVICE_BUFFER_H__

@@ -22,7 +22,7 @@ limitations under the License.
 #include "fixed_vector.h"
 #include "scalar.h"
 
-namespace cuba
+namespace cugo
 {
 // forward declerations
 struct PLIndex;
@@ -181,6 +181,6 @@ using GpuPx1BlockVec = DeviceBlockVector<Scalar, PDIM, 1>;
 using GpuLx1BlockVec = DeviceBlockVector<Scalar, LDIM, 1>;
 
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // !__DEVICE_MATRIX_H__

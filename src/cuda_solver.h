@@ -9,7 +9,7 @@
 
 #include <type_traits>
 
-namespace cuba
+namespace cugo
 {
 struct CusparseHandle
 {
@@ -67,6 +67,6 @@ struct CuDenseSolverHandle
     cusolverDnHandle_t handle;
 };
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // _CUDA_SOLVER_H

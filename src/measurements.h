@@ -5,7 +5,7 @@
 
 #include <cuda_runtime.h>
 
-namespace cuba
+namespace cugo
 {
 /**
  A line class representing the geometric representation of an infinite line in some 3D space.
@@ -98,6 +98,6 @@ public:
 };
 
 
-} // namespace cuba
+} // namespace cugo
 
 #endif

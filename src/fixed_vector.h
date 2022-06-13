@@ -25,7 +25,7 @@ limitations under the License.
 #include <cassert>
 #include <cstdint>
 
-namespace cuba
+namespace cugo
 {
 #define HOST_DEVICE __host__ __device__ inline
 
@@ -261,6 +261,6 @@ struct Se3
 using Se3F = Se3<float>;
 using Se3D = Se3<double>;
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // !__FIXED_VECTOR_H__

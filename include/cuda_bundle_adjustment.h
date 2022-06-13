@@ -19,6 +19,7 @@ limitations under the License.
 
 #include "device_buffer.h"
 #include "device_matrix.h"
+#include "macro.h"
 
 #include <array>
 #include <cmath>
@@ -28,7 +29,7 @@ limitations under the License.
 #include <vector>
 
 
-namespace cuba
+namespace cugo
 {
 // forward declerations
 struct CameraParams;
@@ -51,13 +52,14 @@ using VertexSetVec = std::vector<BaseVertexSet*>;
 
 /** @brief information about optimization.
  */
-struct BatchInfo
+struct CUGO_API BatchInfo
 {
     int iteration; //!< iteration number
     double chi2; //!< total chi2 (objective function value)
 };
 
-class BatchStatistics
+
+class CUGO_API BatchStatistics
 {
 public:
     BatchInfo& getStartStats()
@@ -106,7 +108,7 @@ It optimizes camera poses and landmarks (3D points) represented by a graph.
 added in the graph.
 
 */
-class CudaBundleAdjustment
+class CUGO_API CudaBundleAdjustment
 {
 public:
     using Ptr = UniquePtr<CudaBundleAdjustmentImpl>;
@@ -150,7 +152,7 @@ public:
 
 /** @brief Implementation of CudaBundleAdjustment.
  */
-class CudaBundleAdjustmentImpl : public CudaBundleAdjustment
+class CUGO_API CudaBundleAdjustmentImpl : public CudaBundleAdjustment
 {
 public:
     /**
@@ -216,6 +218,6 @@ private:
     TimeProfile timeProfile_;
 };
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // !__CUDA_BUNDLE_ADJUSTMENT_H__

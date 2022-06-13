@@ -19,7 +19,7 @@ limitations under the License.
 
 #include <type_traits>
 
-namespace cuba
+namespace cugo
 {
 #ifdef USE_FLOAT32
 using Scalar = float;
@@ -31,6 +31,6 @@ static_assert(
     std::is_same<Scalar, float>::value || std::is_same<Scalar, double>::value,
     "Scalar must be float or double.");
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // !__SCALAR_H__

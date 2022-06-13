@@ -6,7 +6,7 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
-namespace cuba
+namespace cugo
 {
 namespace maths
 {
@@ -45,6 +45,6 @@ using Se3F = Se3<float>;
 using Se3D = Se3<double>;
 
 } // namespace maths
-} // namespace cuba
+} // namespace cugo
 
 #endif // _MATHS_H

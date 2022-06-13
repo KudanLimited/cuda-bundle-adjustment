@@ -21,7 +21,7 @@ limitations under the License.
 
 #include <vector>
 
-namespace cuba
+namespace cugo
 {
 void HscSparseLinearSolver::initialize(HschurSparseBlockMatrix& Hsc)
 {
@@ -105,4 +105,4 @@ bool DenseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x)
 }
 
 
-} // namespace cuba
+} // namespace cugo

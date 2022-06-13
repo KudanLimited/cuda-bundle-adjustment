@@ -26,7 +26,7 @@ limitations under the License.
 #include <iostream>
 #include <memory>
 
-namespace cuba
+namespace cugo
 {
 class LinearSolver
 {
@@ -80,6 +80,6 @@ private:
     Cholesky cholesky_;
 };
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // !__CUDA_LINEAR_SOLVER_H__
