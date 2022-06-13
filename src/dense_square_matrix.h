@@ -4,7 +4,7 @@
 #include "cuda_solver.h"
 #include "device_buffer.h"
 
-namespace cuba
+namespace cugo
 {
 template <typename T>
 class DenseSquareMatrix
@@ -40,6 +40,6 @@ private:
 };
 
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // _SPARSE_SQUARE_MATRIX_CSR_H

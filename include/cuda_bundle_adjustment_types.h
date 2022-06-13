@@ -27,7 +27,7 @@ limitations under the License.
 #include <unordered_set>
 #include <vector>
 
-namespace cuba
+namespace cugo
 {
 class CUGO_API StereoEdgeSet : public EdgeSet<3, maths::Vec3d, Vec3d, PoseVertex, LandmarkVertex>
 {
@@ -201,6 +201,6 @@ public:
     void* getMeasurement() override { return static_cast<void*>(measurement.data()); }
 };
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // !__CUDA_BUNDLE_ADJUSTMENT_TYPES_H__

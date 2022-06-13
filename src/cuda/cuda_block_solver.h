@@ -22,7 +22,7 @@ limitations under the License.
 #include "fixed_vector.h"
 #include "measurements.h"
 
-namespace cuba
+namespace cugo
 {
 namespace gpu
 {
@@ -184,6 +184,6 @@ void CUGO_API constructQuadraticForm_Plane(
 
 } // namespace gpu
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // !__CUDA_BLOCK_SOLVER_H__

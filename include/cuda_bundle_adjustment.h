@@ -29,7 +29,7 @@ limitations under the License.
 #include <vector>
 
 
-namespace cuba
+namespace cugo
 {
 // forward declerations
 struct CameraParams;
@@ -218,6 +218,6 @@ private:
     TimeProfile timeProfile_;
 };
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // !__CUDA_BUNDLE_ADJUSTMENT_H__

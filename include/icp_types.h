@@ -14,7 +14,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace cuba
+namespace cugo
 {
 class CUGO_API LineEdgeSet 
     : public EdgeSet<1, PointToLineMatch<double>, PointToLineMatch<double>, PoseVertex>
@@ -106,7 +106,7 @@ private:
 };
 
 
-class CUGO_API PlaneEdge : public Edge<1, cuba::PointToPlaneMatch<double>, cuba::PoseVertex>
+class CUGO_API PlaneEdge : public Edge<1, cugo::PointToPlaneMatch<double>, cugo::PoseVertex>
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -115,7 +115,7 @@ public:
 };
 
 
-class CUGO_API LineEdge : public Edge<1, cuba::PointToLineMatch<double>, cuba::PoseVertex>
+class CUGO_API LineEdge : public Edge<1, cugo::PointToLineMatch<double>, cugo::PoseVertex>
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -145,6 +145,6 @@ private:
 };*/
 
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // !__ICP_TYPES_H__

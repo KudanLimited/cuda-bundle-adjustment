@@ -32,7 +32,7 @@ limitations under the License.
 #include <vector>
 
 using OptimizerCPU = g2o::SparseOptimizer;
-using OptimizerGPU = cuba::CudaBundleAdjustmentImpl;
+using OptimizerGPU = cugo::CudaBundleAdjustmentImpl;
 
 static void readGraph(
     const std::string& filename,
@@ -151,9 +151,9 @@ int main(int argc, char** argv)
 }
 
 template <typename T, int N>
-static inline cuba::Array<T, N> getArray(const cv::FileNode& node)
+static inline cugo::Array<T, N> getArray(const cv::FileNode& node)
 {
-    cuba::Array<T, N> arr = {};
+    cugo::Array<T, N> arr = {};
     int pos = 0;
     for (const auto& v : node)
     {
@@ -185,7 +185,7 @@ static void readGraph(
     optimizerCPU.setComputeBatchStatistics(true);
 
     // read camera parameters
-    cuba::CameraParams camera;
+    cugo::CameraParams camera;
     camera.fx = fs["fx"];
     camera.fy = fs["fy"];
     camera.cx = fs["cx"];
@@ -193,8 +193,8 @@ static void readGraph(
     camera.bf = fs["bf"];
 
     // read pose vertices
-    cuba::MonoEdgeSet* monoEdgeSet = new cuba::MonoEdgeSet();
-    cuba::StereoEdgeSet* stereoEdgeSet = new cuba::StereoEdgeSet();
+    cugo::MonoEdgeSet* monoEdgeSet = new cugo::MonoEdgeSet();
+    cugo::StereoEdgeSet* stereoEdgeSet = new cugo::StereoEdgeSet();
 
     optimizerGPU.setCameraPrams(camera);
 
@@ -214,7 +214,7 @@ static void readGraph(
         optimizerCPU.addVertex(vcpu);
 
         // add pose vertex to GPU optimizer
-        auto vgpu = obj.create<cuba::PoseVertex>(id, q, t, fixed);
+        auto vgpu = obj.create<cugo::PoseVertex>(id, q, t, fixed);
         optimizerGPU.addPoseVertex(vgpu);
 
         poseIds.push_back(id);
@@ -236,7 +236,7 @@ static void readGraph(
         optimizerCPU.addVertex(vcpu);
 
         // add landmark vertex to GPU optimizer
-        auto vgpu = obj.create<cuba::LandmarkVertex>(id, Xw, fixed);
+        auto vgpu = obj.create<cugo::LandmarkVertex>(id, Xw, fixed);
         optimizerGPU.addLandmarkVertex(vgpu);
 
         landmarkIds.push_back(id);
@@ -266,7 +266,7 @@ static void readGraph(
         auto poseVertex = optimizerGPU.poseVertex(iP);
         auto landmarkVertex = optimizerGPU.landmarkVertex(iL);
         auto egpu =
-            obj.create<cuba::MonoEdge>(measurement, information, poseVertex, landmarkVertex);
+            obj.create<cugo::MonoEdge>(measurement, information, poseVertex, landmarkVertex);
         monoEdgeSet->addEdge(egpu);
     }
 
@@ -295,12 +295,12 @@ static void readGraph(
         auto poseVertex = optimizerGPU.poseVertex(iP);
         auto landmarkVertex = optimizerGPU.landmarkVertex(iL);
         auto egpu =
-            obj.create<cuba::StereoEdge>(measurement, information, poseVertex, landmarkVertex);
+            obj.create<cugo::StereoEdge>(measurement, information, poseVertex, landmarkVertex);
         stereoEdgeSet->addEdge(egpu);
     }
 
-    optimizerGPU.addEdgeSet<cuba::StereoEdgeSet>(stereoEdgeSet);
-    optimizerGPU.addEdgeSet<cuba::MonoEdgeSet>(monoEdgeSet);
+    optimizerGPU.addEdgeSet<cugo::StereoEdgeSet>(stereoEdgeSet);
+    optimizerGPU.addEdgeSet<cugo::MonoEdgeSet>(monoEdgeSet);
 
     // "warm-up" to avoid overhead
     optimizerCPU.initializeOptimization();

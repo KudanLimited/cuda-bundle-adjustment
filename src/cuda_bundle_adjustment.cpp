@@ -31,7 +31,7 @@ limitations under the License.
 #include <unordered_map>
 #include <unordered_set>
 
-namespace cuba
+namespace cugo
 {
 using time_point = decltype(std::chrono::steady_clock::now());
 
@@ -667,4 +667,4 @@ CudaBundleAdjustment::Ptr CudaBundleAdjustment::create()
 
 CudaBundleAdjustment::~CudaBundleAdjustment() {}
 
-} // namespace cuba
+} // namespace cugo

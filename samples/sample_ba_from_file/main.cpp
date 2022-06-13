@@ -24,7 +24,7 @@ limitations under the License.
 #include <iostream>
 #include <vector>
 
-static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename);
+static cugo::CudaBundleAdjustment::Ptr readGraph(const std::string& filename);
 
 int main(int argc, char** argv)
 {
@@ -81,9 +81,9 @@ int main(int argc, char** argv)
 }
 
 template <typename T, int N>
-static inline cuba::maths::Vec<T, N> getArray(const cv::FileNode& node)
+static inline cugo::maths::Vec<T, N> getArray(const cv::FileNode& node)
 {
-    cuba::maths::Vec<T, N> arr = {};
+    cugo::maths::Vec<T, N> arr = {};
     int pos = 0;
     for (const auto& v : node)
     {
@@ -94,19 +94,19 @@ static inline cuba::maths::Vec<T, N> getArray(const cv::FileNode& node)
     return arr;
 }
 
-static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
+static cugo::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
 {
     cv::FileStorage fs(filename, cv::FileStorage::READ);
     CV_Assert(fs.isOpened());
 
-    auto optimizer = cuba::CudaBundleAdjustment::create();
+    auto optimizer = cugo::CudaBundleAdjustment::create();
 
     // read pose vertices
-    cuba::PoseVertexSet* poseVertexSet = new cuba::PoseVertexSet(false);
-    cuba::LandmarkVertexSet* landmarkVertexSet = new cuba::LandmarkVertexSet(true);
+    cugo::PoseVertexSet* poseVertexSet = new cugo::PoseVertexSet(false);
+    cugo::LandmarkVertexSet* landmarkVertexSet = new cugo::LandmarkVertexSet(true);
 
-    cuba::MonoEdgeSet* monoEdgeSet = new cuba::MonoEdgeSet();
-    cuba::StereoEdgeSet* stereoEdgeSet = new cuba::StereoEdgeSet();
+    cugo::MonoEdgeSet* monoEdgeSet = new cugo::MonoEdgeSet();
+    cugo::StereoEdgeSet* stereoEdgeSet = new cugo::StereoEdgeSet();
 
     for (const auto& node : fs["pose_vertices"])
     {
@@ -115,7 +115,7 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
         const auto q = Eigen::Quaterniond(getArray<double, 4>(node["q"]));
         const auto t = getArray<double, 3>(node["t"]);
 
-        cuba::PoseVertex* poseVertex = new cuba::PoseVertex(id, cuba::maths::Se3D(q, t), fixed);
+        cugo::PoseVertex* poseVertex = new cugo::PoseVertex(id, cugo::maths::Se3D(q, t), fixed);
         poseVertexSet->addVertex(poseVertex);
     }
     optimizer->addVertexSet(poseVertexSet);
@@ -127,7 +127,7 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
         const int fixed = node["fixed"];
         const auto Xw = getArray<double, 3>(node["Xw"]);
 
-        cuba::LandmarkVertex* landmarkVertex = new cuba::LandmarkVertex(id, Xw, fixed);
+        cugo::LandmarkVertex* landmarkVertex = new cugo::LandmarkVertex(id, Xw, fixed);
         landmarkVertexSet->addVertex(landmarkVertex);
     }
     optimizer->addVertexSet(landmarkVertexSet);
@@ -144,7 +144,7 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
         auto poseVertex = poseVertexSet->getVertex(iP);
         auto landmarkVertex = landmarkVertexSet->getVertex(iL);
 
-        cuba::MonoEdge* monoEdge = new cuba::MonoEdge();
+        cugo::MonoEdge* monoEdge = new cugo::MonoEdge();
         monoEdge->setVertex(poseVertex, 0);
         monoEdge->setVertex(landmarkVertex, 1);
         monoEdge->setMeasurement(measurement);
@@ -164,7 +164,7 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
         auto poseVertex = poseVertexSet->getVertex(iP);
         auto landmarkVertex = landmarkVertexSet->getVertex(iL);
 
-        cuba::StereoEdge* stereoEdge = new cuba::StereoEdge();
+        cugo::StereoEdge* stereoEdge = new cugo::StereoEdge();
         stereoEdge->setVertex(poseVertex, 0);
         stereoEdge->setVertex(landmarkVertex, 1);
         stereoEdge->setMeasurement(measurement);
@@ -173,15 +173,15 @@ static cuba::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
     }
 
     // read camera parameters
-    cuba::CameraParams camera;
+    cugo::CameraParams camera;
     camera.fx = fs["fx"];
     camera.fy = fs["fy"];
     camera.cx = fs["cx"];
     camera.cy = fs["cy"];
     camera.bf = fs["bf"];
 
-    optimizer->addEdgeSet<cuba::MonoEdgeSet>(monoEdgeSet);
-    optimizer->addEdgeSet<cuba::StereoEdgeSet>(stereoEdgeSet);
+    optimizer->addEdgeSet<cugo::MonoEdgeSet>(monoEdgeSet);
+    optimizer->addEdgeSet<cugo::StereoEdgeSet>(stereoEdgeSet);
     optimizer->setCameraPrams(camera);
 
     // "warm-up" to avoid overhead

@@ -22,7 +22,7 @@ limitations under the License.
 #include <Eigen/Core>
 #include <vector>
 
-namespace cuba
+namespace cugo
 {
 // forward declerations
 class BaseVertex;
@@ -99,6 +99,6 @@ private:
 using HschurSparseBlockMatrix = PoseSparseBlockMatrix;
 using HppSparseBlockMatrix = PoseSparseBlockMatrix;
 
-} // namespace cuba
+} // namespace cugo
 
 #endif // !__SPARSE_BLOCK_MATRIX_H__

@@ -3,7 +3,7 @@
 
 #include "device_matrix.h"
 
-namespace cuba
+namespace cugo
 {
 namespace gpu
 {
@@ -25,5 +25,5 @@ constexpr int BLOCK_MAX_DIAGONAL = 512;
 constexpr int BLOCK_COMPUTE_SCALE = 512;
 
 } // namespace gpu
-} // namespace cuba
+} // namespace cugo
 #endif //__CUDA_CONSTANTS_H__
