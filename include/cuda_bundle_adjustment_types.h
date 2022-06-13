@@ -29,7 +29,7 @@ limitations under the License.
 
 namespace cuba
 {
-class StereoEdgeSet : public EdgeSet<3, maths::Vec3d, Vec3d, PoseVertex, LandmarkVertex>
+class CUGO_API StereoEdgeSet : public EdgeSet<3, maths::Vec3d, Vec3d, PoseVertex, LandmarkVertex>
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -105,8 +105,7 @@ public:
 private:
 };
 
-
-class MonoEdgeSet : public EdgeSet<2, maths::Vec2d, Vec2d, PoseVertex, LandmarkVertex>
+class CUGO_API MonoEdgeSet : public EdgeSet<2, maths::Vec2d, Vec2d, PoseVertex, LandmarkVertex>
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -184,7 +183,7 @@ private:
 
 /** @brief Edge with 2-dimensional measurement (monocular observation).
  */
-class MonoEdge : public Edge<2, maths::Vec2d, PoseVertex, LandmarkVertex>
+class CUGO_API MonoEdge : public Edge<2, maths::Vec2d, PoseVertex, LandmarkVertex>
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -194,7 +193,7 @@ public:
 
 /** @brief Edge with 3-dimensional measurement (stereo observation).
  */
-class StereoEdge : public Edge<3, maths::Vec3d, PoseVertex, LandmarkVertex>
+class CUGO_API StereoEdge : public Edge<3, maths::Vec3d, PoseVertex, LandmarkVertex>
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
