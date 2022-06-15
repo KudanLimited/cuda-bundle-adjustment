@@ -359,11 +359,6 @@ inline void DenseCholesky<double>::allocateBuffer(
     CHECK_CUSPARSE(cusparseCreateDnMat(
         &dnMatDescr, B.rows(), B.cols(), B.ld(), B.val(), CUDA_R_64F, CUSPARSE_ORDER_COL));
 
-    size_t bufferSize = 0;
-    CHECK_CUSPARSE(cusparseSparseToDense_bufferSize(
-        spHandle_, spMatDescr, dnMatDescr, CUSPARSE_SPARSETODENSE_ALG_DEFAULT, &bufferSize));
-    denseBuffer_.resize(bufferSize);
-
     int sytBufferSize = 0;
     CHECK_CUSOLVER(cusolverDnDgetrf_bufferSize(
         dnHandle_, B.rows(), B.cols(), B.val(), B.ld(), &sytBufferSize));
