@@ -31,7 +31,7 @@ if (USE_FLOAT32)
 	add_definitions(-DUSE_FLOAT32)
 endif()
 
-file(GLOB_RECURSE cpp_srcs ./*.cpp ./*.h ./*.cu ${CUGO_INCLUDE_DIR}/*.h)
+file(GLOB_RECURSE srcs ./*.cpp ./*.h ./*.cu ${CUGO_INCLUDE_DIR}/*.h)
 
 if (BUILD_CUGO_SHARED) 
 	add_library(cugo SHARED ${srcs})
@@ -43,7 +43,7 @@ if (BUILD_CUGO_SHARED)
 		CUDA::cudart
 	)
 else()
-	add_library(cugo STATIC ${cpp_srcs})
+	add_library(cugo STATIC ${srcs})
 	set(CUDA_LIBS 
 		CUDA::cusparse_static 
 		CUDA::cusolver_static 

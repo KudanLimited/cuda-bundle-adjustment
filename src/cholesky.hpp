@@ -332,11 +332,6 @@ DenseCholesky<float>::allocateBuffer(SparseSquareMatrixCSR<float>& A, DenseSquar
     CHECK_CUSPARSE(cusparseCreateDnMat(
         &dnMatDescr, B.rows(), B.cols(), B.ld(), B.val(), CUDA_R_32F, CUSPARSE_ORDER_COL));
 
-    size_t bufferSize = 0;
-    CHECK_CUSPARSE(cusparseSparseToDense_bufferSize(
-        spHandle_, spMatDescr, dnMatDescr, CUSPARSE_SPARSETODENSE_ALG_DEFAULT, &bufferSize));
-    denseBuffer_.resize(bufferSize);
-
     int sytBufferSize = 0;
     CHECK_CUSOLVER(
         cusolverDnSsytrf_bufferSize(dnHandle_, B.rows(), B.val(), B.ld(), &sytBufferSize));
@@ -370,8 +365,6 @@ inline void DenseCholesky<double>::allocateBuffer(
     denseBuffer_.resize(bufferSize);
 
     int sytBufferSize = 0;
-    // CHECK_CUSOLVER(cusolverDnDsytrf_bufferSize(dnHandle_, B.rows(), B.val(), B.ld(),
-    // &sytBufferSize));
     CHECK_CUSOLVER(cusolverDnDgetrf_bufferSize(
         dnHandle_, B.rows(), B.cols(), B.val(), B.ld(), &sytBufferSize));
     buffer_.resize(sytBufferSize);
@@ -383,12 +376,20 @@ template <typename T>
 inline void
 DenseCholesky<T>::sparseToDense(const SparseSquareMatrixCSR<T>& A, DenseSquareMatrix<T>& B)
 {
-    CHECK_CUSPARSE(cusparseSparseToDense(
-        spHandle_,
-        spMatDescr,
-        dnMatDescr,
-        CUSPARSE_SPARSETODENSE_ALG_DEFAULT,
-        denseBuffer_.data()));
+}
+
+template <>
+inline void
+DenseCholesky<float>::sparseToDense(const SparseSquareMatrixCSR<float>& A, DenseSquareMatrix<float>& B)
+{
+   // CHECK_CUSPARSE(cusparseCcsr2dense(spHandle_, A.rows(), A.cols(), A.desc(), A.val(), A.rowPtr(), A.colInd(), B.val(), A.rows()));
+}
+
+template <>
+inline void
+DenseCholesky<double>::sparseToDense(const SparseSquareMatrixCSR<double>& A, DenseSquareMatrix<double>& B)
+{
+    CHECK_CUSPARSE(cusparseDcsr2dense(spHandle_, A.rows(), A.cols(), A.desc(), A.val(), A.rowPtr(), A.colInd(), B.val(), A.rows()));
 }
 
 template <typename T>
@@ -421,8 +422,6 @@ inline bool DenseCholesky<float>::factorize(DenseSquareMatrix<float>& A)
 template <>
 inline bool DenseCholesky<double>::factorize(DenseSquareMatrix<double>& A)
 {
-    // CHECK_CUSOLVER(cusolverDnDsytrf(dnHandle_, CUBLAS_FILL_MODE_LOWER, A.rows(), A.val(), A.ld(),
-    // ipiv_.data(), buffer_.data(), buffer_.size(), info_.data()));
     CHECK_CUSOLVER(cusolverDnDgetrf(
         dnHandle_,
         A.rows(),
