@@ -62,7 +62,7 @@ void CudaBlockSolver::initialize(
         if (vertexSet->isMarginilised())
         {
             // only perform schur if we have landmark vertices
-            this->doSchure = true;
+            this->doSchur = true;
         }
     }
 
@@ -81,7 +81,7 @@ void CudaBlockSolver::initialize(
     // create sparse linear solver
     if (!linearSolver_)
     {
-        if (doSchure)
+        if (doSchur)
         {
             linearSolver_ = std::make_unique<HscSparseLinearSolver>();
         }
@@ -162,22 +162,21 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
         }
     }
 
-
     // setup the edge set estimation data
     nedges_ = 0;
     size_t nVertexBlockPos = 0;
     int edgeId = 0;
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
-        edgeSet->init(edgeId, doSchure);
+        edgeSet->init(edgeId, doSchur);
         nedges_ += edgeSet->nedges();
-        if (doSchure)
+        if (doSchur)
         {
             nVertexBlockPos += edgeSet->getHessianBlockPosSize();
         }
     }
 
-    if (doSchure)
+    if (doSchur)
     {
         // build Hpl block matrix structure
         std::vector<HplBlockPos> hplBlockPos;
@@ -197,15 +196,24 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 
         gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_);
 
-        // build Hschur block matrix structure
+        // build host Hschur block matrix structure
         Hsc_.resize(numP, numP);
         Hsc_.constructFromVertices(verticesL);
         Hsc_.convertBSRToCSR();
 
+        // initialise the device schur hessian matrix
         d_Hsc_.resize(numP, numP);
         d_Hsc_.resizeNonZeros(Hsc_.nblocks());
         d_Hsc_.upload(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
 
+        // initialise the device landmark hessian matrix
+        d_Hll_.resize(numL, numL);
+        d_Hll_.resizeNonZeros(numL);
+
+        // initialise the device pose hessian matrix
+        d_Hpp_.resize(numP, numP);
+        d_Hpp_.resizeNonZeros(numP);
+        
         d_HscCSR_.resize(Hsc_.nnzSymm());
         d_BSR2CSR_.assign(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
 
@@ -214,7 +222,6 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 
         d_bsc_.resize(numP);
         d_Hpl_invHll_.resize(nVertexBlockPos);
-        d_Hll_.resize(numL, numL);
         d_HllBackup_.resize(numL);
         d_invHll_.resize(numL);
     }
@@ -236,13 +243,12 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
     d_xp_.map(numP, d_x_.data());
     d_bp_.map(numP, d_b_.data());
 
-    if (doSchure)
+    if (doSchur)
     {
         d_xl_.map(numL, d_x_.data() + numP * PDIM);
         d_bl_.map(numL, d_b_.data() + numP * PDIM);
     }
 
-    // d_Hpp_.resize(numP);
     d_HppBackup_.resize(numP);
 
     // upload edge information to device memory
@@ -250,9 +256,12 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
     for (int i = 0; i < edgeSets.size(); ++i)
     {
         // upload the graph data to the device
+        // Note: nullptr passed to map function if no landmark 
+        // data as the Hpl matrix then doesn't make sense.
         int* edge2HplPtr = nullptr;
-        if (doSchure)
+        if (doSchur)
         {
+            // data layout is pose data first followed by landmark
             edge2HplPtr = d_edge2Hpl_.data() + prevEdgeSize;
         }
         edgeSets[i]->mapDevice(edge2HplPtr);
@@ -263,7 +272,7 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 
     const auto t1 = get_time_point();
 
-    if (doSchure)
+    if (doSchur)
     {
         HscSparseLinearSolver* sparseLinearSolver =
             static_cast<HscSparseLinearSolver*>(linearSolver_.get());
@@ -320,7 +329,7 @@ void CudaBlockSolver::buildSystem(const EdgeSetVec& edgeSets, const VertexSetVec
     d_Hpp_.fillZero();
     d_bp_.fillZero();
 
-    if (doSchure)
+    if (doSchur)
     {
         d_Hll_.fillZero();
         d_bl_.fillZero();
@@ -339,7 +348,7 @@ double CudaBlockSolver::maxDiagonal()
 {
     DeviceBuffer<Scalar> d_buffer(16);
     const Scalar maxP = gpu::maxDiagonal(d_Hpp_, d_buffer);
-    if (doSchure)
+    if (doSchur)
     {
         const Scalar maxL = gpu::maxDiagonal(d_Hll_, d_buffer);
         return std::max(maxP, maxL);
@@ -350,7 +359,7 @@ double CudaBlockSolver::maxDiagonal()
 void CudaBlockSolver::setLambda(double lambda)
 {
     gpu::addLambda(d_Hpp_, ScalarCast(lambda), d_HppBackup_);
-    if (doSchure)
+    if (doSchur)
     {
         gpu::addLambda(d_Hll_, ScalarCast(lambda), d_HllBackup_);
     }
@@ -359,7 +368,7 @@ void CudaBlockSolver::setLambda(double lambda)
 void CudaBlockSolver::restoreDiagonal()
 {
     gpu::restoreDiagonal(d_Hpp_, d_HppBackup_);
-    if (doSchure)
+    if (doSchur)
     {
         gpu::restoreDiagonal(d_Hll_, d_HllBackup_);
     }
@@ -367,7 +376,7 @@ void CudaBlockSolver::restoreDiagonal()
 
 bool CudaBlockSolver::solve()
 {
-    if (!doSchure)
+    if (!doSchur)
     {
         const auto t1 = get_time_point();
         const bool success = linearSolver_->solve(d_Hpp_.values(), d_bp_.values(), d_xp_.values());
