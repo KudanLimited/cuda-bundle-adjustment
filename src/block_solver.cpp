@@ -1,52 +1,12 @@
-/*
-Copyright 2020 Fixstars Corporation
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-http ://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
-#include "cuda_bundle_adjustment.h"
-
-#include "constants.h"
-#include "cuda/cuda_block_solver.h"
-#include "cuda_block_solver_impl.h"
-#include "cuda_bundle_adjustment_types.h"
+#include "block_solver.h"
 #include "cuda_linear_solver.h"
-#include "device_buffer.h"
-#include "device_matrix.h"
+#include "profile.h"
 #include "optimisable_graph.h"
-#include "sparse_block_matrix.h"
-
-#include <algorithm>
-#include <chrono>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace cugo
 {
-using time_point = decltype(std::chrono::steady_clock::now());
 
-static inline time_point get_time_point()
-{
-    gpu::waitForKernelCompletion();
-    return std::chrono::steady_clock::now();
-}
-
-static inline double get_duration(const time_point& from, const time_point& to)
-{
-    return std::chrono::duration_cast<std::chrono::duration<double>>(to - from).count();
-}
-
-void CudaBlockSolver::initialize(
+void BlockSolver::initialize(
     CameraParams* camera, const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets)
 {
     const auto t0 = get_time_point();
@@ -97,7 +57,7 @@ void CudaBlockSolver::initialize(
     profItems_[PROF_ITEM_INITIALIZE] += get_duration(t0, t1);
 }
 
-void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets)
+void BlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets)
 {
     assert(edgeSets.size() > 0);
     assert(vertexSets.size() > 0);
@@ -291,7 +251,7 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
     profItems_[PROF_ITEM_BUILD_STRUCTURE] += get_duration(t0, t1);
 }
 
-double CudaBlockSolver::computeErrors(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets)
+double BlockSolver::computeErrors(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets)
 {
     const auto t0 = get_time_point();
 
@@ -308,7 +268,7 @@ double CudaBlockSolver::computeErrors(const EdgeSetVec& edgeSets, const VertexSe
     return accumChi;
 }
 
-void CudaBlockSolver::buildSystem(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets)
+void BlockSolver::buildSystem(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets)
 {
     const auto t0 = get_time_point();
 
@@ -339,7 +299,7 @@ void CudaBlockSolver::buildSystem(const EdgeSetVec& edgeSets, const VertexSetVec
     profItems_[PROF_ITEM_BUILD_SYSTEM] += get_duration(t0, t1);
 }
 
-double CudaBlockSolver::maxDiagonal()
+double BlockSolver::maxDiagonal()
 {
     DeviceBuffer<Scalar> d_buffer(16);
     const Scalar maxP = gpu::maxDiagonal(d_Hpp_, d_buffer);
@@ -351,7 +311,7 @@ double CudaBlockSolver::maxDiagonal()
     return maxP;
 }
 
-void CudaBlockSolver::setLambda(double lambda)
+void BlockSolver::setLambda(double lambda)
 {
     gpu::addLambda(d_Hpp_, ScalarCast(lambda), d_HppBackup_);
     if (doSchur)
@@ -360,7 +320,7 @@ void CudaBlockSolver::setLambda(double lambda)
     }
 }
 
-void CudaBlockSolver::restoreDiagonal()
+void BlockSolver::restoreDiagonal()
 {
     gpu::restoreDiagonal(d_Hpp_, d_HppBackup_);
     if (doSchur)
@@ -369,7 +329,7 @@ void CudaBlockSolver::restoreDiagonal()
     }
 }
 
-bool CudaBlockSolver::solve()
+bool BlockSolver::solve()
 {
     if (!doSchur)
     {
@@ -422,7 +382,7 @@ bool CudaBlockSolver::solve()
     return true;
 }
 
-void CudaBlockSolver::update(const VertexSetVec& vertexSets)
+void BlockSolver::update(const VertexSetVec& vertexSets)
 {
     const auto t0 = get_time_point();
 
@@ -448,7 +408,7 @@ void CudaBlockSolver::update(const VertexSetVec& vertexSets)
     profItems_[PROF_ITEM_UPDATE] += get_duration(t0, t1);
 }
 
-double CudaBlockSolver::computeScale(double lambda)
+double BlockSolver::computeScale(double lambda)
 {
     gpu::computeScale(d_x_, d_b_, d_chi_, ScalarCast(lambda));
     Scalar scale = 0;
@@ -456,11 +416,11 @@ double CudaBlockSolver::computeScale(double lambda)
     return scale;
 }
 
-void CudaBlockSolver::push() { d_solution_.copyTo(d_solutionBackup_); }
+void BlockSolver::push() { d_solution_.copyTo(d_solutionBackup_); }
 
-void CudaBlockSolver::pop() { d_solutionBackup_.copyTo(d_solution_); }
+void BlockSolver::pop() { d_solutionBackup_.copyTo(d_solution_); }
 
-void CudaBlockSolver::finalize(const VertexSetVec& vertexSets)
+void BlockSolver::finalize(const VertexSetVec& vertexSets)
 {
     for (BaseVertexSet* vertexSet : vertexSets)
     {
@@ -479,7 +439,7 @@ void CudaBlockSolver::finalize(const VertexSetVec& vertexSets)
     }
 }
 
-void CudaBlockSolver::getTimeProfile(TimeProfile& prof) const
+void BlockSolver::getTimeProfile(TimeProfile& prof) const
 {
     static const char* profileItemString[PROF_ITEM_NUM] = {
         "0: Initialize Optimizer",
@@ -498,177 +458,4 @@ void CudaBlockSolver::getTimeProfile(TimeProfile& prof) const
         prof[profileItemString[i]] = profItems_[i];
     }
 }
-
-// CudaBundleAdjustmentImpl functions
-
-EdgeSetVec& CudaBundleAdjustmentImpl::getEdgeSets() { return edgeSets; }
-
-size_t CudaBundleAdjustmentImpl::nVertices(const int id)
-{
-    assert(id < vertexSets.size());
-    return vertexSets[id]->size();
 }
-
-void CudaBundleAdjustmentImpl::setCameraPrams(const CameraParams& camera)
-{
-    if (camera_)
-    {
-        camera_ = nullptr;
-    }
-    camera_ = std::make_unique<CameraParams>(camera);
-}
-
-void CudaBundleAdjustmentImpl::initialize()
-{
-    solver_->initialize(camera_.get(), edgeSets, vertexSets);
-    stats_.clear();
-}
-
-void CudaBundleAdjustmentImpl::optimize(int niterations)
-{
-    const int maxq = 10;
-    const double tau = 1e-5;
-
-    double nu = 2.0;
-    double lambda = 0.0;
-    double F = 0.0;
-    double cumTime = 0.0;
-
-    // Levenberg-Marquardt iteration
-    for (int iteration = 0; iteration < niterations; iteration++)
-    {
-        auto t0 = get_time_point();
-
-        if (iteration == 0)
-        {
-            solver_->buildStructure(edgeSets, vertexSets);
-        }
-
-        const double iniF = solver_->computeErrors(edgeSets, vertexSets);
-        F = iniF;
-
-        solver_->buildSystem(edgeSets, vertexSets);
-
-        if (iteration == 0)
-        {
-            lambda = tau * solver_->maxDiagonal();
-        }
-
-        int q = 0;
-        double rho = -1.0;
-        for (; q < maxq && rho < 0; q++)
-        {
-            solver_->push();
-
-            solver_->setLambda(lambda);
-
-            const bool success = solver_->solve();
-
-            solver_->update(vertexSets);
-            solver_->restoreDiagonal();
-
-            const double Fhat = solver_->computeErrors(edgeSets, vertexSets);
-            const double scale = solver_->computeScale(lambda) + 1e-3;
-            rho = success ? (F - Fhat) / scale : -1;
-
-            if (rho > 0)
-            {
-                lambda *= clamp(attenuation(rho), 1. / 3, 2. / 3);
-                nu = 2;
-                F = Fhat;
-                break;
-            }
-            else
-            {
-                lambda *= nu;
-                nu *= 2;
-                solver_->pop();
-            }
-        }
-
-        stats_.addStat({iteration, F});
-        if (verbose)
-        {
-            auto t1 = get_time_point();
-            auto dt = get_duration(t0, t1);
-            cumTime += dt;
-            printf(
-                "iteration= %i; time = %.5f [sec];  cum time= %.5f  chi2= %f;  lambda= %f   rho= "
-                "%f	nedges= %i\n",
-                iteration,
-                dt,
-                cumTime,
-                F,
-                lambda,
-                rho,
-                solver_->nedges());
-        }
-
-        if (q == maxq || rho <= 1e-4 || !std::isfinite(lambda))
-        {
-            break;
-        }
-    }
-
-    solver_->finalize(vertexSets);
-
-    solver_->getTimeProfile(timeProfile_);
-}
-
-void CudaBundleAdjustmentImpl::clearEdgeSets()
-{
-    for (auto* edgeSet : edgeSets)
-    {
-        edgeSet->clearEdges();
-    }
-    edgeSets.clear();
-}
-
-void CudaBundleAdjustmentImpl::clearVertexSets()
-{
-    for (BaseVertexSet* vertexSet : vertexSets)
-    {
-        if (!vertexSet->isMarginilised())
-        {
-            PoseVertexSet* poseVertexSet = dynamic_cast<PoseVertexSet*>(vertexSet);
-            for (auto* vertex : poseVertexSet->get())
-            {
-                delete vertex;
-                vertex = nullptr;
-            }
-        }
-        else
-        {
-            LandmarkVertexSet* lmVertexSet = dynamic_cast<LandmarkVertexSet*>(vertexSet);
-            for (auto* vertex : lmVertexSet->get())
-            {
-                delete vertex;
-                vertex = nullptr;
-            }
-        }
-    }
-    vertexSets.clear();
-}
-
-BatchStatistics& CudaBundleAdjustmentImpl::batchStatistics() { return stats_; }
-
-const TimeProfile& CudaBundleAdjustmentImpl::timeProfile() { return timeProfile_; }
-
-CudaBundleAdjustmentImpl::CudaBundleAdjustmentImpl() : solver_(std::make_unique<CudaBlockSolver>())
-{
-}
-
-CudaBundleAdjustmentImpl::~CudaBundleAdjustmentImpl()
-{
-    clearVertexSets();
-    clearEdgeSets();
-}
-
-CudaBundleAdjustment::Ptr CudaBundleAdjustment::create()
-{
-    return std::make_unique<CudaBundleAdjustmentImpl>();
-}
-
-CudaBundleAdjustment::~CudaBundleAdjustment() {}
-
-} // namespace cugo

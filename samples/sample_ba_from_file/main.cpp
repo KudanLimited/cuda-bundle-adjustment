@@ -14,9 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#include <cuda_bundle_adjustment.h>
-#include <cuda_bundle_adjustment_types.h>
-#include <icp_types.h>
+#include <cuda_graph_optimisation.h>
+#include <ba_types.h>
 #include <opencv2/core.hpp>
 #include <optimisable_graph.h>
 
@@ -24,7 +23,7 @@ limitations under the License.
 #include <iostream>
 #include <vector>
 
-static cugo::CudaBundleAdjustment::Ptr readGraph(const std::string& filename);
+static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename);
 
 int main(int argc, char** argv)
 {
@@ -94,12 +93,12 @@ static inline cugo::maths::Vec<T, N> getArray(const cv::FileNode& node)
     return arr;
 }
 
-static cugo::CudaBundleAdjustment::Ptr readGraph(const std::string& filename)
+static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
 {
     cv::FileStorage fs(filename, cv::FileStorage::READ);
     CV_Assert(fs.isOpened());
 
-    auto optimizer = cugo::CudaBundleAdjustment::create();
+    auto optimizer = cugo::CudaGraphOptimisation::create();
 
     // read pose vertices
     cugo::PoseVertexSet* poseVertexSet = new cugo::PoseVertexSet(false);

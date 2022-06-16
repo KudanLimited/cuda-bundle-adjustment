@@ -20,8 +20,6 @@ limitations under the License.
 #include "maths.h"
 #include "scalar.h"
 
-#include <cuda_runtime.h>
-
 #include <cassert>
 #include <cstdint>
 

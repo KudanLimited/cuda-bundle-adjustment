@@ -14,8 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef __CUDA_BUNDLE_ADJUSTMENT_TYPES_H__
-#define __CUDA_BUNDLE_ADJUSTMENT_TYPES_H__
+#ifndef __BA_TYPES_H__
+#define __BA_TYPES_H__
 
 #include "optimisable_graph.h"
 
@@ -203,4 +203,4 @@ public:
 
 } // namespace cugo
 
-#endif // !__CUDA_BUNDLE_ADJUSTMENT_TYPES_H__
+#endif // !__BA_TYPES_H__
