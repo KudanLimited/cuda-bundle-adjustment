@@ -1513,9 +1513,9 @@ void constructQuadraticForm_(
     const GpuVec2i& edge2PL,
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
-    GpuHppBlockMat& Hpp,
+    GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
-    GpuHllBlockMat& Hll,
+    GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl)
 {
@@ -1530,9 +1530,9 @@ void constructQuadraticForm_<2>(
     const GpuVec2i& edge2PL,
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
-    GpuHppBlockMat& Hpp,
+    GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
-    GpuHllBlockMat& Hll,
+    GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl)
 {
@@ -1559,9 +1559,9 @@ void constructQuadraticForm_<3>(
     const GpuVec2i& edge2PL,
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
-    GpuHppBlockMat& Hpp,
+    GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
-    GpuHllBlockMat& Hll,
+    GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl)
 {
@@ -1580,7 +1580,7 @@ void constructQuadraticForm_<3>(
 }
 
 template <typename T, int DIM>
-Scalar maxDiagonal_(const DeviceBlockMatrix<T, DIM, DIM>& D, Scalar* maxD)
+Scalar maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* maxD)
 {
     constexpr int block = BLOCK_MAX_DIAGONAL;
     constexpr int grid = 4;
@@ -1599,13 +1599,13 @@ Scalar maxDiagonal_(const DeviceBlockMatrix<T, DIM, DIM>& D, Scalar* maxD)
     return maxv;
 }
 
-Scalar maxDiagonal(const GpuHppBlockMat& Hpp, Scalar* maxD) { return maxDiagonal_(Hpp, maxD); }
+Scalar maxDiagonal(const GpuPxPBlockVec& Hpp, Scalar* maxD) { return maxDiagonal_(Hpp, maxD); }
 
-Scalar maxDiagonal(const GpuHllBlockMat& Hll, Scalar* maxD) { return maxDiagonal_(Hll, maxD); }
+Scalar maxDiagonal(const GpuLxLBlockVec& Hll, Scalar* maxD) { return maxDiagonal_(Hll, maxD); }
 
 template <typename T, int DIM>
 void addLambda_(
-    DeviceBlockMatrix<T, DIM, DIM>& D, Scalar lambda, DeviceBlockVector<T, DIM, 1>& backup)
+    DeviceBlockVector<T, DIM, DIM>& D, Scalar lambda, DeviceBlockVector<T, DIM, 1>& backup)
 {
     const int size = D.rows() * DIM;
     const int block = 1024;
@@ -1614,18 +1614,18 @@ void addLambda_(
     CUDA_CHECK(cudaGetLastError());
 }
 
-void addLambda(GpuHppBlockMat& Hpp, Scalar lambda, GpuPx1BlockVec& backup)
+void addLambda(GpuPxPBlockVec& Hpp, Scalar lambda, GpuPx1BlockVec& backup)
 {
     addLambda_(Hpp, lambda, backup);
 }
 
-void addLambda(GpuHllBlockMat& Hll, Scalar lambda, GpuLx1BlockVec& backup)
+void addLambda(GpuLxLBlockVec& Hll, Scalar lambda, GpuLx1BlockVec& backup)
 {
     addLambda_(Hll, lambda, backup);
 }
 
 template <typename T, int DIM>
-void restoreDiagonal_(DeviceBlockMatrix<T, DIM, DIM>& D, const DeviceBlockVector<T, DIM, 1>& backup)
+void restoreDiagonal_(DeviceBlockVector<T, DIM, DIM>& D, const DeviceBlockVector<T, DIM, 1>& backup)
 {
     const int size = D.rows() * DIM;
     const int block = 1024;
@@ -1634,12 +1634,12 @@ void restoreDiagonal_(DeviceBlockMatrix<T, DIM, DIM>& D, const DeviceBlockVector
     CUDA_CHECK(cudaGetLastError());
 }
 
-void restoreDiagonal(GpuHppBlockMat& Hpp, const GpuPx1BlockVec& backup)
+void restoreDiagonal(GpuPxPBlockVec& Hpp, const GpuPx1BlockVec& backup)
 {
     restoreDiagonal_(Hpp, backup);
 }
 
-void restoreDiagonal(GpuHllBlockMat& Hll, const GpuLx1BlockVec& backup)
+void restoreDiagonal(GpuLxLBlockVec& Hll, const GpuLx1BlockVec& backup)
 {
     restoreDiagonal_(Hll, backup);
 }
@@ -1647,7 +1647,7 @@ void restoreDiagonal(GpuHllBlockMat& Hll, const GpuLx1BlockVec& backup)
 void computeBschure(
     const GpuPx1BlockVec& bp,
     const GpuHplBlockMat& Hpl,
-    const GpuHllBlockMat& Hll,
+    const GpuLxLBlockVec& Hll,
     const GpuLx1BlockVec& bl,
     GpuPx1BlockVec& bsc,
     GpuLxLBlockVec& invHll,
@@ -1664,7 +1664,7 @@ void computeBschure(
 }
 
 void computeHschure(
-    const GpuHppBlockMat& Hpp,
+    const GpuPxPBlockVec& Hpp,
     const GpuPxLBlockVec& Hpl_invHll,
     const GpuHplBlockMat& Hpl,
     const GpuVec3i& mulBlockIds,
