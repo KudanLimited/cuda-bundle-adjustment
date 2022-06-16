@@ -196,7 +196,7 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
 
         gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_);
 
-        // build host Hschur block matrix structure
+        // build host Hschur sparse block matrix structure
         Hsc_.resize(numP, numP);
         Hsc_.constructFromVertices(verticesL);
         Hsc_.convertBSRToCSR();
@@ -206,14 +206,11 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
         d_Hsc_.resizeNonZeros(Hsc_.nblocks());
         d_Hsc_.upload(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
 
-        // initialise the device landmark hessian matrix
-        d_Hll_.resize(numL, numL);
-        d_Hll_.resizeNonZeros(numL);
-
-        // initialise the device pose hessian matrix
-        d_Hpp_.resize(numP, numP);
-        d_Hpp_.resizeNonZeros(numP);
-        
+        // initialise the device pose and landmark Hessian matrices
+        // these are filled by the computation of the quadratic form
+        d_Hll_.resize(numL);
+        d_Hpp_.resize(numP);
+  
         d_HscCSR_.resize(Hsc_.nnzSymm());
         d_BSR2CSR_.assign(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
 
@@ -231,9 +228,7 @@ void CudaBlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSet
         Hpp_.constructFromVertices(verticesP);
         Hpp_.convertBSRToCSR();
 
-        d_Hpp_.resize(numP, numP);
-        d_Hpp_.resizeNonZeros(Hpp_.nblocks());
-        d_Hpp_.upload(nullptr, Hpp_.outerIndices(), Hpp_.innerIndices());
+        d_Hpp_.resize(numP);
     }
 
     // allocate device buffers

@@ -43,29 +43,29 @@ void buildHplStructure(
 void findHschureMulBlockIndices(
     const GpuHplBlockMat& Hpl, const GpuHscBlockMat& Hsc, GpuVec3i& mulBlockIds);
 
-Scalar maxDiagonal(const GpuHppBlockMat& Hpp, Scalar* maxD);
+Scalar maxDiagonal(const GpuPxPBlockVec& Hpp, Scalar* maxD);
 
-Scalar maxDiagonal(const GpuHllBlockMat& Hll, Scalar* maxD);
+Scalar maxDiagonal(const GpuLxLBlockVec& Hll, Scalar* maxD);
 
-void addLambda(GpuHppBlockMat& Hpp, Scalar lambda, GpuPx1BlockVec& backup);
+void addLambda(GpuPxPBlockVec& Hpp, Scalar lambda, GpuPx1BlockVec& backup);
 
-void addLambda(GpuHllBlockMat& Hll, Scalar lambda, GpuLx1BlockVec& backup);
+void addLambda(GpuLxLBlockVec& Hll, Scalar lambda, GpuLx1BlockVec& backup);
 
-void restoreDiagonal(GpuHppBlockMat& Hpp, const GpuPx1BlockVec& backup);
+void restoreDiagonal(GpuPxPBlockVec& Hpp, const GpuPx1BlockVec& backup);
 
-void restoreDiagonal(GpuHllBlockMat& Hll, const GpuLx1BlockVec& backup);
+void restoreDiagonal(GpuLxLBlockVec& Hll, const GpuLx1BlockVec& backup);
 
 void computeBschure(
     const GpuPx1BlockVec& bp,
     const GpuHplBlockMat& Hpl,
-    const GpuHllBlockMat& Hll,
+    const GpuLxLBlockVec& Hll,
     const GpuLx1BlockVec& bl,
     GpuPx1BlockVec& bsc,
     GpuLxLBlockVec& invHll,
     GpuPxLBlockVec& Hpl_invHll);
 
 void computeHschure(
-    const GpuHppBlockMat& Hpp,
+    const GpuPxPBlockVec& Hpp,
     const GpuPxLBlockVec& Hpl_invHll,
     const GpuHplBlockMat& Hpl,
     const GpuVec3i& mulBlockIds,
@@ -110,9 +110,9 @@ void CUGO_API constructQuadraticForm_(
     const GpuVec2i& edge2PL,
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
-    GpuHppBlockMat& Hpp,
+    GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
-    GpuHllBlockMat& Hll,
+    GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl);
 
@@ -162,9 +162,9 @@ void CUGO_API constructQuadraticForm_Line(
     const GpuVec2i& edge2PL,
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
-    GpuHppBlockMat& Hpp,
+    GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
-    GpuHllBlockMat& Hll,
+    GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl);
 
@@ -176,9 +176,9 @@ void CUGO_API constructQuadraticForm_Plane(
     const GpuVec2i& edge2PL,
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
-    GpuHppBlockMat& Hpp,
+    GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
-    GpuHllBlockMat& Hll,
+    GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl);
 

@@ -110,8 +110,8 @@ private:
     // coefficient matrix of linear system
     // | Hpp  Hpl ||Δxp| = |-bp|
     // | HplT Hll ||Δxl|   |-bl|
-    GpuHppBlockMat d_Hpp_;
-    GpuHllBlockMat d_Hll_;
+    GpuPxPBlockVec d_Hpp_;
+    GpuLxLBlockVec d_Hll_;
     GpuHplBlockMat d_Hpl_;
     GpuVec3i d_HplBlockPos_;
     GpuVec1d d_b_;

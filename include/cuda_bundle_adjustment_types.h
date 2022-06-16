@@ -69,9 +69,9 @@ public:
 
     void constructQuadraticForm(
         const VertexSetVec& vertexSets,
-        GpuHppBlockMat& Hpp,
+        GpuPxPBlockVec& Hpp,
         GpuPx1BlockVec& bp,
-        GpuHllBlockMat& Hll,
+        GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl) override
     {
@@ -145,9 +145,9 @@ public:
 
     void constructQuadraticForm(
         const VertexSetVec& vertexSets,
-        GpuHppBlockMat& Hpp,
+        GpuPxPBlockVec& Hpp,
         GpuPx1BlockVec& bp,
-        GpuHllBlockMat& Hll,
+        GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl) override
     {
