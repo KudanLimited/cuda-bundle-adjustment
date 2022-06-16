@@ -3,8 +3,6 @@
 
 #include "fixed_vector.h"
 
-#include <cuda_runtime.h>
-
 namespace cugo
 {
 /**

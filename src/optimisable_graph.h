@@ -3,10 +3,11 @@
 #define __OPTIMISABLE_GRAPH_H__
 
 #include "cuda/cuda_block_solver.h"
-#include "cuda_block_solver_impl.h"
-#include "cuda_bundle_adjustment.h"
+#include "cuda_graph_optimisation.h"
 #include "device_buffer.h"
 #include "device_matrix.h"
+#include "sparse_block_matrix.h"
+#include "block_solver.h"
 #include "maths.h"
 
 #include <Eigen/Core>
@@ -21,9 +22,6 @@
 
 namespace cugo
 {
-////////////////////////////////////////////////////////////////////////////////////
-// Type alias
-////////////////////////////////////////////////////////////////////////////////////
 
 template <class T>
 using Set = std::unordered_set<T>;
@@ -491,11 +489,11 @@ public:
             if (VertexSize == 1)
             {
                 edgeFlags.push_back(
-                    CudaBlockSolver::makeEdgeFlag(edge->getVertex(0)->isFixed(), false));
+                    BlockSolver::makeEdgeFlag(edge->getVertex(0)->isFixed(), false));
             }
             else
             {
-                edgeFlags.push_back(CudaBlockSolver::makeEdgeFlag(
+                edgeFlags.push_back(BlockSolver::makeEdgeFlag(
                     edge->getVertex(0)->isFixed(), edge->getVertex(1)->isFixed()));
             }
             edgeId++;
@@ -548,25 +546,6 @@ protected:
     GpuVec1i d_edge2Hpl;
 };
 
-////////////////////////////////////////////////////////////////////////////////////
-// Camera parameters
-////////////////////////////////////////////////////////////////////////////////////
-
-/** @brief Camera parameters struct.
- */
-struct CameraParams
-{
-    double fx; //!< focal length x (pixel)
-    double fy; //!< focal length y (pixel)
-    double cx; //!< principal point x (pixel)
-    double cy; //!< principal point y (pixel)
-    double bf; //!< stereo baseline times fx
-
-    /** @brief The constructor.
-     */
-    CameraParams() : fx(0), fy(0), cx(0), cy(0), bf(0) {}
-};
-;
 
 #include "optimisable_graph.hpp"
 

@@ -14,8 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef __CUDA_BUNDLE_ADJUSTMENT_H__
-#define __CUDA_BUNDLE_ADJUSTMENT_H__
+#ifndef __CUDA_GRAPH_OPTIMISATION_H__
+#define __CUDA_GRAPH_OPTIMISATION_H__
 
 #include "device_buffer.h"
 #include "device_matrix.h"
@@ -34,8 +34,8 @@ namespace cugo
 // forward declerations
 struct CameraParams;
 class BaseEdgeSet;
-class CudaBlockSolver;
-class CudaBundleAdjustmentImpl;
+class BlockSolver;
+class CudaGraphOptimisationImpl;
 class BaseVertexSet;
 class BaseVertex;
 
@@ -45,6 +45,25 @@ using UniquePtr = std::unique_ptr<T>;
 
 using EdgeSetVec = std::vector<BaseEdgeSet*>;
 using VertexSetVec = std::vector<BaseVertexSet*>;
+
+////////////////////////////////////////////////////////////////////////////////////
+// Camera parameters
+////////////////////////////////////////////////////////////////////////////////////
+
+/** @brief Camera parameters struct.
+ */
+struct CameraParams
+{
+    double fx; //!< focal length x (pixel)
+    double fy; //!< focal length y (pixel)
+    double cx; //!< principal point x (pixel)
+    double cy; //!< principal point y (pixel)
+    double bf; //!< stereo baseline times fx
+
+    /** @brief The constructor.
+     */
+    CameraParams() : fx(0), fy(0), cx(0), cy(0), bf(0) {}
+};
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Statistics
@@ -108,12 +127,12 @@ It optimizes camera poses and landmarks (3D points) represented by a graph.
 added in the graph.
 
 */
-class CUGO_API CudaBundleAdjustment
+class CUGO_API CudaGraphOptimisation
 {
 public:
-    using Ptr = UniquePtr<CudaBundleAdjustmentImpl>;
+    using Ptr = UniquePtr<CudaGraphOptimisationImpl>;
 
-    /** @brief Creates an instance of CudaBundleAdjustment.
+    /** @brief Creates an instance of CudaGraphOptimisation.
      */
     static Ptr create();
 
@@ -136,7 +155,7 @@ public:
 
     /** @brief the destructor.
      */
-    virtual ~CudaBundleAdjustment();
+    virtual ~CudaGraphOptimisation();
 
     virtual EdgeSetVec& getEdgeSets() = 0;
 
@@ -150,15 +169,15 @@ public:
     virtual void setVerbose(bool status) = 0;
 };
 
-/** @brief Implementation of CudaBundleAdjustment.
+/** @brief Implementation of CudaGraphOptimisation.
  */
-class CUGO_API CudaBundleAdjustmentImpl : public CudaBundleAdjustment
+class CUGO_API CudaGraphOptimisationImpl : public CudaGraphOptimisation
 {
 public:
     /**
      * @brief constructor
      */
-    CudaBundleAdjustmentImpl();
+    CudaGraphOptimisationImpl();
 
     /** @brief adds a new graph to the optimiser with a custom edge
      */
@@ -197,7 +216,7 @@ public:
 
     void setVerbose(bool status) override { verbose = status; }
 
-    ~CudaBundleAdjustmentImpl();
+    ~CudaGraphOptimisationImpl();
 
 private:
     static inline double attenuation(double x) { return 1 - std::pow(2 * x - 1, 3); }
@@ -211,7 +230,7 @@ private:
     VertexSetVec vertexSets;
     EdgeSetVec edgeSets;
 
-    std::unique_ptr<CudaBlockSolver> solver_;
+    std::unique_ptr<BlockSolver> solver_;
     std::unique_ptr<CameraParams> camera_;
 
     BatchStatistics stats_;
@@ -220,4 +239,4 @@ private:
 
 } // namespace cugo
 
-#endif // !__CUDA_BUNDLE_ADJUSTMENT_H__
+#endif // !__CUDA_GRAPH_OPTIMISATION_H__

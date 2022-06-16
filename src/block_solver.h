@@ -1,26 +1,25 @@
+#ifndef __BLOCK_SOLVER_H__
+#define __BLOCK_SOLVER_H__
 
-#ifndef __CUDA_BLOCK_SOLVER_IMPL_H__
-#define __CUDA_BLOCK_SOLVER_IMPL_H__
-
-#include "cuda_bundle_adjustment.h"
-#include "cuda_linear_solver.h"
 #include "device_buffer.h"
 #include "device_matrix.h"
 #include "sparse_block_matrix.h"
+#include "cuda_graph_optimisation.h"
+#include "cuda_linear_solver.h"
 
 #include <array>
 #include <vector>
-
 
 namespace cugo
 {
 // forward declerations
 class BaseEdge;
 class BaseEdgeSet;
+struct CameraParams;
 
 /** @brief Implementation of Block solver.
  */
-class CudaBlockSolver
+class BlockSolver
 {
 public:
     enum ProfileItem

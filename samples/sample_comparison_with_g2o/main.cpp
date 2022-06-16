@@ -17,7 +17,7 @@ limitations under the License.
 #include "g2o/types/slam3d/vertex_pointxyz.h"
 
 #include <cuda_bundle_adjustment.h>
-#include <cuda_bundle_adjustment_types.h>
+#include <cuda_graph_optimisation.h>
 #include <g2o/core/block_solver.h>
 #include <g2o/core/optimization_algorithm_levenberg.h>
 #include <g2o/core/solver.h>
@@ -32,7 +32,7 @@ limitations under the License.
 #include <vector>
 
 using OptimizerCPU = g2o::SparseOptimizer;
-using OptimizerGPU = cugo::CudaBundleAdjustmentImpl;
+using OptimizerGPU = cugo::CudaGraphOptimisationImpl;
 
 static void readGraph(
     const std::string& filename,
