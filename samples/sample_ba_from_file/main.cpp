@@ -14,16 +14,23 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#include <cuda_graph_optimisation.h>
 #include <ba_types.h>
+#include <cuda_graph_optimisation.h>
 #include <opencv2/core.hpp>
 #include <optimisable_graph.h>
+#include <robust_kernel.h>
 
 #include <chrono>
 #include <iostream>
 #include <vector>
 
 static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename);
+
+cugo::PoseVertexSet* poseVertexSet = nullptr;
+cugo::LandmarkVertexSet* landmarkVertexSet = nullptr;
+cugo::MonoEdgeSet* monoEdgeSet = nullptr;
+cugo::StereoEdgeSet* stereoEdgeSet = nullptr;
+std::unique_ptr<cugo::RobustKernelCauchy> kernel;
 
 int main(int argc, char** argv)
 {
@@ -32,6 +39,20 @@ int main(int argc, char** argv)
         std::cout << "Usage: sample_ba_from_file input.json" << std::endl;
         return 0;
     }
+
+    // set robust kernel
+    constexpr float fivePercent3DofSqrt = 2.7955321f;
+    kernel = std::make_unique<cugo::RobustKernelCauchy>();
+    kernel->setDelta(fivePercent3DofSqrt);
+
+    poseVertexSet = new cugo::PoseVertexSet(false);
+    landmarkVertexSet = new cugo::LandmarkVertexSet(true);
+
+    monoEdgeSet = new cugo::MonoEdgeSet();
+    monoEdgeSet->setRobustKernel(kernel.get());
+
+    stereoEdgeSet = new cugo::StereoEdgeSet();
+    stereoEdgeSet->setRobustKernel(kernel.get());
 
     std::cout << "Reading Graph... " << std::flush;
 
@@ -101,12 +122,6 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
     auto optimizer = cugo::CudaGraphOptimisation::create();
 
     // read pose vertices
-    cugo::PoseVertexSet* poseVertexSet = new cugo::PoseVertexSet(false);
-    cugo::LandmarkVertexSet* landmarkVertexSet = new cugo::LandmarkVertexSet(true);
-
-    cugo::MonoEdgeSet* monoEdgeSet = new cugo::MonoEdgeSet();
-    cugo::StereoEdgeSet* stereoEdgeSet = new cugo::StereoEdgeSet();
-
     for (const auto& node : fs["pose_vertices"])
     {
         const int id = node["id"];

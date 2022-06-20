@@ -62,7 +62,9 @@ public:
             d_measurements,
             d_omegas,
             d_edge2PL,
+            outlierThreshold,
             d_errors,
+            d_outliers,
             d_Xcs,
             chi);
     }
@@ -138,7 +140,9 @@ public:
             d_measurements,
             d_omegas,
             d_edge2PL,
+            outlierThreshold,
             d_errors,
+            d_outliers,
             d_Xcs,
             chi);
     }

@@ -123,7 +123,9 @@ Scalar CUGO_API computeActiveErrors_(
     const GpuVecxd<M>& measurements,
     const GpuVec1d& omegas,
     const GpuVec2i& edge2PL,
+    const Scalar errorThreshold,
     GpuVecxd<M>& errors,
+    GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi);
 

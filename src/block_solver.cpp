@@ -1,7 +1,9 @@
 #include "block_solver.h"
+
 #include "cuda_linear_solver.h"
-#include "profile.h"
 #include "optimisable_graph.h"
+#include "profile.h"
+#include "robust_kernel.h"
 
 namespace cugo
 {
@@ -170,7 +172,7 @@ void BlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSetVec&
         // these are filled by the computation of the quadratic form
         d_Hll_.resize(numL);
         d_Hpp_.resize(numP);
-  
+
         d_HscCSR_.resize(Hsc_.nnzSymm());
         d_BSR2CSR_.assign(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
 
@@ -211,7 +213,7 @@ void BlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSetVec&
     for (int i = 0; i < edgeSets.size(); ++i)
     {
         // upload the graph data to the device
-        // Note: nullptr passed to map function if no landmark 
+        // Note: nullptr passed to map function if no landmark
         // data as the Hpl matrix then doesn't make sense.
         int* edge2HplPtr = nullptr;
         if (doSchur)
@@ -255,11 +257,20 @@ double BlockSolver::computeErrors(const EdgeSetVec& edgeSets, const VertexSetVec
 {
     const auto t0 = get_time_point();
 
+    maths::Vec3<Scalar> rho;
     Scalar accumChi = 0;
-    for (int i = 0; i < edgeSets.size(); ++i)
+    for (BaseEdgeSet* edgeSet : edgeSets)
     {
-        const Scalar chi = edgeSets[i]->computeError(vertexSets, d_chi_);
-        accumChi += chi;
+        const Scalar chi = edgeSet->computeError(vertexSets, d_chi_);
+        if (edgeSet->robustKernel())
+        {
+            edgeSet->robustKernel()->robustify(chi, rho);
+            accumChi += rho[0];
+        }
+        else
+        {
+            accumChi += chi;
+        }
     }
 
     const auto t1 = get_time_point();
@@ -458,4 +469,4 @@ void BlockSolver::getTimeProfile(TimeProfile& prof) const
         prof[profileItemString[i]] = profItems_[i];
     }
 }
-}
+} // namespace cugo
