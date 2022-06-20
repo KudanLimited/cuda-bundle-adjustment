@@ -2,13 +2,13 @@
 #ifndef __OPTIMISABLE_GRAPH_H__
 #define __OPTIMISABLE_GRAPH_H__
 
+#include "block_solver.h"
 #include "cuda/cuda_block_solver.h"
 #include "cuda_graph_optimisation.h"
 #include "device_buffer.h"
 #include "device_matrix.h"
-#include "sparse_block_matrix.h"
-#include "block_solver.h"
 #include "maths.h"
+#include "sparse_block_matrix.h"
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -28,6 +28,7 @@ using Set = std::unordered_set<T>;
 
 // forward declerations
 class BaseEdge;
+class BaseRobustKernel;
 
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -371,6 +372,12 @@ public:
     }
 
     virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi) { return 0; }
+
+    virtual void setLevel(int level) = 0;
+    virtual int void level() const = 0;
+
+    virtual void setRobustKernel(BaseRobustKernel* kernel) = 0;
+    virtual BaseRobustKernel* robustKernel() = 0;
 };
 
 /** @brief groups together a set of edges of the same type.
@@ -390,7 +397,7 @@ public:
     using VIndex = std::array<int, 2>;
 
     // cpu side
-    EdgeSet() {}
+    EdgeSet() : kernel(nullptr), level(0), outlierThreshold(0.0) {}
     virtual ~EdgeSet() {}
 
     // vitual functions
@@ -429,7 +436,7 @@ public:
         return hessianBlockPos;
     }
 
-    size_t getHessianBlockPosSize() const
+    size_t getHessianBlockPosSize() const override
     {
         assert(is_initialised == true);
         return hessianBlockPos.size();
@@ -437,10 +444,35 @@ public:
 
     const int dim() const override { return DIM; }
 
+    void setLevel(int level) override { this->level = level; }
+    int void level() const override { return level; }
+
+    void setRobustKernel(const BaseRobustKernel* kernel) override { this->kernel = kernel; }
+    BaseRobustKernel* robustKernel() override { return kernel; }
+
+    void setOutlierThreshold(const Scalar errorThreshold)
+    {
+        this->outlierThreshold = errorThreshold;
+    }
+    std::vector<int>& outliers()
+    {
+        assert(
+            outlierThreshold > 0.0 &&
+            "No error threshold set for this edgeSet, thus no outliers will have been calcuated "
+            "during graph optimisation.");
+        edgeLevels.resize(edges.size());
+        d_outliers.copyTo(edgeLevels.data());
+        return edgeLevels;
+    }
+
     void clearEdges() override { edges.clear(); }
 
 protected:
     std::unordered_set<BaseEdge*> edges;
+    BaseRobustKernel* kernel;
+    int level;
+    Scalar outlierThreshold;
+    std::vector<int> edgeLevels;
 
 public:
     // device side
@@ -507,6 +539,7 @@ public:
         size_t edgeSize = edges.size();
         d_measurements.assign(edgeSize, measurements.data());
         d_errors.resize(edgeSize);
+        d_outliers.resize(edgeSize);
         d_omegas.assign(edgeSize, omegas.data());
         d_Xcs.resize(edgeSize);
         d_edgeFlags.assign(edgeSize, edgeFlags.data());
@@ -515,6 +548,7 @@ public:
         {
             d_edge2Hpl.map(edgeSize, edge2HData);
         }
+        d_outlierThreshold.assign(1, &outlierThreshold);
     }
 
     void clear() override
@@ -544,6 +578,8 @@ protected:
     GpuVec2i d_edge2PL;
     GpuVec1b d_edgeFlags;
     GpuVec1i d_edge2Hpl;
+    DeviceBuffer<Scalar> d_outlierThreshold;
+    GpuVec1i d_outliers;
 };
 
 

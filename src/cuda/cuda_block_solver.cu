@@ -983,7 +983,9 @@ __global__ void computeActiveErrorsKernel(
     const Vecxd<MDIM>* measurements,
     const Scalar* omegas,
     const Vec2i* edge2PL,
+    const Scalar* errorThreshold,
     Vecxd<MDIM>* errors,
+    Vec1i* outliers,
     Vec3d* Xcs,
     Scalar* chi)
 {
@@ -1015,12 +1017,19 @@ __global__ void computeActiveErrorsKernel(
         // compute residual
         Vecmd error;
         for (int i = 0; i < MDIM; i++)
+        {
             error[i] = proj[i] - measurement[i];
+        }
 
         errors[iE] = error;
         Xcs[iE] = Xc;
 
-        sumchi += omegas[iE] * squaredNorm(error);
+        const Scalar chi2 = omegas[iE] * squaredNorm(error);
+        sumchi += chi2;
+        if (errorThreshold > 0.0 && chi2 > errorTheshold)
+        {
+            outliers[iE] = 1;
+        }
     }
 
     cache[sharedIdx] = sumchi;
@@ -1029,12 +1038,16 @@ __global__ void computeActiveErrorsKernel(
     for (int stride = BLOCK_ACTIVE_ERRORS / 2; stride > 0; stride >>= 1)
     {
         if (sharedIdx < stride)
+        {
             cache[sharedIdx] += cache[sharedIdx + stride];
+        }
         __syncthreads();
     }
 
     if (sharedIdx == 0)
+    {
         atomicAdd(chi, cache[0]);
+    }
 }
 
 template <int MDIM>
@@ -1123,7 +1136,9 @@ __global__ void maxDiagonalKernel(int size, const Scalar* D, Scalar* maxD)
     }
 
     if (sharedIdx == 0)
+    {
         maxD[blockIdx.x] = cache[0];
+    }
 }
 
 template <int DIM>
