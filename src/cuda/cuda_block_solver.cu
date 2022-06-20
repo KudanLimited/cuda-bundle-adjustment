@@ -975,6 +975,7 @@ __device__ inline Vec<Scalar, 6> log(const Se3D& se3)
 ////////////////////////////////////////////////////////////////////////////////////
 // Kernel functions
 ////////////////////////////////////////////////////////////////////////////////////
+
 template <int MDIM>
 __global__ void computeActiveErrorsKernel(
     int nedges,
@@ -983,9 +984,9 @@ __global__ void computeActiveErrorsKernel(
     const Vecxd<MDIM>* measurements,
     const Scalar* omegas,
     const Vec2i* edge2PL,
-    const Scalar* errorThreshold,
+    const Scalar errorThreshold,
     Vecxd<MDIM>* errors,
-    Vec1i* outliers,
+    int* outliers,
     Vec3d* Xcs,
     Scalar* chi)
 {
@@ -1026,7 +1027,7 @@ __global__ void computeActiveErrorsKernel(
 
         const Scalar chi2 = omegas[iE] * squaredNorm(error);
         sumchi += chi2;
-        if (errorThreshold > 0.0 && chi2 > errorTheshold)
+        if (errorThreshold > 0.0 && chi2 > errorThreshold)
         {
             outliers[iE] = 1;
         }
@@ -1455,7 +1456,9 @@ Scalar computeActiveErrors_(
     const GpuVecxd<M>& measurements,
     const GpuVec1d& omegas,
     const GpuVec2i& edge2PL,
+    const Scalar errorThreshold,
     GpuVecxd<M>& errors,
+    GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi)
 {
@@ -1468,7 +1471,9 @@ Scalar computeActiveErrors_<2>(
     const GpuVecxd<2>& measurements,
     const GpuVec1d& omegas,
     const GpuVec2i& edge2PL,
+    const Scalar errorThreshold,
     GpuVecxd<2>& errors,
+    GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi)
 {
@@ -1477,11 +1482,27 @@ Scalar computeActiveErrors_<2>(
     const int grid = 16;
 
     if (nedges <= 0)
+    {
         return 0;
+    }
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
+    if (errorThreshold > 0.0)
+    {
+        CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
+    }
     computeActiveErrorsKernel<2><<<grid, block>>>(
-        nedges, poseEstimate, landmarkEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
+        nedges,
+        poseEstimate,
+        landmarkEstimate,
+        measurements,
+        omegas,
+        edge2PL,
+        errorThreshold,
+        errors,
+        outliers,
+        Xcs,
+        chi);
     CUDA_CHECK(cudaGetLastError());
 
     Scalar h_chi = 0;
@@ -1497,7 +1518,9 @@ Scalar computeActiveErrors_<3>(
     const GpuVecxd<3>& measurements,
     const GpuVec1d& omegas,
     const GpuVec2i& edge2PL,
+    const Scalar errorThreshold,
     GpuVecxd<3>& errors,
+    GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi)
 {
@@ -1506,11 +1529,27 @@ Scalar computeActiveErrors_<3>(
     const int grid = 16;
 
     if (nedges <= 0)
+    {
         return 0;
+    }
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
+    if (errorThreshold > 0.0)
+    {
+        CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
+    }
     computeActiveErrorsKernel<3><<<grid, block>>>(
-        nedges, poseEstimate, landmarkEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
+        nedges,
+        poseEstimate,
+        landmarkEstimate,
+        measurements,
+        omegas,
+        edge2PL,
+        errorThreshold,
+        errors,
+        outliers,
+        Xcs,
+        chi);
     CUDA_CHECK(cudaGetLastError());
 
     Scalar h_chi = 0;
@@ -1864,6 +1903,7 @@ computeJacobians_Line(const Se3D& est, const PointToLineMatch<double>& measureme
 ////////////////////////////////////////////////////////////////////////////////////
 // ICP custom edge - Kernel functions
 ////////////////////////////////////////////////////////////////////////////////////
+
 __global__ void computeActiveErrorsKernel_Line(
     int nedges,
     const Se3D* poseEstimate,
@@ -1933,7 +1973,9 @@ __global__ void computeActiveErrorsKernel_Plane(
     }
 
     if (sharedIdx == 0)
+    {
         atomicAdd(chi, cache[0]);
+    }
 }
 
 /*

@@ -3,6 +3,7 @@
 #include "cuda_linear_solver.h"
 #include "optimisable_graph.h"
 #include "profile.h"
+#include "robust_kernel.h"
 
 namespace cugo
 {
@@ -256,14 +257,14 @@ double BlockSolver::computeErrors(const EdgeSetVec& edgeSets, const VertexSetVec
 {
     const auto t0 = get_time_point();
 
-    maths::Vec3 rho;
+    maths::Vec3<Scalar> rho;
     Scalar accumChi = 0;
-    for (const EdgeSet* edgeSet : edgeSets)
+    for (BaseEdgeSet* edgeSet : edgeSets)
     {
         const Scalar chi = edgeSet->computeError(vertexSets, d_chi_);
-        if (edgeSet->kernel())
+        if (edgeSet->robustKernel())
         {
-            edgeSet->kernel()->robustify(chi, rho);
+            edgeSet->robustKernel()->robustify(chi, rho);
             accumChi += rho[0];
         }
         else

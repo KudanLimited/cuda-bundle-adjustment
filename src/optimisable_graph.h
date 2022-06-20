@@ -373,9 +373,6 @@ public:
 
     virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi) { return 0; }
 
-    virtual void setLevel(int level) = 0;
-    virtual int void level() const = 0;
-
     virtual void setRobustKernel(BaseRobustKernel* kernel) = 0;
     virtual BaseRobustKernel* robustKernel() = 0;
 };
@@ -397,7 +394,7 @@ public:
     using VIndex = std::array<int, 2>;
 
     // cpu side
-    EdgeSet() : kernel(nullptr), level(0), outlierThreshold(0.0) {}
+    EdgeSet() : kernel(nullptr), outlierThreshold(0.0) {}
     virtual ~EdgeSet() {}
 
     // vitual functions
@@ -444,10 +441,7 @@ public:
 
     const int dim() const override { return DIM; }
 
-    void setLevel(int level) override { this->level = level; }
-    int void level() const override { return level; }
-
-    void setRobustKernel(const BaseRobustKernel* kernel) override { this->kernel = kernel; }
+    void setRobustKernel(BaseRobustKernel* kernel) override { this->kernel = kernel; }
     BaseRobustKernel* robustKernel() override { return kernel; }
 
     void setOutlierThreshold(const Scalar errorThreshold)
@@ -470,7 +464,6 @@ public:
 protected:
     std::unordered_set<BaseEdge*> edges;
     BaseRobustKernel* kernel;
-    int level;
     Scalar outlierThreshold;
     std::vector<int> edgeLevels;
 

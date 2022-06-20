@@ -17,7 +17,7 @@ public:
 
     void setDelta(const Scalar delta) { delta_ = delta; }
 
-    virtual void robustify(const Scalar chi, maths::Vec3& rhoOut) = 0;
+    virtual void robustify(const Scalar chi, maths::Vec3<Scalar>& rhoOut) = 0;
 
 protected:
     Scalar delta_;
@@ -30,6 +30,8 @@ public:
     RobustKernelCauchy() = default;
 
     ~RobustKernelCauchy() {}
+
+    void robustify(const Scalar chi, maths::Vec3<Scalar>& rhoOut) override;
 };
 
 } // namespace cugo

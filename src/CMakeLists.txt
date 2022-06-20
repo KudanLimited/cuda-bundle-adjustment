@@ -34,6 +34,7 @@ endif()
 file(GLOB_RECURSE srcs ./*.cpp ./*.h ./*.cu ${CUGO_INCLUDE_DIR}/*.h)
 
 if (BUILD_CUGO_SHARED) 
+	message("Building CUGO as shared library....")
 	add_library(cugo SHARED ${srcs})
 	set(CUDA_LIBS 
 		CUDA::cusparse 
@@ -43,6 +44,7 @@ if (BUILD_CUGO_SHARED)
 		CUDA::cudart
 	)
 else()
+	message("Building CUGO as static library....")
 	add_library(cugo STATIC ${srcs})
 	set(CUDA_LIBS 
 		CUDA::cusparse_static 

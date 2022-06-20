@@ -3,9 +3,9 @@
 namespace cugo
 {
 
-void RobustKernelCauchy::robustify(const Scalar e2, maths::Vec3& rho)
+void RobustKernelCauchy::robustify(const Scalar e2, maths::Vec3<Scalar>& rho)
 {
-    Scalar dsqr = _delta * _delta;
+    Scalar dsqr = delta_ * delta_;
     Scalar dsqrReci = 1.0 / dsqr;
     Scalar aux = dsqrReci * e2 + 1.0;
     rho[0] = dsqr * log(aux);
