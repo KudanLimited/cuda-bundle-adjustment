@@ -20,8 +20,8 @@ limitations under the License.
 #include "device_buffer.h"
 #include "device_matrix.h"
 #include "optimisable_graph.h"
-#include "sparse_block_matrix.h"
 #include "profile.h"
+#include "sparse_block_matrix.h"
 
 #include <algorithm>
 #include <unordered_map>
@@ -149,6 +149,8 @@ void CudaGraphOptimisationImpl::clearEdgeSets()
     for (auto* edgeSet : edgeSets)
     {
         edgeSet->clearEdges();
+        delete edgeSet;
+        edgeSet = nullptr;
     }
     edgeSets.clear();
 }
@@ -162,8 +164,11 @@ void CudaGraphOptimisationImpl::clearVertexSets()
             PoseVertexSet* poseVertexSet = dynamic_cast<PoseVertexSet*>(vertexSet);
             for (auto* vertex : poseVertexSet->get())
             {
-                delete vertex;
-                vertex = nullptr;
+                if (vertex)
+                {
+                    delete vertex;
+                    vertex = nullptr;
+                }
             }
         }
         else
@@ -171,10 +176,15 @@ void CudaGraphOptimisationImpl::clearVertexSets()
             LandmarkVertexSet* lmVertexSet = dynamic_cast<LandmarkVertexSet*>(vertexSet);
             for (auto* vertex : lmVertexSet->get())
             {
-                delete vertex;
-                vertex = nullptr;
+                if (vertex)
+                {
+                    delete vertex;
+                    vertex = nullptr;
+                }
             }
         }
+        delete vertexSet;
+        vertexSet = nullptr;
     }
     vertexSets.clear();
 }
@@ -183,9 +193,7 @@ BatchStatistics& CudaGraphOptimisationImpl::batchStatistics() { return stats_; }
 
 const TimeProfile& CudaGraphOptimisationImpl::timeProfile() { return timeProfile_; }
 
-CudaGraphOptimisationImpl::CudaGraphOptimisationImpl() : solver_(std::make_unique<BlockSolver>())
-{
-}
+CudaGraphOptimisationImpl::CudaGraphOptimisationImpl() : solver_(std::make_unique<BlockSolver>()) {}
 
 CudaGraphOptimisationImpl::~CudaGraphOptimisationImpl()
 {

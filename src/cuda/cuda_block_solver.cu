@@ -498,6 +498,14 @@ __device__ inline void projectC2I<3>(const Vec3d& Xc, Vec3d& p)
     p[2] = p[0] - BF() * invZ;
 }
 
+__device__ inline void camProjectDepth(const Vec3d& Xc, Vec3d& p)
+{
+    const Scalar invZ = 1.0 / Xc[2];
+    p[0] = FX() * invZ * Xc[0] + CX();
+    p[1] = FY() * invZ * Xc[1] + CY();
+    p[2] = invZ;
+}
+
 __device__ inline Matx<Scalar, 3, 3> identityMat3x3()
 {
     Matx<Scalar, 3, 3> M;
@@ -1901,6 +1909,78 @@ computeJacobians_Line(const Se3D& est, const PointToLineMatch<double>& measureme
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
+// BA custom edge - Kernel functions
+////////////////////////////////////////////////////////////////////////////////////
+
+__global__ void computeActiveErrorsKernel_DepthBa(
+    int nedges,
+    const Se3D* se3,
+    const Vec3d* Xws,
+    const Vec3d* measurements,
+    const Scalar* omegas,
+    const Vec2i* edge2PL,
+    const Scalar errorThreshold,
+    Vec3d* errors,
+    int* outliers,
+    Vec3d* Xcs,
+    Scalar* chi)
+{
+    const int sharedIdx = threadIdx.x;
+    __shared__ Scalar cache[BLOCK_ACTIVE_ERRORS];
+
+    Scalar sumchi = 0;
+    for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
+    {
+        const Vec2i index = edge2PL[iE];
+        const int iP = index[0];
+        const int iL = index[1];
+
+        const QuatD& q = se3[iP].r;
+        const Vec3d& t = se3[iP].t;
+        const Vec3d& Xw = Xws[iL];
+        const Vec3d& measurement = measurements[iE];
+
+        // project world to camera
+        Vec3d Xc;
+        projectW2C(q, t, Xw, Xc);
+
+        // project camera to image
+        Vec3d proj;
+        camProjectDepth(Xc, proj);
+
+        // compute residual
+        Vec3d error;
+        error[0] = measurement[0] - proj[0];
+        error[1] = measurement[1] - proj[1];
+        error[2] = measurement[2] - proj[2];
+        errors[iE] = error;
+        Xcs[iE] = Xc;
+
+        const Scalar chi2 = omegas[iE] * squaredNorm(error);
+        sumchi += chi2;
+        if (errorThreshold > 0.0 && chi2 > errorThreshold)
+        {
+            outliers[iE] = 1;
+        }
+    }
+
+    cache[sharedIdx] = sumchi;
+    __syncthreads();
+
+    for (int stride = BLOCK_ACTIVE_ERRORS / 2; stride > 0; stride >>= 1)
+    {
+        if (sharedIdx < stride)
+            cache[sharedIdx] += cache[sharedIdx + stride];
+        __syncthreads();
+    }
+
+    if (sharedIdx == 0)
+    {
+        atomicAdd(chi, cache[0]);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////
 // ICP custom edge - Kernel functions
 ////////////////////////////////////////////////////////////////////////////////////
 
@@ -1916,7 +1996,9 @@ __global__ void computeActiveErrorsKernel_Line(
 {
     const int iE = blockIdx.x * blockDim.x + threadIdx.x;
     if (iE >= nedges)
+    {
         return;
+    }
 
     const Vec2i index = edge2PL[iE];
     const int iP = index[0];
@@ -1977,51 +2059,6 @@ __global__ void computeActiveErrorsKernel_Plane(
         atomicAdd(chi, cache[0]);
     }
 }
-
-/*
-template <int MDIM>
-__global__ void computeActiveErrorsKernel_PriorPose(int nedges,
-        const Se3D* poseEstimate, const Se3D* measurements,
-        const Scalar* omegas, const Vec2i* edge2PL, Vec6d* errors, Vec3d* Xcs, Scalar* chi)
-{
-        const int sharedIdx = threadIdx.x;
-        __shared__ Scalar cache[BLOCK_ACTIVE_ERRORS];
-
-        Scalar sumchi = 0;
-        for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x *
-blockDim.x)
-        {
-                const Vec2i index = edge2PL[iE];
-                const int iP = index[0];
-
-                const Se3D est = poseEstimate[iP];
-                const Se3D measurement = measurements[iE];
-
-        const Se3D invEstimate = inverse(est);
-                Se3D currentTpp;
-                se3MulSe3(invEstimate, measurement, currentTpp);
-
-                // compute residual
-                const Vec<Scalar, 6> error = log(currentTpp);
-
-                errors[iE] = error;
-                sumchi += omegas[iE] * squaredNorm(error);
-        }
-
-        cache[sharedIdx] = sumchi;
-        __syncthreads();
-
-        for (int stride = BLOCK_ACTIVE_ERRORS / 2; stride > 0; stride >>= 1)
-        {
-                if (sharedIdx < stride)
-                        cache[sharedIdx] += cache[sharedIdx + stride];
-                __syncthreads();
-        }
-
-        if (sharedIdx == 0)
-                atomicAdd(chi, cache[0]);
-}
-*/
 
 template <int MDIM>
 __global__ void constructQuadraticFormKernel_Plane(
@@ -2107,6 +2144,56 @@ __global__ void constructQuadraticFormKernel_Line(
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
+// BA custom edge - Wrapper functions
+////////////////////////////////////////////////////////////////////////////////////
+
+Scalar computeActiveErrors_DepthBa(
+    const GpuVecSe3d& poseEstimate,
+    const GpuVec3d& landmarkEstimate,
+    const GpuVec3d& measurements,
+    const GpuVec1d& omegas,
+    const GpuVec2i& edge2PL,
+    const Scalar errorThreshold,
+    GpuVec3d& errors,
+    GpuVec1i& outliers,
+    GpuVec3d& Xcs,
+    Scalar* chi)
+{
+    const int nedges = measurements.ssize();
+    const int block = BLOCK_ACTIVE_ERRORS;
+    const int grid = 16;
+
+    if (nedges <= 0)
+    {
+        return 0;
+    }
+
+    CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
+    if (errorThreshold > 0.0)
+    {
+        CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
+    }
+    computeActiveErrorsKernel_DepthBa<<<grid, block>>>(
+        nedges,
+        poseEstimate,
+        landmarkEstimate,
+        measurements,
+        omegas,
+        edge2PL,
+        errorThreshold,
+        errors,
+        outliers,
+        Xcs,
+        chi);
+    CUDA_CHECK(cudaGetLastError());
+
+    Scalar h_chi = 0;
+    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
+
+    return h_chi;
+}
+
+////////////////////////////////////////////////////////////////////////////////////
 // ICP custom edge - Wrapper functions
 ////////////////////////////////////////////////////////////////////////////////////
 Scalar computeActiveErrors_Line(
@@ -2162,29 +2249,6 @@ Scalar computeActiveErrors_Plane(
 
     return h_chi;
 }
-
-/*
-Scalar computeActiveErrors_PriorPose(const GpuVecSe3d& poseEstimate,
-        const GpuVecSe3d& measurements, const GpuVec1d& omegas, const GpuVec2i& edge2PL,
-        GpuVec6d& errors, GpuVec3d& Xcs, Scalar* chi)
-{
-        const int nedges = measurements.ssize();
-        const int block = BLOCK_ACTIVE_ERRORS;
-        const int grid = 16;
-
-        if (nedges <= 0)
-                return 0;
-
-        CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-        computeActiveErrorsKernel_PriorPose<6><<<grid, block>>>(nedges, poseEstimate, measurements,
-omegas, edge2PL, errors, Xcs, chi); CUDA_CHECK(cudaGetLastError());
-
-        Scalar h_chi = 0;
-        CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-        return h_chi;
-}
-*/
 
 void constructQuadraticForm_Plane(
     const GpuVecSe3d& se3,
