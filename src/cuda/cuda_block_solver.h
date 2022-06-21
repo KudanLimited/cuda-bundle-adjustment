@@ -129,6 +129,18 @@ Scalar CUGO_API computeActiveErrors_(
     GpuVec3d& Xcs,
     Scalar* chi);
 
+Scalar CUGO_API computeActiveErrors_DepthBa(
+    const GpuVecSe3d& poseEstimate,
+    const GpuVec3d& landmarkEstimate,
+    const GpuVec3d& measurements,
+    const GpuVec1d& omegas,
+    const GpuVec2i& edge2PL,
+    const Scalar errorThreshold,
+    GpuVec3d& errors,
+    GpuVec1i& outliers,
+    GpuVec3d& Xcs,
+    Scalar* chi);
+
 Scalar CUGO_API computeActiveErrors_Line(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToLineMatch<double>>& measurements,

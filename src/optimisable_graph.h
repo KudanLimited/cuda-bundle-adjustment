@@ -459,7 +459,18 @@ public:
         return edgeLevels;
     }
 
-    void clearEdges() override { edges.clear(); }
+    void clearEdges() override
+    {
+        for (BaseEdge* edge : edges)
+        {
+            if (edge)
+            {
+                delete edge;
+                edge = nullptr;
+            }
+        }
+        edges.clear();
+    }
 
 protected:
     std::unordered_set<BaseEdge*> edges;
