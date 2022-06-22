@@ -5,6 +5,9 @@ project(cugo LANGUAGES CXX CUDA)
 set(CUGO_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 include_directories(${CUGO_INCLUDE_DIR})
 
+find_package(Eigen3 REQUIRED)
+include_directories(${Eigen3_INCLUDE_DIR})
+
 if (DEBUG_CUGO)
 	set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-g -G -lineinfo")
 else()
@@ -24,7 +27,7 @@ message(STATUS "CUDA Toolkit version: ${CUDAToolkit_VERSION}")
 
 if (WIN32)
 	set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -dc -Xcompiler \"/wd 4819\" -Xcompiler \"/wd 4244\"")
-	add_definitions(-D_SILENCE_CXX17_NEGATORS_DEPRECATION_WARNING)
+	add_definitions(-D_SILENCE_CXX17_NEGATORS_DEPRECATION_WARNING -D_USE_MATH_DEFINES=1)
 endif()
 
 if (USE_FLOAT32)
@@ -33,7 +36,7 @@ endif()
 
 file(GLOB_RECURSE srcs ./*.cpp ./*.h ./*.cu ${CUGO_INCLUDE_DIR}/*.h)
 
-if (BUILD_CUGO_SHARED) 
+if (BUILD_CUGO_SHARED OR WIN32) 
 	message("Building CUGO as shared library....")
 	add_library(cugo SHARED ${srcs})
 	set(CUDA_LIBS 
@@ -74,7 +77,7 @@ set_property(TARGET cugo PROPERTY CUDA_SEPARABLE_COMPILATION OFF)
 set_target_properties(cugo PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 
-if (BUILD_CUGO_SHARED)
+if (BUILD_CUGO_SHARED AND NOT WIN32)
 	target_compile_options(cugo PRIVATE "-fvisibility=hidden")
 endif()
 

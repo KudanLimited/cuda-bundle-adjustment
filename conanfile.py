@@ -22,7 +22,7 @@ class CugoConan(ConanFile):
         "use_float32": [True, False]
     }
     default_options = {
-        "shared": True,
+        "shared": False,
         "fPIC": True,
         "with_samples": True,
         "with_g2o": False,
