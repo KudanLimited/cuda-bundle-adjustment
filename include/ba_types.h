@@ -18,6 +18,7 @@ limitations under the License.
 #define __BA_TYPES_H__
 
 #include "optimisable_graph.h"
+#include "macro.h"
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>

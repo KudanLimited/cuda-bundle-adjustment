@@ -52,19 +52,11 @@ limitations under the License.
     }
 
 
-#ifdef WIN32
-    #ifdef BUILDING_DLL
-        #ifdef __GNUC__
-            #define GUGO_API __attribute__((dllexport))
-        #else
-            #define CUGO_API __declspec(dllexport)
-        #endif
+#ifdef _WIN32
+    #ifdef __GNUC__
+        #define GUGO_API __attribute__((dllexport))
     #else
-        #ifdef __GNUC__
-            #define GUGO_API __attribute__((dllimport))
-        #else
-            #define CUGO_API __declspec(dllimport)
-        #endif
+        #define CUGO_API __declspec(dllexport)
     #endif
 #else
     #if __GNUC__>=4
