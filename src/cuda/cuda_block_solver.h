@@ -102,7 +102,7 @@ void updateLandmarks(const GpuLx1BlockVec& xl, GpuVec3d& Xws);
 void computeScale(const GpuVec1d& x, const GpuVec1d& b, Scalar* scale, Scalar lambda);
 
 template <int M>
-void CUGO_API constructQuadraticForm_(
+void constructQuadraticForm_(
     const GpuVec3d& Xcs,
     const GpuVecSe3d& se3,
     GpuVecxd<M>& errors,
@@ -117,7 +117,7 @@ void CUGO_API constructQuadraticForm_(
     GpuHplBlockMat& Hpl);
 
 template <int M>
-Scalar CUGO_API computeActiveErrors_(
+Scalar computeActiveErrors_(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<M>& measurements,
@@ -129,7 +129,7 @@ Scalar CUGO_API computeActiveErrors_(
     GpuVec3d& Xcs,
     Scalar* chi);
 
-Scalar CUGO_API computeActiveErrors_DepthBa(
+Scalar computeActiveErrors_DepthBa(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVec3d& measurements,
@@ -141,7 +141,7 @@ Scalar CUGO_API computeActiveErrors_DepthBa(
     GpuVec3d& Xcs,
     Scalar* chi);
 
-Scalar CUGO_API computeActiveErrors_Line(
+Scalar computeActiveErrors_Line(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToLineMatch<double>>& measurements,
     const GpuVec1d& omegas,
@@ -150,7 +150,7 @@ Scalar CUGO_API computeActiveErrors_Line(
     GpuVec3d& Xcs,
     Scalar* chi);
 
-Scalar CUGO_API computeActiveErrors_Plane(
+Scalar computeActiveErrors_Plane(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToPlaneMatch<double>>& measurements,
     const GpuVec1d& omegas,
@@ -159,7 +159,7 @@ Scalar CUGO_API computeActiveErrors_Plane(
     GpuVec3d& Xcs,
     Scalar* chi);
 
-Scalar CUGO_API computeActiveErrors_PriorPose(
+Scalar computeActiveErrors_PriorPose(
     const GpuVecSe3d& poseEstimate,
     const GpuVecSe3d& measurements,
     const GpuVec1d& omegas,
@@ -168,7 +168,7 @@ Scalar CUGO_API computeActiveErrors_PriorPose(
     GpuVec3d& Xcs,
     Scalar* chi);
 
-void CUGO_API constructQuadraticForm_Line(
+void constructQuadraticForm_Line(
     const GpuVecSe3d& se3,
     GpuVec1d& errors,
     const GpuVec<PointToLineMatch<double>>& measurements,
@@ -182,7 +182,7 @@ void CUGO_API constructQuadraticForm_Line(
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl);
 
-void CUGO_API constructQuadraticForm_Plane(
+void constructQuadraticForm_Plane(
     const GpuVecSe3d& se3,
     GpuVec1d& errors,
     const GpuVec<PointToPlaneMatch<double>>& measurements,
