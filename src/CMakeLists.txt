@@ -66,7 +66,7 @@ endif()
 
 target_include_directories(
 	cugo 
-	PRIVATE 
+	PUBLIC
 	${CUGO_INCLUDE_DIR}
 	${Eigen3_INCLUDE_DIR}
 )
@@ -93,8 +93,8 @@ target_compile_definitions(
 )
 
 target_include_directories(cugo PUBLIC "${CMAKE_SOURCE_DIR}/src")
-set_property(TARGET cugo PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS ON)
-set_property(TARGET cugo PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+set_property(TARGET cugo PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS OFF)
+set_property(TARGET cugo PROPERTY CUDA_SEPARABLE_COMPILATION OFF)
 set_target_properties(cugo PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if (BUILD_CUGO_SHARED AND NOT WIN32)

@@ -2258,9 +2258,9 @@ void constructQuadraticForm_Plane(
     const GpuVec2i& edge2PL,
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
-    GpuHppBlockMat& Hpp,
+    GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
-    GpuHllBlockMat& Hll,
+    GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl)
 {
@@ -2286,9 +2286,9 @@ void constructQuadraticForm_Line(
     const GpuVec2i& edge2PL,
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
-    GpuHppBlockMat& Hpp,
+    GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
-    GpuHllBlockMat& Hll,
+    GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl)
 {

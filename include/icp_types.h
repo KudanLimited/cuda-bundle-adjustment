@@ -123,28 +123,6 @@ public:
     void* getMeasurement() override { return static_cast<void*>(&measurement); }
 };
 
-/*
-/
-class PriorPoseEdge : public EdgeSet<6, maths::Se3D, Se3D, PoseVertex>
-{
-public:
-
-    PriorPoseEdge() = default;
-
-    void computeError(const VertexSetVec& vertexSets, Scalar* chi) override
-    {
-        GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getEstimates();
-        return gpu::computeActiveErrors_PriorPose(poseEstimates, d_measurements, d_omegas,
-d_edge2PL, d_errors, d_Xcs, chi);
-    }
-
-
-
-private:
-
-};*/
-
-
 } // namespace cugo
 
 #endif // !__ICP_TYPES_H__

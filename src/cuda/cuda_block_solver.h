@@ -159,15 +159,6 @@ Scalar computeActiveErrors_Plane(
     GpuVec3d& Xcs,
     Scalar* chi);
 
-Scalar computeActiveErrors_PriorPose(
-    const GpuVecSe3d& poseEstimate,
-    const GpuVecSe3d& measurements,
-    const GpuVec1d& omegas,
-    const GpuVec2i& edge2PL,
-    GpuVec6d& errors,
-    GpuVec3d& Xcs,
-    Scalar* chi);
-
 void constructQuadraticForm_Line(
     const GpuVecSe3d& se3,
     GpuVec1d& errors,

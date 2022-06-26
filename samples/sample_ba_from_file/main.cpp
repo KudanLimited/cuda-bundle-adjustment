@@ -15,6 +15,7 @@ limitations under the License.
 */
 
 #include <ba_types.h>
+#include <icp_types.h>
 #include <cuda_graph_optimisation.h>
 #include <opencv2/core.hpp>
 #include <optimisable_graph.h>
@@ -30,6 +31,7 @@ cugo::PoseVertexSet* poseVertexSet = nullptr;
 cugo::LandmarkVertexSet* landmarkVertexSet = nullptr;
 cugo::MonoEdgeSet* monoEdgeSet = nullptr;
 cugo::StereoEdgeSet* stereoEdgeSet = nullptr;
+cugo::PlaneEdgeSet* planeEdgeSet = nullptr;
 std::unique_ptr<cugo::RobustKernelCauchy> kernel;
 
 int main(int argc, char** argv)
@@ -47,6 +49,8 @@ int main(int argc, char** argv)
 
     poseVertexSet = new cugo::PoseVertexSet(false);
     landmarkVertexSet = new cugo::LandmarkVertexSet(true);
+
+    planeEdgeSet = new cugo::PlaneEdgeSet();
 
     monoEdgeSet = new cugo::MonoEdgeSet();
     monoEdgeSet->setRobustKernel(kernel.get());
