@@ -102,7 +102,7 @@ void updateLandmarks(const GpuLx1BlockVec& xl, GpuVec3d& Xws);
 void computeScale(const GpuVec1d& x, const GpuVec1d& b, Scalar* scale, Scalar lambda);
 
 template <int M>
-void constructQuadraticForm_(
+void CUGO_API constructQuadraticForm_(
     const GpuVec3d& Xcs,
     const GpuVecSe3d& se3,
     GpuVecxd<M>& errors,
@@ -117,7 +117,7 @@ void constructQuadraticForm_(
     GpuHplBlockMat& Hpl);
 
 template <int M>
-Scalar computeActiveErrors_(
+Scalar CUGO_API computeActiveErrors_(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<M>& measurements,
@@ -129,7 +129,7 @@ Scalar computeActiveErrors_(
     GpuVec3d& Xcs,
     Scalar* chi);
 
-Scalar computeActiveErrors_DepthBa(
+Scalar CUGO_API computeActiveErrors_DepthBa(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVec3d& measurements,
@@ -141,7 +141,7 @@ Scalar computeActiveErrors_DepthBa(
     GpuVec3d& Xcs,
     Scalar* chi);
 
-Scalar computeActiveErrors_Line(
+Scalar CUGO_API computeActiveErrors_Line(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToLineMatch<double>>& measurements,
     const GpuVec1d& omegas,
@@ -150,7 +150,7 @@ Scalar computeActiveErrors_Line(
     GpuVec3d& Xcs,
     Scalar* chi);
 
-Scalar computeActiveErrors_Plane(
+Scalar CUGO_API computeActiveErrors_Plane(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToPlaneMatch<double>>& measurements,
     const GpuVec1d& omegas,
@@ -159,7 +159,7 @@ Scalar computeActiveErrors_Plane(
     GpuVec3d& Xcs,
     Scalar* chi);
 
-void constructQuadraticForm_Line(
+void CUGO_API constructQuadraticForm_Line(
     const GpuVecSe3d& se3,
     GpuVec1d& errors,
     const GpuVec<PointToLineMatch<double>>& measurements,
@@ -173,7 +173,7 @@ void constructQuadraticForm_Line(
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl);
 
-void constructQuadraticForm_Plane(
+void CUGO_API constructQuadraticForm_Plane(
     const GpuVecSe3d& se3,
     GpuVec1d& errors,
     const GpuVec<PointToPlaneMatch<double>>& measurements,
