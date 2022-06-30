@@ -45,7 +45,11 @@ else()
 	add_library(cugo STATIC ${srcs})
 endif()
 
-if (BUILD_CUGO_SHARED OR WIN32)
+if (NOT CUDA_TOOLKIT_LIB_TYPE)
+	set(CUDA_TOOLKIT_LIB_TYPE "static")
+endif()
+
+if (CUDA_TOOLKIT_LIB_TYPE STREQUAL "shared" OR WIN32)
 	set(CUDA_LIBS 
 		CUDA::cusparse 
 		CUDA::cusolver
@@ -53,15 +57,28 @@ if (BUILD_CUGO_SHARED OR WIN32)
 		CUDA::cublasLt 
 		CUDA::cudart
 	)
-else()
+elseif(CUDA_TOOLKIT_LIB_TYPE STREQUAL "static")
 	set(CUDA_LIBS 
 		CUDA::cusparse_static 
 		CUDA::cusolver_static 
 		CUDA::cublas_static 
 		CUDA::cublasLt_static 
 		CUDA::cudart_static
+		# The toolkit contains no target for libmetis for some reason.
 		${CUDAToolkit_LIBRARY_DIR}/libmetis_static.a
 	)
+elseif(CUDA_TOOLKIT_LIB_TYPE STREQUAL "jetson")
+	set(CUDA_LIBS 
+		CUDA::cusparse 
+		CUDA::cusolver
+		CUDA::cublas
+		CUDA::cublasLt
+		# for some reason lt4 jetson images have shared libs for all
+		# toolkit libs except for the run-time library 
+		CUDA::cudart_static
+	)
+else()
+	message(FATAL_ERROR "Unknown value for CUDA_TOOLKIT_LIB_TYPE: ${CUDA_TOOLKIT_LIB_TYPE}")
 endif()
 
 target_include_directories(
@@ -93,9 +110,12 @@ target_compile_definitions(
 )
 
 target_include_directories(cugo PUBLIC "${CMAKE_SOURCE_DIR}/src")
-set_property(TARGET cugo PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS ON)
-set_property(TARGET cugo PROPERTY CUDA_SEPARABLE_COMPILATION ON)
-set_target_properties(cugo PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_property(
+	TARGET cugo 
+	PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS ON
+	PROPERTY CUDA_SEPARABLE_COMPILATION ON
+	PROPERTY POSITION_INDEPENDENT_CODE ON
+)
 
 if (BUILD_CUGO_SHARED AND NOT WIN32)
 	target_compile_options(cugo PRIVATE "-fvisibility=hidden")
