@@ -19,6 +19,14 @@ if (CMAKE_COMPILER_IS_GNUCXX)
 	list(APPEND CUGO_COMPILE_FLAGS "-O3 -Wall")
 endif()
 
+if (NOT CUDA_TOOLKIT_LIB_TYPE)
+	set(CUDA_TOOLKIT_LIB_TYPE "static")
+endif()
+
+if(CUDA_TOOLKIT_LIB_TYPE STREQUAL "jetson")
+	set(CUDA_CUDART /usr/local/cuda/lib64/libcudart.so.10.2.300)
+endif()
+
 find_package(CUDAToolkit REQUIRED)
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
   set(CMAKE_CUDA_ARCHITECTURES 61)
@@ -43,10 +51,6 @@ if (BUILD_CUGO_SHARED)
 else()
 	message("Building CUGO as static library....")
 	add_library(cugo STATIC ${srcs})
-endif()
-
-if (NOT CUDA_TOOLKIT_LIB_TYPE)
-	set(CUDA_TOOLKIT_LIB_TYPE "static")
 endif()
 
 if (CUDA_TOOLKIT_LIB_TYPE STREQUAL "shared" OR WIN32)
