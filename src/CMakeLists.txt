@@ -16,7 +16,7 @@ set(CUGO_COMPILE_FLAGS "")
 set(CUGO_DEFINITIONS "")
 
 if (CMAKE_COMPILER_IS_GNUCXX)
-	list(APPEND CUGO_COMPILE_FLAGS "-O3 -Wall")
+	list(APPEND CUGO_COMPILE_FLAGS -O3 -Wall)
 endif()
 
 if (NOT CUDA_TOOLKIT_LIB_TYPE)
@@ -40,7 +40,10 @@ if (WIN32)
 endif()
 
 if (USE_FLOAT32)
-	add_definitions(-DUSE_FLOAT32)
+	list(APPEND CUGO_DEFINITIONS USE_FLOAT32)
+endif()
+if (USE_TOOLKIT_10_2)
+	list(APPEND CUGO_DEFINITIONS USE_TOOLKIT_10_2)
 endif()
 
 file(GLOB_RECURSE srcs ./*.cpp ./*.h ./*.cu ${CUGO_INCLUDE_DIR}/*.h)
@@ -106,6 +109,7 @@ target_compile_options(
 	cugo 
 	PRIVATE 
 	${CUGO_COMPILE_FLAGS}
+	"-fPIC"
 )
 target_compile_definitions(
 	cugo

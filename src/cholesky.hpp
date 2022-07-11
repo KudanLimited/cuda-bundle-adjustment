@@ -332,6 +332,13 @@ DenseCholesky<float>::allocateBuffer(SparseSquareMatrixCSR<float>& A, DenseSquar
     CHECK_CUSPARSE(cusparseCreateDnMat(
         &dnMatDescr, B.rows(), B.cols(), B.ld(), B.val(), CUDA_R_32F, CUSPARSE_ORDER_COL));
 
+#ifndef USE_TOOLKIT_10_2
+    size_t bufferSize = 0;
+    CHECK_CUSPARSE(cusparseSparseToDense_bufferSize(
+        spHandle_, spMatDescr, dnMatDescr, CUSPARSE_SPARSETODENSE_ALG_DEFAULT, &bufferSize));
+    denseBuffer_.resize(bufferSize);
+#endif
+
     int sytBufferSize = 0;
     CHECK_CUSOLVER(
         cusolverDnSsytrf_bufferSize(dnHandle_, B.rows(), B.val(), B.ld(), &sytBufferSize));
@@ -359,6 +366,13 @@ inline void DenseCholesky<double>::allocateBuffer(
     CHECK_CUSPARSE(cusparseCreateDnMat(
         &dnMatDescr, B.rows(), B.cols(), B.ld(), B.val(), CUDA_R_64F, CUSPARSE_ORDER_COL));
 
+#ifndef USE_TOOLKIT_10_2
+    size_t bufferSize = 0;
+    CHECK_CUSPARSE(cusparseSparseToDense_bufferSize(
+        spHandle_, spMatDescr, dnMatDescr, CUSPARSE_SPARSETODENSE_ALG_DEFAULT, &bufferSize));
+    denseBuffer_.resize(bufferSize);
+#endif
+
     int sytBufferSize = 0;
     CHECK_CUSOLVER(cusolverDnDgetrf_bufferSize(
         dnHandle_, B.rows(), B.cols(), B.val(), B.ld(), &sytBufferSize));
@@ -367,6 +381,7 @@ inline void DenseCholesky<double>::allocateBuffer(
     ipiv_.resize(B.rows());
 }
 
+#ifdef USE_TOOLKIT_10_2
 template <typename T>
 inline void
 DenseCholesky<T>::sparseToDense(const SparseSquareMatrixCSR<T>& A, DenseSquareMatrix<T>& B)
@@ -386,6 +401,19 @@ DenseCholesky<double>::sparseToDense(const SparseSquareMatrixCSR<double>& A, Den
 {
     CHECK_CUSPARSE(cusparseDcsr2dense(spHandle_, A.rows(), A.cols(), A.desc(), A.val(), A.rowPtr(), A.colInd(), B.val(), A.rows()));
 }
+#else
+template <typename T>
+inline void
+DenseCholesky<T>::sparseToDense(const SparseSquareMatrixCSR<T>& A, DenseSquareMatrix<T>& B)
+{
+    CHECK_CUSPARSE(cusparseSparseToDense(
+        spHandle_,
+        spMatDescr,
+        dnMatDescr,
+        CUSPARSE_SPARSETODENSE_ALG_DEFAULT,
+        denseBuffer_.data()));
+}
+#endif
 
 template <typename T>
 bool DenseCholesky<T>::factorize(DenseSquareMatrix<T>& A)
