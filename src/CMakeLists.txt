@@ -16,20 +16,16 @@ set(CUGO_COMPILE_FLAGS "")
 set(CUGO_DEFINITIONS "")
 
 if (CMAKE_COMPILER_IS_GNUCXX)
-	list(APPEND CUGO_COMPILE_FLAGS "-O3 -Wall")
+	list(APPEND CUGO_COMPILE_FLAGS -O3 -Wall)
 endif()
 
 if (NOT CUDA_TOOLKIT_LIB_TYPE)
 	set(CUDA_TOOLKIT_LIB_TYPE "static")
 endif()
 
-if(CUDA_TOOLKIT_LIB_TYPE STREQUAL "jetson")
-	set(CUDA_CUDART /usr/local/cuda/lib64/libcudart.so.10.2.300)
-endif()
-
 find_package(CUDAToolkit REQUIRED)
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set(CMAKE_CUDA_ARCHITECTURES 61)
+  set(CMAKE_CUDA_ARCHITECTURES 61 75)
 endif()
 message(STATUS "CUDA Found: ${CUDAToolkit_FOUND}")
 message(STATUS "CUDA Toolkit version: ${CUDAToolkit_VERSION}")
@@ -40,7 +36,13 @@ if (WIN32)
 endif()
 
 if (USE_FLOAT32)
-	add_definitions(-DUSE_FLOAT32)
+	list(APPEND CUGO_DEFINITIONS USE_FLOAT32)
+endif()
+if (USE_TOOLKIT_10_2)
+	list(APPEND CUGO_DEFINITIONS USE_TOOLKIT_10_2)
+endif()
+if (CUGO_MEMORY_CLEANUP)
+	list(APPEND CUGO_DEFINITIONS CUGO_MEMORY_CLEANUP)
 endif()
 
 file(GLOB_RECURSE srcs ./*.cpp ./*.h ./*.cu ${CUGO_INCLUDE_DIR}/*.h)
@@ -71,16 +73,6 @@ elseif(CUDA_TOOLKIT_LIB_TYPE STREQUAL "static")
 		# The toolkit contains no target for libmetis for some reason.
 		${CUDAToolkit_LIBRARY_DIR}/libmetis_static.a
 	)
-elseif(CUDA_TOOLKIT_LIB_TYPE STREQUAL "jetson")
-	set(CUDA_LIBS 
-		CUDA::cusparse 
-		CUDA::cusolver
-		CUDA::cublas
-		CUDA::cublasLt
-		# for some reason lt4 jetson images have shared libs for all
-		# toolkit libs except for the run-time library 
-		CUDA::cudart_static
-	)
 else()
 	message(FATAL_ERROR "Unknown value for CUDA_TOOLKIT_LIB_TYPE: ${CUDA_TOOLKIT_LIB_TYPE}")
 endif()
@@ -106,6 +98,7 @@ target_compile_options(
 	cugo 
 	PRIVATE 
 	${CUGO_COMPILE_FLAGS}
+	"$<$<NOT:$<PLATFORM_ID:Windows>>:-fPIC>"
 )
 target_compile_definitions(
 	cugo
@@ -114,12 +107,8 @@ target_compile_definitions(
 )
 
 target_include_directories(cugo PUBLIC "${CMAKE_SOURCE_DIR}/src")
-set_property(
-	TARGET cugo 
-	PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS ON
-	PROPERTY CUDA_SEPARABLE_COMPILATION ON
-	PROPERTY POSITION_INDEPENDENT_CODE ON
-)
+set_property(TARGET cugo PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS ON)
+set_property(TARGET cugo PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 
 if (BUILD_CUGO_SHARED AND NOT WIN32)
 	target_compile_options(cugo PRIVATE "-fvisibility=hidden")

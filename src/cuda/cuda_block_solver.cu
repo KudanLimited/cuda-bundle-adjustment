@@ -44,7 +44,9 @@ struct LessRowId
     __device__ bool operator()(const Vec3i& lhs, const Vec3i& rhs) const
     {
         if (lhs[0] == rhs[0])
+        {
             return lhs[1] < rhs[1];
+        }
         return lhs[0] < rhs[0];
     }
 };
@@ -54,7 +56,9 @@ struct LessColId
     __device__ bool operator()(const Vec3i& lhs, const Vec3i& rhs) const
     {
         if (lhs[1] == rhs[1])
+        {
             return lhs[0] < rhs[0];
+        }
         return lhs[1] < rhs[1];
     }
 };
@@ -282,7 +286,9 @@ __device__ inline void MatTMulVec(const Scalar* A, const Scalar* x, Scalar* b, S
 {
 #pragma unroll
     for (int i = 0; i < M; i++)
+    {
         OP(b + i, omega * dot_<N>(A + i * N, x));
+    }
 }
 
 // matrix(tansposed)-matrix product: C = AT*B
@@ -291,7 +297,9 @@ __device__ inline void MatTMulMat(const Scalar* A, const Scalar* B, Scalar* C, S
 {
 #pragma unroll
     for (int i = 0; i < N; i++)
+    {
         MatTMulVec<L, M, OP>(A, B + i * M, C + i * L, omega);
+    }
 }
 
 // matrix-vector product: b = A*x
@@ -300,7 +308,9 @@ __device__ inline void MatMulVec(const Scalar* A, const Scalar* x, Scalar* b)
 {
 #pragma unroll
     for (int i = 0; i < M; i++)
+    {
         OP(b + i, dot_stride_<N, M, S>(A + i, x));
+    }
 }
 
 // matrix-matrix product: C = A*B
@@ -309,7 +319,9 @@ __device__ inline void MatMulMat(const Scalar* A, const Scalar* B, Scalar* C)
 {
 #pragma unroll
     for (int i = 0; i < N; i++)
+    {
         MatMulVec<L, M, 1, OP>(A, B + i * M, C + i * L);
+    }
 }
 
 // matrix-matrix(tansposed) product: C = A*BT
@@ -318,7 +330,9 @@ __device__ inline void MatMulMatT(const Scalar* A, const Scalar* B, Scalar* C)
 {
 #pragma unroll
     for (int i = 0; i < N; i++)
+    {
         MatMulVec<L, M, N, OP>(A, B + i, C + i * L);
+    }
 }
 
 // squared L2 norm
@@ -803,9 +817,13 @@ __device__ inline void rotationMatrixToQuaternion(ConstMatView3x3d R, QuatD& q)
     {
         int i = 0;
         if (R(1, 1) > R(0, 0))
+        {
             i = 1;
+        }
         if (R(2, 2) > R(i, i))
+        {
             i = 2;
+        }
         int j = (i + 1) % 3;
         int k = (j + 1) % 3;
 
@@ -830,10 +848,13 @@ __device__ inline void normalizeQuaternion(const QuatD& a, QuatD& b)
 {
     Scalar invn = 1 / norm(a);
     if (a[3] < 0)
+    {
         invn = -invn;
-
+    }
     for (int i = 0; i < 4; i++)
+    {
         b[i] = invn * a[i];
+    }
 }
 
 __device__ inline void updateExp(const Scalar* update, QuatD& rot, Vec3d& trans)
@@ -872,8 +893,9 @@ __device__ inline void updatePose(const QuatD& q1, const Vec3d& t1, QuatD& q2, V
     rotate(q1, t2, u);
 
     for (int i = 0; i < 3; i++)
+    {
         t2[i] = t1[i] + u[i];
-
+    }
     QuatD r;
     multiplyQuaternion(q1, q2, r);
     normalizeQuaternion(r, q2);
@@ -883,7 +905,9 @@ template <int N>
 __device__ inline void copy(const Scalar* src, Scalar* dst)
 {
     for (int i = 0; i < N; i++)
+    {
         dst[i] = src[i];
+    }
 }
 
 __device__ inline Vec3i makeVec3i(int i, int j, int k)
@@ -1079,8 +1103,9 @@ __global__ void constructQuadraticFormKernel(
 
     const int iE = blockIdx.x * blockDim.x + threadIdx.x;
     if (iE >= nedges)
+    {
         return;
-
+    }
     const Scalar omega = omegas[iE];
     const int iP = edge2PL[iE][0];
     const int iL = edge2PL[iE][1];
@@ -1140,7 +1165,9 @@ __global__ void maxDiagonalKernel(int size, const Scalar* D, Scalar* maxD)
     for (int stride = BLOCK_MAX_DIAGONAL / 2; stride > 0; stride >>= 1)
     {
         if (sharedIdx < stride)
+        {
             cache[sharedIdx] = max(cache[sharedIdx], cache[sharedIdx + stride]);
+        }
         __syncthreads();
     }
 
@@ -1155,8 +1182,9 @@ __global__ void addLambdaKernel(int size, Scalar* D, Scalar lambda, Scalar* back
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= size)
+    {
         return;
-
+    }
     const int j = i / DIM;
     const int k = i % DIM;
     Scalar* ptrBlock = D + j * DIM * DIM;
@@ -1169,8 +1197,9 @@ __global__ void restoreDiagonalKernel(int size, Scalar* D, const Scalar* backup)
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= size)
+    {
         return;
-
+    }
     const int j = i / DIM;
     const int k = i % DIM;
     Scalar* ptrBlock = D + j * DIM * DIM;
@@ -1190,8 +1219,9 @@ __global__ void computeBschureKernel(
 {
     const int colId = blockIdx.x * blockDim.x + threadIdx.x;
     if (colId >= cols)
+    {
         return;
-
+    }
     Scalar iHll[LDIM * LDIM];
     Scalar Hpl_iHll[PDIM * LDIM];
 
@@ -1211,8 +1241,9 @@ initializeHschurKernel(int rows, PxPBlockPtr Hpp, PxPBlockPtr Hsc, const int* Hs
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= rows)
+    {
         return;
-
+    }
     copy<PDIM * PDIM>(Hpp.at(rowId), Hsc.at(HscRowPtr[rowId]));
 }
 
@@ -1221,8 +1252,9 @@ __global__ void computeHschureKernel(
 {
     const int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= size)
+    {
         return;
-
+    }
     const Vec3i index = mulBlockIds[tid];
     Scalar A[PDIM * LDIM];
     Scalar B[PDIM * LDIM];
@@ -1242,8 +1274,9 @@ __global__ void findHschureMulBlockIndicesKernel(
 {
     const int colId = blockIdx.x * blockDim.x + threadIdx.x;
     if (colId >= cols)
+    {
         return;
-
+    }
     const int i0 = HplColPtr[colId];
     const int i1 = HplColPtr[colId + 1];
     for (int i = i0; i < i1; i++)
@@ -1254,7 +1287,9 @@ __global__ void findHschureMulBlockIndicesKernel(
         {
             const int iP2 = HplRowInd[j];
             while (HscColInd[k] < iP2)
+            {
                 k++;
+            }
             const int pos = atomicAdd(nindices, 1);
             mulBlockIds[pos] = makeVec3i(i, j, k);
         }
@@ -1265,8 +1300,9 @@ __global__ void permuteNnzPerRowKernel(int size, const int* srcRowPtr, const int
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= size)
+    {
         return;
-
+    }
     nnzPerRow[P[rowId]] = srcRowPtr[rowId + 1] - srcRowPtr[rowId];
 }
 
@@ -1281,8 +1317,9 @@ __global__ void permuteColIndKernel(
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= size)
+    {
         return;
-
+    }
     const int i0 = srcRowPtr[rowId];
     const int i1 = srcRowPtr[rowId + 1];
     const int permRowId = P[rowId];
@@ -1306,14 +1343,16 @@ __global__ void schurComplementPostKernel(
 {
     const int colId = blockIdx.x * blockDim.x + threadIdx.x;
     if (colId >= cols)
+    {
         return;
-
+    }
     Scalar cl[LDIM];
     copy<LDIM>(bl.at(colId), cl);
 
     for (int i = HplColPtr[colId]; i < HplColPtr[colId + 1]; i++)
+    {
         MatTMulVec<3, 6, DEACCUM>(Hpl.at(i), xp.at(HplRowInd[i]), cl, 1);
-
+    }
     MatMulVec<3, 3>(invHll.at(colId), cl, xl.at(colId));
 }
 
@@ -1321,8 +1360,9 @@ __global__ void updatePosesKernel(int size, Px1BlockPtr xp, Se3D* est)
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= size)
+    {
         return;
-
+    }
     QuatD expq;
     Vec3d expt;
     updateExp(xp.at(i), expq, expt);
@@ -1333,8 +1373,9 @@ __global__ void updateLandmarksKernel(int size, Lx1BlockPtr xl, Vec3d* Xws)
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= size)
+    {
         return;
-
+    }
     const Scalar* dXw = xl.at(i);
     Vec3d& Xw = Xws[i];
     Xw[0] += dXw[0];
@@ -1350,7 +1391,9 @@ computeScaleKernel(const Scalar* x, const Scalar* b, Scalar* scale, Scalar lambd
 
     Scalar sum = 0;
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += gridDim.x * blockDim.x)
+    {
         sum += x[i] * (lambda * x[i] + b[i]);
+    }
 
     cache[sharedIdx] = sum;
     __syncthreads();
@@ -1358,20 +1401,25 @@ computeScaleKernel(const Scalar* x, const Scalar* b, Scalar* scale, Scalar lambd
     for (int stride = BLOCK_COMPUTE_SCALE / 2; stride > 0; stride >>= 1)
     {
         if (sharedIdx < stride)
+        {
             cache[sharedIdx] += cache[sharedIdx + stride];
+        }
         __syncthreads();
     }
 
     if (sharedIdx == 0)
+    {
         atomicAdd(scale, cache[0]);
+    }
 }
 
 __global__ void convertBSRToCSRKernel(int size, const Scalar* src, Scalar* dst, const int* map)
 {
     const int dstk = blockIdx.x * blockDim.x + threadIdx.x;
     if (dstk >= size)
+    {
         return;
-
+    }
     dst[dstk] = src[map[dstk]];
 }
 
@@ -1379,8 +1427,9 @@ __global__ void nnzPerColKernel(const Vec3i* blockpos, int nblocks, int* nnzPerC
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= nblocks)
+    {
         return;
-
+    }
     const int colId = blockpos[i][1];
     atomicAdd(&nnzPerCol[colId], 1);
 }
@@ -1389,8 +1438,9 @@ __global__ void setRowIndKernel(const Vec3i* blockpos, int nblocks, int* rowInd,
 {
     const int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= nblocks)
+    {
         return;
-
+    }
     const int rowId = blockpos[k][0];
     const int edgeId = blockpos[k][2];
     rowInd[k] = rowId;
@@ -1646,7 +1696,7 @@ Scalar maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* maxD)
 {
     constexpr int block = BLOCK_MAX_DIAGONAL;
     constexpr int grid = 4;
-    const int size = D.rows() * DIM;
+    const int size = D.size() * DIM;
 
     maxDiagonalKernel<DIM><<<grid, block>>>(size, D.values(), maxD);
     CUDA_CHECK(cudaGetLastError());
@@ -1656,8 +1706,9 @@ Scalar maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* maxD)
 
     Scalar maxv = 0;
     for (int i = 0; i < grid; i++)
+    {
         maxv = std::max(maxv, tmpMax[i]);
-
+    }
     return maxv;
 }
 
@@ -1669,7 +1720,7 @@ template <typename T, int DIM>
 void addLambda_(
     DeviceBlockVector<T, DIM, DIM>& D, Scalar lambda, DeviceBlockVector<T, DIM, 1>& backup)
 {
-    const int size = D.rows() * DIM;
+    const int size = D.size() * DIM;
     const int block = 1024;
     const int grid = divUp(size, block);
     addLambdaKernel<DIM><<<grid, block>>>(size, D.values(), lambda, backup.values());
@@ -1689,7 +1740,7 @@ void addLambda(GpuLxLBlockVec& Hll, Scalar lambda, GpuLx1BlockVec& backup)
 template <typename T, int DIM>
 void restoreDiagonal_(DeviceBlockVector<T, DIM, DIM>& D, const DeviceBlockVector<T, DIM, 1>& backup)
 {
-    const int size = D.rows() * DIM;
+    const int size = D.size() * DIM;
     const int block = 1024;
     const int grid = divUp(size, block);
     restoreDiagonalKernel<DIM><<<grid, block>>>(size, D.values(), backup.values());
@@ -1715,7 +1766,7 @@ void computeBschure(
     GpuLxLBlockVec& invHll,
     GpuPxLBlockVec& Hpl_invHll)
 {
-    const int cols = Hll.cols();
+    const int cols = Hll.size();
     const int block = 256;
     const int grid = divUp(cols, block);
 
@@ -1970,7 +2021,9 @@ __global__ void computeActiveErrorsKernel_DepthBa(
     for (int stride = BLOCK_ACTIVE_ERRORS / 2; stride > 0; stride >>= 1)
     {
         if (sharedIdx < stride)
+        {
             cache[sharedIdx] += cache[sharedIdx + stride];
+        }
         __syncthreads();
     }
 
@@ -2050,7 +2103,9 @@ __global__ void computeActiveErrorsKernel_Plane(
     for (int stride = BLOCK_ACTIVE_ERRORS / 2; stride > 0; stride >>= 1)
     {
         if (sharedIdx < stride)
+        {
             cache[sharedIdx] += cache[sharedIdx + stride];
+        }
         __syncthreads();
     }
 
@@ -2078,7 +2133,9 @@ __global__ void constructQuadraticFormKernel_Plane(
 {
     const int iE = blockIdx.x * blockDim.x + threadIdx.x;
     if (iE >= nedges)
+    {
         return;
+    }
 
     const Scalar omega = omegas[iE];
     const int iP = edge2PL[iE][0];
@@ -2119,7 +2176,9 @@ __global__ void constructQuadraticFormKernel_Line(
 {
     const int iE = blockIdx.x * blockDim.x + threadIdx.x;
     if (iE >= nedges)
+    {
         return;
+    }
 
     const Scalar omega = omegas[iE];
     const int iP = edge2PL[iE][0];
@@ -2210,7 +2269,9 @@ Scalar computeActiveErrors_Line(
     const int grid = 16;
 
     if (nedges <= 0)
+    {
         return 0;
+    }
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     computeActiveErrorsKernel_Line<<<grid, block>>>(
@@ -2237,7 +2298,9 @@ Scalar computeActiveErrors_Plane(
     const int grid = divUp(nedges, block);
 
     if (nedges <= 0)
+    {
         return 0;
+    }
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     computeActiveErrorsKernel_Plane<<<grid, block>>>(
