@@ -146,11 +146,14 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
 
 void CudaGraphOptimisationImpl::clearEdgeSets()
 {
-    for (auto* edgeSet : edgeSets)
+    for (BaseEdgeSet* edgeSet : edgeSets)
     {
-        edgeSet->clearEdges();
-        delete edgeSet;
-        edgeSet = nullptr;
+        if (edgeSet)
+        {
+            edgeSet->clearEdges();
+            delete edgeSet;
+            edgeSet = nullptr;
+        }
     }
     edgeSets.clear();
 }
