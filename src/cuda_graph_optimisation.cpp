@@ -197,8 +197,10 @@ CudaGraphOptimisationImpl::CudaGraphOptimisationImpl() : solver_(std::make_uniqu
 
 CudaGraphOptimisationImpl::~CudaGraphOptimisationImpl()
 {
+#ifdef CUGO_MEMORY_CLEANUP
     clearVertexSets();
     clearEdgeSets();
+#endif
 }
 
 CudaGraphOptimisation::Ptr CudaGraphOptimisation::create()

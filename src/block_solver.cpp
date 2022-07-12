@@ -190,7 +190,7 @@ void BlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSetVec&
         Hpp_.constructFromVertices(verticesP);
         Hpp_.convertBSRToCSR();
 
-        d_Hpp_.resize(numP);
+        d_Hpp_.resize(Hpp_.nblocks());
     }
 
     // allocate device buffers
