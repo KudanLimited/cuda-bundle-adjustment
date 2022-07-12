@@ -148,6 +148,8 @@ public:
     virtual int getActiveSize() const = 0;
 
     virtual void clear() = 0;
+
+    virtual void clearVertices() = 0;
 };
 
 template <typename T, typename E, typename D>
@@ -202,8 +204,20 @@ public:
     void clear() override
     {
         estimates.clear();
-        vertices.clear();
         activeSize = 0;
+    }
+
+    void clearVertices() override
+    {
+        for (VertexType* vertex : vertices)
+        {
+            if (vertex)
+            {
+                delete vertex;
+                vertex = nullptr;
+            }
+        }
+        vertices.clear();
     }
 
 private:
