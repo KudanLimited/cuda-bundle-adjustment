@@ -38,8 +38,6 @@ class BaseRobustKernel;
 class BaseVertex
 {
 public:
-    BaseVertex() {};
-    virtual ~BaseVertex() {}
 
     virtual int getId() const = 0;
 
@@ -66,8 +64,6 @@ template <typename T, bool Marginilised>
 class Vertex : public BaseVertex
 {
 public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-
     using EstimateType = T;
     const bool marginilised = Marginilised;
 
@@ -119,6 +115,9 @@ protected:
     int id; //!< ID of the vertex.
     int idx; //!< ID of the vertex (internally used).
     Set<BaseEdge*> edges; //!< connected edges.
+
+public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
 
 
@@ -132,8 +131,6 @@ using LandmarkVertex = Vertex<maths::Vec3d, true>;
 class BaseVertexSet
 {
 public:
-    BaseVertexSet() {};
-    virtual ~BaseVertexSet() {}
 
     virtual bool removeVertex(BaseVertex* v, BaseEdgeSet* edgeSet, BaseVertexSet* vertexSet) = 0;
 
@@ -237,9 +234,6 @@ using LandmarkVertexSet = VertexSet<LandmarkVertex, maths::Vec3d, Vec3d>;
 class BaseEdge
 {
 public:
-    BaseEdge() = default;
-    virtual ~BaseEdge() {}
-
     using Information = double;
 
     /** @brief Returns the vertex based on the type at index.
@@ -334,6 +328,10 @@ protected:
     Information info; //!< information matrix (represented by a scalar for performance).
 
     BaseVertex* vertices[VertexSize];
+
+public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW 
+    
 };
 
 
