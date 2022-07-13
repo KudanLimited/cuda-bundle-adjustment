@@ -15,11 +15,11 @@ void BlockSolver::initialize(
 
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
-        edgeSet->clear();
+        edgeSet->clearDevice();
     }
     for (BaseVertexSet* vertexSet : vertexSets)
     {
-        vertexSet->clear();
+        vertexSet->clearEstimates();
 
         if (vertexSet->isMarginilised())
         {

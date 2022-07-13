@@ -41,9 +41,6 @@ endif()
 if (USE_TOOLKIT_10_2)
 	list(APPEND CUGO_DEFINITIONS USE_TOOLKIT_10_2)
 endif()
-if (CUGO_MEMORY_CLEANUP)
-	list(APPEND CUGO_DEFINITIONS CUGO_MEMORY_CLEANUP)
-endif()
 
 file(GLOB_RECURSE srcs ./*.cpp ./*.h ./*.cu ${CUGO_INCLUDE_DIR}/*.h)
 

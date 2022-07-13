@@ -147,7 +147,7 @@ public:
 
     virtual int getActiveSize() const = 0;
 
-    virtual void clear() = 0;
+    virtual void clearEstimates() = 0;
 
     virtual void clearVertices() = 0;
 };
@@ -201,7 +201,7 @@ public:
 
     int getActiveSize() const override { return activeSize; }
 
-    void clear() override
+    void clearEstimates() override
     {
         estimates.clear();
         activeSize = 0;
@@ -209,15 +209,7 @@ public:
 
     void clearVertices() override
     {
-        for (VertexType* vertex : vertices)
-        {
-            if (vertex)
-            {
-                delete vertex;
-                vertex = nullptr;
-            }
-        }
-        vertices.clear();
+        vertexMap.clear();
     }
 
 private:
@@ -370,9 +362,11 @@ public:
 
     virtual void mapDevice(int* edge2HData) = 0;
 
-    virtual void clear() = 0;
+    virtual void clearDevice() = 0;
 
     virtual void clearEdges() = 0;
+
+    virtual std::vector<int>& outliers() = 0;
 
     // device side virtual functions
     virtual void constructQuadraticForm(
@@ -462,7 +456,8 @@ public:
     {
         this->outlierThreshold = errorThreshold;
     }
-    std::vector<int>& outliers()
+
+    std::vector<int>& outliers() override
     {
         assert(
             outlierThreshold > 0.0 &&
@@ -475,14 +470,6 @@ public:
 
     void clearEdges() override
     {
-        for (BaseEdge* edge : edges)
-        {
-            if (edge)
-            {
-                delete edge;
-                edge = nullptr;
-            }
-        }
         edges.clear();
     }
 
@@ -569,7 +556,7 @@ public:
         d_outlierThreshold.assign(1, &outlierThreshold);
     }
 
-    void clear() override
+    void clearDevice() override
     {
         hessianBlockPos.clear();
         omegas.clear();
