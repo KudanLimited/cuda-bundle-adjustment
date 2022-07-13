@@ -33,6 +33,8 @@ namespace cugo
 class CUGO_API StereoEdgeSet : public EdgeSet<3, maths::Vec3d, Vec3d, PoseVertex, LandmarkVertex>
 {
 public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
     StereoEdgeSet() {}
     ~StereoEdgeSet() {}
 
@@ -100,6 +102,8 @@ private:
 class CUGO_API MonoEdgeSet : public EdgeSet<2, maths::Vec2d, Vec2d, PoseVertex, LandmarkVertex>
 {
 public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
     MonoEdgeSet() {}
     ~MonoEdgeSet() {}
 
@@ -167,6 +171,8 @@ private:
 class CUGO_API DepthEdgeSet : public EdgeSet<3, maths::Vec3d, Vec3d, PoseVertex, LandmarkVertex>
 {
 public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    
     DepthEdgeSet() {}
     ~DepthEdgeSet() {}
 

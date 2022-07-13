@@ -102,7 +102,7 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
 
             if (rho > 0)
             {
-                lambda *= clamp(attenuation(rho), 1. / 3, 2. / 3);
+                lambda *= clamp(attenuation(rho), 1.0 / 3, 2.0 / 3);
                 nu = 2;
                 F = Fhat;
                 break;
