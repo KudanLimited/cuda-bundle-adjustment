@@ -2,6 +2,7 @@
 #ifndef __OPTIMISABLE_GRAPH_H__
 #define __OPTIMISABLE_GRAPH_H__
 
+#include "async_vector.h"
 #include "block_solver.h"
 #include "cuda/cuda_block_solver.h"
 #include "cuda_graph_optimisation.h"
@@ -207,10 +208,7 @@ public:
         activeSize = 0;
     }
 
-    void clearVertices() override
-    {
-        vertexMap.clear();
-    }
+    void clearVertices() override { vertexMap.clear(); }
 
 private:
     // gpu hosted estimate data vec
@@ -354,7 +352,7 @@ public:
 
     virtual const int dim() const = 0;
 
-    virtual std::vector<HplBlockPos>& getHessianBlockPos() = 0;
+    virtual cugo::async_vector<HplBlockPos>& getHessianBlockPos() = 0;
 
     virtual size_t getHessianBlockPosSize() const = 0;
 
@@ -435,17 +433,9 @@ public:
 
     const std::unordered_set<BaseEdge*>& get() override { return edges; }
 
-    std::vector<HplBlockPos>& getHessianBlockPos() override
-    {
-        assert(is_initialised == true);
-        return hessianBlockPos;
-    }
+    cugo::async_vector<HplBlockPos>& getHessianBlockPos() override { return hessianBlockPos; }
 
-    size_t getHessianBlockPosSize() const override
-    {
-        assert(is_initialised == true);
-        return hessianBlockPos.size();
-    }
+    size_t getHessianBlockPosSize() const override { return hessianBlockPos.size(); }
 
     const int dim() const override { return DIM; }
 
@@ -468,10 +458,7 @@ public:
         return edgeLevels;
     }
 
-    void clearEdges() override
-    {
-        edges.clear();
-    }
+    void clearEdges() override { edges.clear(); }
 
 protected:
     std::unordered_set<BaseEdge*> edges;
@@ -521,7 +508,7 @@ public:
             }
 
             omegas.push_back(ScalarCast(edge->getInformation()));
-            measurements.emplace_back(*(static_cast<MeasurementType*>(edge->getMeasurement())));
+            measurements.push_back(*(static_cast<MeasurementType*>(edge->getMeasurement())));
 
             if (VertexSize == 1)
             {
@@ -535,12 +522,10 @@ public:
             }
             edgeId++;
         }
-        is_initialised = true;
     }
 
     void mapDevice(int* edge2HData) override
     {
-        assert(is_initialised == true);
         size_t edgeSize = edges.size();
         d_measurements.assign(edgeSize, measurements.data());
         d_errors.resize(edgeSize);
@@ -566,14 +551,12 @@ public:
     }
 
 protected:
-    bool is_initialised = false;
-
-    // cpu
-    std::vector<Scalar> omegas;
-    std::vector<VIndex> edge2PL;
-    std::vector<uint8_t> edgeFlags;
-    std::vector<MeasurementType> measurements;
-    std::vector<HplBlockPos> hessianBlockPos;
+    // cpu - using pinned memory for async access
+    cugo::async_vector<Scalar> omegas;
+    cugo::async_vector<VIndex> edge2PL;
+    cugo::async_vector<uint8_t> edgeFlags;
+    cugo::async_vector<MeasurementType> measurements;
+    cugo::async_vector<HplBlockPos> hessianBlockPos;
 
     // device
     GpuVec3d d_Xcs;

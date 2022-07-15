@@ -102,8 +102,7 @@ void BlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSetVec&
     {
         if (!vertexSet->isMarginilised())
         {
-            PoseVertexSet* poseVertexSet = dynamic_cast<PoseVertexSet*>(vertexSet);
-            assert(poseVertexSet != nullptr);
+            PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSet);
             poseVertexSet->mapEstimateData(d_solution_.data() + offset);
             offset += poseVertexSet->getDeviceEstimateSize() * 7;
 
@@ -113,8 +112,7 @@ void BlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSetVec&
         }
         else
         {
-            LandmarkVertexSet* lmVertexSet = dynamic_cast<LandmarkVertexSet*>(vertexSet);
-            assert(lmVertexSet != nullptr);
+            LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSet);
             lmVertexSet->mapEstimateData(d_solution_.data() + offset);
             offset += lmVertexSet->getDeviceEstimateSize() * 3;
 
@@ -141,16 +139,16 @@ void BlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSetVec&
     if (doSchur)
     {
         // build Hpl block matrix structure
-        std::vector<HplBlockPos> hplBlockPos;
-        hplBlockPos.reserve(nVertexBlockPos);
-
+        size_t offset = 0;
+        d_HplBlockPos_.resize(nVertexBlockPos);
         for (BaseEdgeSet* edgeSet : edgeSets)
         {
             auto& block = edgeSet->getHessianBlockPos();
-            hplBlockPos.insert(hplBlockPos.end(), block.begin(), block.end());
+            // TODO: Async this
+            d_HplBlockPos_.insert(block.size(), block.data(), offset);
+            offset += block.size();
         }
 
-        d_HplBlockPos_.assign(nVertexBlockPos, hplBlockPos.data());
         d_Hpl_.resize(numP, numL);
         d_Hpl_.resizeNonZeros(d_HplBlockPos_.size());
         d_nnzPerCol_.resize(accumSizeL + 1);
@@ -190,7 +188,7 @@ void BlockSolver::buildStructure(const EdgeSetVec& edgeSets, const VertexSetVec&
         Hpp_.constructFromVertices(verticesP);
         Hpp_.convertBSRToCSR();
 
-        d_Hpp_.resize(Hpp_.nblocks());
+        d_Hpp_.resize(numP);
     }
 
     // allocate device buffers

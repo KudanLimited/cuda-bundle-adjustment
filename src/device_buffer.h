@@ -39,7 +39,9 @@ public:
     void allocate(size_t count)
     {
         if (data_ && capacity_ >= count)
+        {
             return;
+        }
 
         destroy();
         CUDA_CHECK(cudaMalloc(&data_, sizeof(T) * count));
@@ -62,6 +64,12 @@ public:
         size_ = size;
     }
 
+    void resizeAsync(size_t size)
+    {
+        allocateAsync(size, stream);
+        size_ = size;
+    }
+
     void map(size_t size, void* data)
     {
         data_ = (T*)data;
@@ -75,6 +83,20 @@ public:
         upload((T*)h_data);
     }
 
+    void insert(size_t size, const void* h_data, size_t offset)
+    {
+        assert(offset < capacity_);
+        assert(size < capacity_);
+        T* data_ptr = data_ + (sizeof(T) * offset);
+        CUDA_CHECK(cudaMemcpy(data_ptr, h_data, sizeof(T) * size_, cudaMemcpyHostToDevice));
+    }
+
+    void assignAsync(size_t size, const void* h_data, int stream = 0)
+    {
+        resizeAsync(size);
+        uploadAsync((T*)h_data, stream);
+    }
+
     void upload(const T* h_data)
     {
         assert(h_data != nullptr);
@@ -82,14 +104,34 @@ public:
         CUDA_CHECK(cudaMemcpy(data_, h_data, sizeof(T) * size_, cudaMemcpyHostToDevice));
     }
 
+    void uploadAsync(const T* h_data, int stream = 0)
+    {
+        assert(h_data != nullptr);
+        assert(size_ > 0);
+        CUDA_CHECK(
+            cudaMemcpyAsync(data_, h_data, sizeof(T) * size_, cudaMemcpyHostToDevice, stream));
+    }
+
     void download(T* h_data) const
     {
         CUDA_CHECK(cudaMemcpy(h_data, data_, sizeof(T) * size_, cudaMemcpyDeviceToHost));
     }
 
+    void downloadAsync(T* h_data, int stream = 0) const
+    {
+        CUDA_CHECK(
+            cudaMemcpyAsync(h_data, data_, sizeof(T) * size_, cudaMemcpyDeviceToHost, stream));
+    }
+
     void copyTo(T* rhs) const
     {
         CUDA_CHECK(cudaMemcpy(rhs, data_, sizeof(T) * size_, cudaMemcpyDeviceToDevice));
+    }
+
+    void copyToAsync(T* rhs, int stream = 0) const
+    {
+        CUDA_CHECK(
+            cudaMemcpyAsync(rhs, data_, sizeof(T) * size_, cudaMemcpyDeviceToDevice, stream));
     }
 
     void fillZero() { CUDA_CHECK(cudaMemset(data_, 0, sizeof(T) * size_)); }

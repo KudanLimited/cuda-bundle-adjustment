@@ -146,11 +146,26 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
 
 void CudaGraphOptimisationImpl::clearEdgeSets()
 {
+    for (BaseEdgeSet* edgeSet : edgeSets)
+    {
+        if (edgeSet)
+        {
+            edgeSet->clearEdges();
+            delete edgeSet;
+            edgeSet = nullptr;
+        }
+    }
     edgeSets.clear();
 }
 
 void CudaGraphOptimisationImpl::clearVertexSets()
 {
+    for (BaseVertexSet* vertexSet : vertexSets)
+    {
+        vertexSet->clearVertices();
+        delete vertexSet;
+        vertexSet = nullptr;
+    }
     vertexSets.clear();
 }
 
@@ -160,7 +175,13 @@ const TimeProfile& CudaGraphOptimisationImpl::timeProfile() { return timeProfile
 
 CudaGraphOptimisationImpl::CudaGraphOptimisationImpl() : solver_(std::make_unique<BlockSolver>()) {}
 
-CudaGraphOptimisationImpl::~CudaGraphOptimisationImpl() {}
+CudaGraphOptimisationImpl::~CudaGraphOptimisationImpl()
+{
+#ifdef CUGO_MEMORY_CLEANUP
+    clearVertexSets();
+    clearEdgeSets();
+#endif
+}
 
 CudaGraphOptimisation::Ptr CudaGraphOptimisation::create()
 {
