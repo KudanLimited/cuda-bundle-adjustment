@@ -1,11 +1,12 @@
 #ifndef __BLOCK_SOLVER_H__
 #define __BLOCK_SOLVER_H__
 
+#include "arena.h"
+#include "cuda_graph_optimisation.h"
+#include "cuda_linear_solver.h"
 #include "device_buffer.h"
 #include "device_matrix.h"
 #include "sparse_block_matrix.h"
-#include "cuda_graph_optimisation.h"
-#include "cuda_linear_solver.h"
 
 #include <array>
 #include <vector>
@@ -39,11 +40,20 @@ public:
     void
     initialize(CameraParams* camera, const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
 
-    void buildStructure(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
+    void buildStructure(
+        const EdgeSetVec& edgeSets,
+        const VertexSetVec& vertexSets,
+        std::array<cudaStream_t, 3>& streams);
 
-    double computeErrors(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
+    double computeErrors(
+        const EdgeSetVec& edgeSets,
+        const VertexSetVec& vertexSets,
+        std::array<cudaStream_t, 3>& streams);
 
-    void buildSystem(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
+    void buildSystem(
+        const EdgeSetVec& edgeSets,
+        const VertexSetVec& vertexSets,
+        std::array<cudaStream_t, 3>& streams);
     double maxDiagonal();
 
     void setLambda(double lambda);
@@ -83,6 +93,8 @@ private:
 
     // graph components
     std::vector<BaseEdge*> baseEdges_;
+
+    Arena hBlockPosArena;
 
     // block matrices
     HplSparseBlockMatrix Hpl_;

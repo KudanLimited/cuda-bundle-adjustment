@@ -18,7 +18,7 @@ public:
     {
         if (data_)
         {
-            clear();
+            destroy();
         }
     }
 
@@ -52,8 +52,6 @@ public:
 
     void clear() noexcept
     {
-        // Keep the memory allocated and just reset back
-        // to the start of the allocation to save time.
         curr_data_ = data_;
         size_ = 0;
     }
@@ -75,7 +73,7 @@ public:
     size_t size() const noexcept { return size_; }
 
 private:
-    void allocate(size_t size)
+    void allocate(size_t size) noexcept
     {
         if (data_)
         {
@@ -85,6 +83,15 @@ private:
         CUDA_CHECK(cudaMallocHost(&data_, sizeof(T) * size));
         curr_data_ = data_;
         capacity_ = size;
+    }
+
+    void destroy() noexcept
+    {
+        CUDA_CHECK(cudaFreeHost(data_));
+        data_ = nullptr;
+        curr_data_ = nullptr;
+        capacity_ = 0;
+        size_ = 0;
     }
 
 private:

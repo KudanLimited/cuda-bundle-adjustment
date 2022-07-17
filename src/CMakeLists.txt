@@ -41,6 +41,9 @@ endif()
 if (USE_TOOLKIT_10_2)
 	list(APPEND CUGO_DEFINITIONS USE_TOOLKIT_10_2)
 endif()
+if (USE_ZERO_COPY)
+	list(APPEND CUGO_DEFINITIONS USE_ZERO_COPY)
+endif()
 
 file(GLOB_RECURSE srcs ./*.cpp ./*.h ./*.cu ${CUGO_INCLUDE_DIR}/*.h)
 

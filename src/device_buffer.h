@@ -22,6 +22,7 @@ limitations under the License.
 #include <cuda_runtime.h>
 
 #include <cassert>
+#include <cstdint>
 
 namespace cugo
 {
@@ -52,7 +53,9 @@ public:
     void destroy()
     {
         if (allocated_ && data_)
+        {
             CUDA_CHECK(cudaFree(data_));
+        }
         data_ = nullptr;
         size_ = 0;
         allocated_ = false;
@@ -64,12 +67,6 @@ public:
         size_ = size;
     }
 
-    void resizeAsync(size_t size)
-    {
-        allocateAsync(size, stream);
-        size_ = size;
-    }
-
     void map(size_t size, void* data)
     {
         data_ = (T*)data;
@@ -77,24 +74,44 @@ public:
         allocated_ = false;
     }
 
+    template <typename U>
+    void offset(DeviceBuffer<U>& buffer, size_t size, size_t offset)
+    {
+        void* offset_ptr = static_cast<uint8_t*>(buffer.data()) + offset;
+        data_ = (T*)offset_ptr;
+        size_ = size;
+        // this is offset into a larger buffer so don't try and
+        // free upon destruction.
+        allocated_ = false;
+    }
+
     void assign(size_t size, const void* h_data)
     {
+#ifdef USE_ZERO_COPY
+        CUDA_CHECK(cudaHostGetDevicePointer(&data_, h_data, 0));
+#else
         resize(size);
         upload((T*)h_data);
+#endif
     }
 
     void insert(size_t size, const void* h_data, size_t offset)
     {
         assert(offset < capacity_);
         assert(size < capacity_);
-        T* data_ptr = data_ + (sizeof(T) * offset);
-        CUDA_CHECK(cudaMemcpy(data_ptr, h_data, sizeof(T) * size_, cudaMemcpyHostToDevice));
+        T* data_ptr = data_ + offset;
+        CUDA_CHECK(cudaMemcpy(data_ptr, h_data, sizeof(T) * size, cudaMemcpyHostToDevice));
     }
 
-    void assignAsync(size_t size, const void* h_data, int stream = 0)
+    void assignAsync(size_t size, const void* h_data, cudaStream_t stream = 0)
     {
-        resizeAsync(size);
+#ifdef USE_ZERO_COPY
+        CUDA_CHECK(cudaHostGetDevicePointer(&data_, h_data, 0));
+        size_ = size;
+#else
+        resize(size);
         uploadAsync((T*)h_data, stream);
+#endif
     }
 
     void upload(const T* h_data)
@@ -104,7 +121,7 @@ public:
         CUDA_CHECK(cudaMemcpy(data_, h_data, sizeof(T) * size_, cudaMemcpyHostToDevice));
     }
 
-    void uploadAsync(const T* h_data, int stream = 0)
+    void uploadAsync(const T* h_data, cudaStream_t stream = 0)
     {
         assert(h_data != nullptr);
         assert(size_ > 0);
@@ -114,13 +131,17 @@ public:
 
     void download(T* h_data) const
     {
+#ifndef USE_ZERO_COPY
         CUDA_CHECK(cudaMemcpy(h_data, data_, sizeof(T) * size_, cudaMemcpyDeviceToHost));
+#endif
     }
 
     void downloadAsync(T* h_data, int stream = 0) const
     {
+#ifndef USE_ZERO_COPY
         CUDA_CHECK(
             cudaMemcpyAsync(h_data, data_, sizeof(T) * size_, cudaMemcpyDeviceToHost, stream));
+#endif
     }
 
     void copyTo(T* rhs) const

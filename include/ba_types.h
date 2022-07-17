@@ -17,8 +17,8 @@ limitations under the License.
 #ifndef __BA_TYPES_H__
 #define __BA_TYPES_H__
 
-#include "optimisable_graph.h"
 #include "macro.h"
+#include "optimisable_graph.h"
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -38,7 +38,7 @@ public:
     StereoEdgeSet() {}
     ~StereoEdgeSet() {}
 
-    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi) override
+    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream) override
     {
         GpuVecSe3d poseEstimateData;
         GpuVec3d landmarkEstimateData;
@@ -58,7 +58,8 @@ public:
             d_errors,
             d_outliers,
             d_Xcs,
-            chi);
+            chi,
+            stream);
     }
 
     void constructQuadraticForm(
@@ -67,7 +68,8 @@ public:
         GpuPx1BlockVec& bp,
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
-        GpuHplBlockMat& Hpl) override
+        GpuHplBlockMat& Hpl,
+        cudaStream_t stream) override
     {
         // NOTE: This assumes the pose vertex is of the SE3 form - also would break if more than one
         // pose vertexset.
@@ -91,7 +93,8 @@ public:
                     bp,
                     Hll,
                     bl,
-                    Hpl);
+                    Hpl,
+                    stream);
             }
         }
     }
@@ -107,7 +110,7 @@ public:
     MonoEdgeSet() {}
     ~MonoEdgeSet() {}
 
-    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi) override
+    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream) override
     {
         GpuVecSe3d poseEstimateData;
         GpuVec3d landmarkEstimateData;
@@ -127,7 +130,8 @@ public:
             d_errors,
             d_outliers,
             d_Xcs,
-            chi);
+            chi,
+            stream);
     }
 
     void constructQuadraticForm(
@@ -136,7 +140,8 @@ public:
         GpuPx1BlockVec& bp,
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
-        GpuHplBlockMat& Hpl) override
+        GpuHplBlockMat& Hpl,
+        cudaStream_t stream) override
     {
         // NOTE: This assumes the pose vertex is of the SE3 form - also would break if more than one
         // pose vertexset.
@@ -160,7 +165,8 @@ public:
                     bp,
                     Hll,
                     bl,
-                    Hpl);
+                    Hpl,
+                    stream);
             }
         }
     }
@@ -172,11 +178,11 @@ class CUGO_API DepthEdgeSet : public EdgeSet<3, maths::Vec3d, Vec3d, PoseVertex,
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    
+
     DepthEdgeSet() {}
     ~DepthEdgeSet() {}
 
-    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi) override
+    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream) override
     {
         GpuVecSe3d poseEstimateData;
         GpuVec3d landmarkEstimateData;
@@ -196,7 +202,8 @@ public:
             d_errors,
             d_outliers,
             d_Xcs,
-            chi);
+            chi,
+            stream);
     }
 
     void constructQuadraticForm(
@@ -205,7 +212,8 @@ public:
         GpuPx1BlockVec& bp,
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
-        GpuHplBlockMat& Hpl) override
+        GpuHplBlockMat& Hpl,
+        cudaStream_t stream) override
     {
         // NOTE: This assumes the pose vertex is of the SE3 form - also would break if more than one
         // pose vertexset.
@@ -229,7 +237,8 @@ public:
                     bp,
                     Hll,
                     bl,
-                    Hpl);
+                    Hpl,
+                    stream);
             }
         }
     }

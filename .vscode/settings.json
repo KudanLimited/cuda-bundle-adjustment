@@ -81,5 +81,11 @@
         "xtr1common": "cpp",
         "xtree": "cpp",
         "xutility": "cpp"
+    },
+    "[cpp]": {
+        "editor.formatOnType": false
+    },
+    "[c]": {
+        "editor.formatOnType": false
     }
 }
