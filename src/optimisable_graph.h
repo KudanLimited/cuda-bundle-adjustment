@@ -241,8 +241,6 @@ public:
     BaseEdge() = default;
     virtual ~BaseEdge() {}
 
-    using Information = double;
-
     /** @brief Returns the vertex based on the type at index.
      */
     virtual BaseVertex* getVertex(const int index) = 0;
@@ -251,14 +249,6 @@ public:
      */
     virtual void setVertex(BaseVertex* vertex, const int index) = 0;
 
-    /** @brief Returns the information for this edge
-     */
-    virtual Information getInformation() const = 0;
-
-    /** @brief Sets the information for this edge
-     */
-    virtual void setInformation(const Information& i) = 0;
-
     virtual bool allVerticesFixed() const = 0;
 
     virtual void* getMeasurement() { return nullptr; };
@@ -266,6 +256,20 @@ public:
     /** @brief Returns the dimension of measurement.
      */
     virtual int dim() const = 0;
+
+#ifdef USE_PER_EDGE_INFORMATION
+    using Information = double;
+    /** @brief Sets the information for this edge. This should only be used
+     * if it's known that edges will have differing information values
+     * as this does have a performance cost due to the extra bandwidth required
+     * to upload and iterate over the values.
+     */
+    virtual void setInformation(const Information info) = 0;
+
+    /** @brief Returns the global information for this edge set.
+     */
+    virtual Information getInformation() = 0;
+#endif
 };
 
 /** @brief Edge with N-dimensional measurement.
@@ -298,7 +302,7 @@ public:
 
     /** @brief The constructor.
      */
-    Edge() : measurement(Measurement()), info(Information()) {}
+    Edge() : measurement(Measurement()) {}
 
     /** @brief the destructor.
      */
@@ -320,19 +324,24 @@ public:
         return allVerticesFixedNs(std::make_index_sequence<VertexSize>());
     }
 
-    Information getInformation() const override { return info; }
-
     /** @brief Returns the dimension of measurement.
      */
     int dim() const override { return DIM; }
 
     void setMeasurement(const Measurement& m) { measurement = m; }
 
-    void setInformation(const Information& i) override { info = i; }
+#ifdef USE_PER_EDGE_INFORMATION
+    void setInformation(const Information info) override { info_ = info; }
+
+    Information getInformation() override { return info_; }
+#endif
 
 protected:
     Measurement measurement;
-    Information info; //!< information matrix (represented by a scalar for performance).
+
+#ifdef USE_PER_EDGE_INFORMATION
+    Information info_; //!< information matrix (represented by a scalar for performance).
+#endif
 
     BaseVertex* vertices[VertexSize];
 };
@@ -368,6 +377,21 @@ public:
     virtual void clearEdges() = 0;
 
     virtual std::vector<int>& outliers() = 0;
+
+#ifndef USE_PER_EDGE_INFORMATION
+    // forced to double for now - should be derided from Scalar type.
+    using Information = double;
+
+    /** @brief Sets the global information for this edge set which will applied to
+     * all edges. This is for performance purposes and the fact that all optimisations
+     * appear to have the same information value.
+     */
+    virtual void setInformation(const Information info) = 0;
+
+    /** @brief Returns the global information for this edge set.
+     */
+    virtual Information getInformation() = 0;
+#endif
 
     // device side virtual functions
     virtual void constructQuadraticForm(
@@ -438,7 +462,13 @@ public:
 
     size_t nedges() const override { return edges.size(); }
 
-    const std::unordered_set<BaseEdge*>& get() override { return edges; }
+    const std::unordered_set<BaseEdge*>& get() { return edges; }
+
+#ifndef USE_PER_EDGE_INFORMATION
+    void setInformation(const Information info) override { info_ = info; };
+
+    Information getInformation() override { return info_; }
+#endif
 
     void* getHessianBlockPos() override { return hessianBlockPos->data(); }
 
@@ -473,6 +503,9 @@ protected:
     Scalar outlierThreshold;
     std::vector<int> edgeLevels;
     size_t totalBufferSize_ = 0;
+#ifndef USE_PER_EDGE_INFORMATION
+    Information info_; //!< information matrix (represented by a scalar for performance).
+#endif
 
 public:
     // device side
@@ -483,21 +516,28 @@ public:
     void init(Arena& hBlockPosArena, int& edgeId, cudaStream_t stream, bool doSchur) override
     {
         size_t edgeSize = edges.size();
-        totalBufferSize_ = sizeof(MeasurementType) * edgeSize + sizeof(Scalar) * edgeSize +
-            sizeof(VIndex) * edgeSize + sizeof(uint8_t) * edgeSize;
+        totalBufferSize_ = sizeof(MeasurementType) * edgeSize + sizeof(VIndex) * edgeSize +
+            sizeof(uint8_t) * edgeSize;
+#ifdef USE_PER_EDGE_INFORMATION
+        totalBufferSize_ += sizeof(Scalar) * edgeSize;
+#else
+        totalBufferSize_ += sizeof(Scalar);
+#endif
 
         // allocate more buffers than needed to reduce the need
         // for resizing.
         arena.resize(totalBufferSize_ * 2);
-        measurements = arena.reserve<MeasurementType>(edgeSize);
-        omegas = arena.reserve<Scalar>(edgeSize);
-        edge2PL = arena.reserve<VIndex>(edgeSize);
-        edgeFlags = arena.reserve<uint8_t>(edgeSize);
+        measurements = arena.allocate<MeasurementType>(edgeSize);
+        edge2PL = arena.allocate<VIndex>(edgeSize);
+        edgeFlags = arena.allocate<uint8_t>(edgeSize);
+#ifdef USE_PER_EDGE_INFORMATION
+        omega = arena.allocate<Scalar>(edgeSize);
+#endif
 
         // all heassian block positions are also
         if (doSchur)
         {
-            hessianBlockPos = hBlockPosArena.reserve<HplBlockPos>(edgeSize);
+            hessianBlockPos = hBlockPosArena.allocate<HplBlockPos>(edgeSize);
         }
 
         for (BaseEdge* edge : edges)
@@ -525,7 +565,9 @@ public:
                 hessianBlockPos->push_back({vec[0], vec[1], edgeId});
             }
 
-            omegas->push_back(ScalarCast(edge->getInformation()));
+#ifdef USE_PER_EDGE_INFORMATION
+            omega->push_back(ScalarCast(edge->getInformation()));
+#endif
             measurements->push_back(*(static_cast<MeasurementType*>(edge->getMeasurement())));
 
             if (VertexSize == 1)
@@ -548,12 +590,12 @@ public:
 
         // buffers filled by the gpu kernels.
         d_errors.resize(edgeSize);
-        d_outliers.resize(edgeSize);
         d_Xcs.resize(edgeSize);
 
         if (outlierThreshold > 0.0)
         {
             d_outlierThreshold.assign(1, &outlierThreshold);
+            d_outliers.resize(edgeSize);
         }
         if (edge2HData)
         {
@@ -565,10 +607,17 @@ public:
         // is far more optimal than transferring multiple smaller buffers
         d_dataBuffer.assignAsync(totalBufferSize_, arena.data(), stream);
 
-        d_omegas.offset(d_dataBuffer, edgeSize, omegas->bufferOffset());
         d_edgeFlags.offset(d_dataBuffer, edgeSize, edgeFlags->bufferOffset());
         d_edge2PL.offset(d_dataBuffer, edgeSize, edge2PL->bufferOffset());
         d_measurements.offset(d_dataBuffer, edgeSize, measurements->bufferOffset());
+#ifdef USE_PER_EDGE_INFORMATION
+        d_omega.offset(d_dataBuffer, edgeSize, omega->bufferOffset());
+#else
+        // TODO: ideally this would be allocated on the memory pool rather than
+        // a seperate upload but for some reason using the arena gives memory
+        // alignment issues in cuda.
+        d_omega.assignAsync(1, &info_);
+#endif
     }
 
     void clearDevice() override { arena.clear(); }
@@ -576,7 +625,7 @@ public:
 protected:
     // cpu - using pinned memory for async access
     Arena arena;
-    std::unique_ptr<ArenaPtr<Scalar>> omegas;
+    std::unique_ptr<ArenaPtr<Scalar>> omega;
     std::unique_ptr<ArenaPtr<VIndex>> edge2PL;
     std::unique_ptr<ArenaPtr<uint8_t>> edgeFlags;
     std::unique_ptr<ArenaPtr<MeasurementType>> measurements;
@@ -585,7 +634,7 @@ protected:
     // device
     GpuVec<uint8_t> d_dataBuffer;
     GpuVec3d d_Xcs;
-    GpuVec1d d_omegas;
+    GpuVec<Scalar> d_omega;
     MeasurementVec d_measurements;
     ErrorVec d_errors;
     GpuVec2i d_edge2PL;

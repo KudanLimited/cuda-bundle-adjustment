@@ -850,6 +850,11 @@ __global__ void computeActiveErrorsKernel(
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
+#ifdef USE_PER_EDGE_INFORMATION
+        Scalar omega = omegas[iE];
+#else
+        Scalar omega = omegas[0];
+#endif
         const Vec2i index = edge2PL[iE];
         const int iP = index[0];
         const int iL = index[1];
@@ -877,7 +882,7 @@ __global__ void computeActiveErrorsKernel(
         errors[iE] = error;
         Xcs[iE] = Xc;
 
-        const Scalar chi2 = omegas[iE] * squaredNorm(error);
+        const Scalar chi2 = omega * squaredNorm(error);
         sumchi += chi2;
         if (errorThreshold > 0.0 && chi2 > errorThreshold)
         {
@@ -922,7 +927,12 @@ __global__ void constructQuadraticFormKernel(
     {
         return;
     }
-    const Scalar omega = omegas[iE];
+
+#ifdef USE_PER_EDGE_INFORMATION
+    Scalar omega = omegas[iE];
+#else
+    Scalar omega = omegas[0];
+#endif
     const int iP = edge2PL[iE][0];
     const int iL = edge2PL[iE][1];
     const int iPL = edge2Hpl[iE];
@@ -1550,7 +1560,7 @@ void addLambda_(
 {
     const int size = D.size() * DIM;
     const int block = 1024;
-    const int grid = divUp(size, block);
+    const int grid = 4;
     addLambdaKernel<DIM><<<grid, block>>>(size, D.values(), lambda, backup.values());
     CUDA_CHECK(cudaGetLastError());
 }
@@ -1570,7 +1580,7 @@ void restoreDiagonal_(DeviceBlockVector<T, DIM, DIM>& D, const DeviceBlockVector
 {
     const int size = D.size() * DIM;
     const int block = 1024;
-    const int grid = divUp(size, block);
+    const int grid = 4;
     restoreDiagonalKernel<DIM><<<grid, block>>>(size, D.values(), backup.values());
     CUDA_CHECK(cudaGetLastError());
 }
@@ -1842,6 +1852,11 @@ __global__ void computeActiveErrorsKernel_DepthBa(
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
+#ifdef USE_PER_EDGE_INFORMATION
+        Scalar omega = omegas[iE];
+#else
+        Scalar omega = omegas[0];
+#endif
         const Vec2i index = edge2PL[iE];
         const int iP = index[0];
         const int iL = index[1];
@@ -1867,7 +1882,7 @@ __global__ void computeActiveErrorsKernel_DepthBa(
         errors[iE] = error;
         Xcs[iE] = Xc;
 
-        const Scalar chi2 = omegas[iE] * squaredNorm(error);
+        const Scalar chi2 = omega * squaredNorm(error);
         sumchi += chi2;
         if (errorThreshold > 0.0 && chi2 > errorThreshold)
         {
@@ -1941,6 +1956,11 @@ __global__ void computeActiveErrorsKernel_Plane(
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
+#ifdef USE_PER_EDGE_INFORMATION
+        Scalar omega = omegas[iE];
+#else
+        Scalar omega = omegas[0];
+#endif
         const int iP = edge2PL[iE][0];
         const Se3D est = poseEstimate[iP];
         const PointToPlaneMatch<double> measurement = measurements[iE];
@@ -1951,7 +1971,7 @@ __global__ void computeActiveErrorsKernel_Plane(
         // compute residual
         Scalar error = signedDistance(Pw, measurement.normal, measurement.originDistance);
         errors[iE] = error;
-        sumchi += (errors[iE] * errors[iE]) * omegas[iE];
+        sumchi += (errors[iE] * errors[iE]) * omega;
     }
 
     extern __shared__ Scalar cache[];
@@ -1989,8 +2009,11 @@ __global__ void constructQuadraticFormKernel_Plane(
     {
         return;
     }
-
+#ifdef USE_PER_EDGE_INFORMATION
     const Scalar omega = omegas[iE];
+#else
+    const Scalar omega = omegas[0];
+#endif
     const int iP = edge2PL[iE][0];
     const int flag = flags[iE];
     const PointToPlaneMatch<double> measurement = measurements[iE];
@@ -2032,8 +2055,11 @@ __global__ void constructQuadraticFormKernel_Line(
     {
         return;
     }
-
+#ifdef USE_PER_EDGE_INFORMATION
     const Scalar omega = omegas[iE];
+#else
+    const Scalar omega = omegas[0];
+#endif
     const int iP = edge2PL[iE][0];
     const int flag = flags[iE];
     const PointToLineMatch<double> measurement = measurements[iE];
@@ -2185,7 +2211,7 @@ void constructQuadraticForm_Plane(
     cudaStream_t stream)
 {
     const int nedges = errors.ssize();
-    const int block = 512;
+    const int block = BLOCK_QUADRATIC_FORM;
     const int grid = divUp(nedges, block);
 
     if (nedges <= 0)
@@ -2213,7 +2239,7 @@ void constructQuadraticForm_Line(
     GpuHplBlockMat& Hpl)
 {
     const int nedges = errors.ssize();
-    const int block = 512;
+    const int block = BLOCK_QUADRATIC_FORM;
     const int grid = divUp(nedges, block);
 
     if (nedges <= 0)
