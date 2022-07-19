@@ -2,6 +2,8 @@
 #ifndef __OPTIMISABLE_GRAPH_H__
 #define __OPTIMISABLE_GRAPH_H__
 
+#include "arena.h"
+#include "async_vector.h"
 #include "block_solver.h"
 #include "cuda/cuda_block_solver.h"
 #include "cuda_graph_optimisation.h"
@@ -12,6 +14,7 @@
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -204,13 +207,11 @@ public:
     void clearEstimates() override
     {
         estimates.clear();
+        vertices.clear();
         activeSize = 0;
     }
 
-    void clearVertices() override
-    {
-        vertexMap.clear();
-    }
+    void clearVertices() override { vertexMap.clear(); }
 
 private:
     // gpu hosted estimate data vec
@@ -354,13 +355,13 @@ public:
 
     virtual const int dim() const = 0;
 
-    virtual std::vector<HplBlockPos>& getHessianBlockPos() = 0;
+    virtual void* getHessianBlockPos() = 0;
 
     virtual size_t getHessianBlockPosSize() const = 0;
 
-    virtual void init(int& edgeId, bool doSchur) = 0;
+    virtual void init(Arena& hBlockPosArena, int& edgeId, cudaStream_t stream, bool doSchur) = 0;
 
-    virtual void mapDevice(int* edge2HData) = 0;
+    virtual void mapDevice(int* edge2HData, cudaStream_t stream) = 0;
 
     virtual void clearDevice() = 0;
 
@@ -375,11 +376,15 @@ public:
         GpuPx1BlockVec& bp,
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
-        GpuHplBlockMat& Hpl)
+        GpuHplBlockMat& Hpl,
+        cudaStream_t stream)
     {
     }
 
-    virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi) { return 0; }
+    virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream)
+    {
+        return 0;
+    }
 
     virtual void setRobustKernel(BaseRobustKernel* kernel) = 0;
     virtual BaseRobustKernel* robustKernel() = 0;
@@ -435,17 +440,9 @@ public:
 
     const std::unordered_set<BaseEdge*>& get() override { return edges; }
 
-    std::vector<HplBlockPos>& getHessianBlockPos() override
-    {
-        assert(is_initialised == true);
-        return hessianBlockPos;
-    }
+    void* getHessianBlockPos() override { return hessianBlockPos->data(); }
 
-    size_t getHessianBlockPosSize() const override
-    {
-        assert(is_initialised == true);
-        return hessianBlockPos.size();
-    }
+    size_t getHessianBlockPosSize() const override { return hessianBlockPos->size(); }
 
     const int dim() const override { return DIM; }
 
@@ -468,16 +465,14 @@ public:
         return edgeLevels;
     }
 
-    void clearEdges() override
-    {
-        edges.clear();
-    }
+    void clearEdges() override { edges.clear(); }
 
 protected:
     std::unordered_set<BaseEdge*> edges;
     BaseRobustKernel* kernel;
     Scalar outlierThreshold;
     std::vector<int> edgeLevels;
+    size_t totalBufferSize_ = 0;
 
 public:
     // device side
@@ -485,15 +480,25 @@ public:
     using ErrorVec = typename std::conditional<(DIM == 1), GpuVec1d, GpuVec<VecNd<DIM>>>::type;
     using MeasurementVec = GpuVec<GpuMeasurementType>;
 
-    void init(int& edgeId, bool doSchur) override
+    void init(Arena& hBlockPosArena, int& edgeId, cudaStream_t stream, bool doSchur) override
     {
         size_t edgeSize = edges.size();
+        totalBufferSize_ = sizeof(MeasurementType) * edgeSize + sizeof(Scalar) * edgeSize +
+            sizeof(VIndex) * edgeSize + sizeof(uint8_t) * edgeSize;
 
-        measurements.reserve(edgeSize);
-        omegas.reserve(edgeSize);
-        edge2PL.reserve(edgeSize);
-        edgeFlags.reserve(edgeSize);
-        hessianBlockPos.reserve(edgeSize);
+        // allocate more buffers than needed to reduce the need
+        // for resizing.
+        arena.resize(totalBufferSize_ * 2);
+        measurements = arena.reserve<MeasurementType>(edgeSize);
+        omegas = arena.reserve<Scalar>(edgeSize);
+        edge2PL = arena.reserve<VIndex>(edgeSize);
+        edgeFlags = arena.reserve<uint8_t>(edgeSize);
+
+        // all heassian block positions are also
+        if (doSchur)
+        {
+            hessianBlockPos = hBlockPosArena.reserve<HplBlockPos>(edgeSize);
+        }
 
         for (BaseEdge* edge : edges)
         {
@@ -513,69 +518,72 @@ public:
                     assert(vec[1] != -1);
                 }
             }
-            edge2PL.push_back(vec);
+            edge2PL->push_back(vec);
 
             if (doSchur && !edge->allVerticesFixed())
             {
-                hessianBlockPos.push_back({vec[0], vec[1], edgeId});
+                hessianBlockPos->push_back({vec[0], vec[1], edgeId});
             }
 
-            omegas.push_back(ScalarCast(edge->getInformation()));
-            measurements.emplace_back(*(static_cast<MeasurementType*>(edge->getMeasurement())));
+            omegas->push_back(ScalarCast(edge->getInformation()));
+            measurements->push_back(*(static_cast<MeasurementType*>(edge->getMeasurement())));
 
             if (VertexSize == 1)
             {
-                edgeFlags.push_back(
+                edgeFlags->push_back(
                     BlockSolver::makeEdgeFlag(edge->getVertex(0)->isFixed(), false));
             }
             else
             {
-                edgeFlags.push_back(BlockSolver::makeEdgeFlag(
+                edgeFlags->push_back(BlockSolver::makeEdgeFlag(
                     edge->getVertex(0)->isFixed(), edge->getVertex(1)->isFixed()));
             }
             edgeId++;
         }
-        is_initialised = true;
     }
 
-    void mapDevice(int* edge2HData) override
+    void mapDevice(int* edge2HData, cudaStream_t stream) override
     {
-        assert(is_initialised == true);
         size_t edgeSize = edges.size();
-        d_measurements.assign(edgeSize, measurements.data());
+
+        // buffers filled by the gpu kernels.
         d_errors.resize(edgeSize);
         d_outliers.resize(edgeSize);
-        d_omegas.assign(edgeSize, omegas.data());
         d_Xcs.resize(edgeSize);
-        d_edgeFlags.assign(edgeSize, edgeFlags.data());
-        d_edge2PL.assign(edgeSize, edge2PL.data());
+
+        if (outlierThreshold > 0.0)
+        {
+            d_outlierThreshold.assign(1, &outlierThreshold);
+        }
         if (edge2HData)
         {
             d_edge2Hpl.map(edgeSize, edge2HData);
         }
-        d_outlierThreshold.assign(1, &outlierThreshold);
+
+        // The main mega buffer which contains all of the data used
+        // in optimising the graph - transferring one large buffer async
+        // is far more optimal than transferring multiple smaller buffers
+        d_dataBuffer.assignAsync(totalBufferSize_, arena.data(), stream);
+
+        d_omegas.offset(d_dataBuffer, edgeSize, omegas->bufferOffset());
+        d_edgeFlags.offset(d_dataBuffer, edgeSize, edgeFlags->bufferOffset());
+        d_edge2PL.offset(d_dataBuffer, edgeSize, edge2PL->bufferOffset());
+        d_measurements.offset(d_dataBuffer, edgeSize, measurements->bufferOffset());
     }
 
-    void clearDevice() override
-    {
-        hessianBlockPos.clear();
-        omegas.clear();
-        edge2PL.clear();
-        edgeFlags.clear();
-        measurements.clear();
-    }
+    void clearDevice() override { arena.clear(); }
 
 protected:
-    bool is_initialised = false;
-
-    // cpu
-    std::vector<Scalar> omegas;
-    std::vector<VIndex> edge2PL;
-    std::vector<uint8_t> edgeFlags;
-    std::vector<MeasurementType> measurements;
-    std::vector<HplBlockPos> hessianBlockPos;
+    // cpu - using pinned memory for async access
+    Arena arena;
+    std::unique_ptr<ArenaPtr<Scalar>> omegas;
+    std::unique_ptr<ArenaPtr<VIndex>> edge2PL;
+    std::unique_ptr<ArenaPtr<uint8_t>> edgeFlags;
+    std::unique_ptr<ArenaPtr<MeasurementType>> measurements;
+    std::unique_ptr<ArenaPtr<HplBlockPos>> hessianBlockPos;
 
     // device
+    GpuVec<uint8_t> d_dataBuffer;
     GpuVec3d d_Xcs;
     GpuVec1d d_omegas;
     MeasurementVec d_measurements;
