@@ -2004,31 +2004,33 @@ __global__ void constructQuadraticFormKernel_Plane(
     Lx1BlockPtr bl,
     PxLBlockPtr Hpl)
 {
-    for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
+    const int iE = blockIdx.x * blockDim.x + threadIdx.x;
+    if (iE >= nedges)
     {
-    #ifdef USE_PER_EDGE_INFORMATION
-        const Scalar omega = omegas[iE];
-    #else
-        const Scalar omega = omegas[0];
-    #endif
-        const int iP = edge2PL[iE][0];
-        const int flag = flags[iE];
-        const PointToPlaneMatch<double> measurement = measurements[iE];
+        return;
+    }
+#ifdef USE_PER_EDGE_INFORMATION
+    const Scalar omega = omegas[iE];
+#else
+    const Scalar omega = omegas[0];
+#endif
+    const int iP = edge2PL[iE][0];
+    const int flag = flags[iE];
+    const PointToPlaneMatch<double> measurement = measurements[iE];
 
-        const Se3D rt = se3[iP];
-        Vec1d error;
-        error[0] = errors[iE];
+    const Se3D rt = se3[iP];
+    Vec1d error;
+    error[0] = errors[iE];
 
-        // compute Jacobians
-        Matx<Scalar, MDIM, PDIM> JP = computeJacobians_Plane(rt, measurement);
+    // compute Jacobians
+    Matx<Scalar, MDIM, PDIM> JP = computeJacobians_Plane(rt, measurement);
 
-        if (!(flag & EDGE_FLAG_FIXED_P))
-        {
-            // Hpp += JPT*Ω*JP
-            MatTMulMat<PDIM, MDIM, PDIM, ACCUM_ATOMIC>(JP.data, JP.data, Hpp.at(iP), omega);
-            // bp -= JPT*Ω*r
-            MatTMulVec<PDIM, MDIM, DEACCUM_ATOMIC>(JP.data, error.data, bp.at(iP), omega);
-        }
+    if (!(flag & EDGE_FLAG_FIXED_P))
+    {
+        // Hpp += JPT*Ω*JP
+        MatTMulMat<PDIM, MDIM, PDIM, ACCUM_ATOMIC>(JP.data, JP.data, Hpp.at(iP), omega);
+        // bp -= JPT*Ω*r
+        MatTMulVec<PDIM, MDIM, DEACCUM_ATOMIC>(JP.data, error.data, bp.at(iP), omega);
     }
 }
 
