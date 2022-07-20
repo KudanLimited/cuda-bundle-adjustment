@@ -88,7 +88,7 @@ public:
     void assign(size_t size, const void* h_data)
     {
 #ifdef USE_ZERO_COPY
-        CUDA_CHECK(cudaHostGetDevicePointer(&data_, h_data, 0));
+        CUDA_CHECK(cudaHostGetDevicePointer(&data_, (T*)h_data, 0));
 #else
         resize(size);
         upload((T*)h_data);
@@ -106,7 +106,7 @@ public:
     void assignAsync(size_t size, const void* h_data, cudaStream_t stream = 0)
     {
 #ifdef USE_ZERO_COPY
-        CUDA_CHECK(cudaHostGetDevicePointer(&data_, h_data, 0));
+        CUDA_CHECK(cudaHostGetDevicePointer(&data_, (T*)h_data, 0));
         size_ = size;
 #else
         resize(size);
