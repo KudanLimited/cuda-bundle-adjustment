@@ -73,19 +73,6 @@ public:
     }
 
     template <typename T>
-    T* aligned_alloc(std::size_t a = alignof(T))
-    {
-        if (std::align(a, sizeof(T), p, sz))
-        {
-            T* result = reinterpret_cast<T*>(p);
-            p = (char*)p + sizeof(T);
-            sz -= sizeof(T);
-            return result;
-        }
-        return nullptr;
-    }
-
-    template <typename T>
     std::unique_ptr<ArenaPtr<T>> allocate(size_t size) noexcept
     {
         size_t bytesInsert = size * sizeof(T);
