@@ -228,7 +228,7 @@ inline int findCudaDevice()
     CUDA_CHECK(cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, devID));
     CUDA_CHECK(cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, devID));
     printf(
-        "GPU Device % d : \"% s\" with compute capability % d.% d\n\n",
+        "GPU Device %d : \"%s\" with compute capability %d.%d\n\n",
         devID,
         _ConvertSMVer2ArchName(major, minor),
         major,

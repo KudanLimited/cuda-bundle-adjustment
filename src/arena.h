@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <memory>
+#include <cstring>
 
 namespace cugo
 {
