@@ -80,7 +80,7 @@ private:
             CUDA_CHECK(cudaFreeHost(data_));
             size_ = 0;
         }
-        CUDA_CHECK(cudaMallocHost(&data_, sizeof(T) * size));
+        CUDA_CHECK(cudaHostAlloc(&data_, sizeof(T) * size, cudaHostAllocMapped));
         curr_data_ = data_;
         capacity_ = size;
     }

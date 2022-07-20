@@ -118,7 +118,7 @@ private:
             CUDA_CHECK(cudaFreeHost(arena_));
             currSize_ = 0;
         }
-        CUDA_CHECK(cudaMallocHost(&arena_, size));
+        CUDA_CHECK(cudaHostAlloc(&arena_, size, cudaHostAllocMapped));
         capacity_ = size;
     }
 
