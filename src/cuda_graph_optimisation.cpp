@@ -164,6 +164,9 @@ CudaGraphOptimisationImpl::CudaGraphOptimisationImpl() : solver_(std::make_uniqu
         CUDA_CHECK(cudaStreamCreate(&streams_[i]));
     }
 #else
+    // Set flag to enable zero copy access
+    cudaSetDeviceFlags(cudaDeviceMapHost);
+
     // use default stream if using zero copy as copying data to the device
     // async is no longer required.
     for (int i = 0; i < streams_.size(); ++i)

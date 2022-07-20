@@ -131,17 +131,13 @@ public:
 
     void download(T* h_data) const
     {
-#ifndef USE_ZERO_COPY
         CUDA_CHECK(cudaMemcpy(h_data, data_, sizeof(T) * size_, cudaMemcpyDeviceToHost));
-#endif
     }
 
     void downloadAsync(T* h_data, int stream = 0) const
     {
-#ifndef USE_ZERO_COPY
         CUDA_CHECK(
             cudaMemcpyAsync(h_data, data_, sizeof(T) * size_, cudaMemcpyDeviceToHost, stream));
-#endif
     }
 
     void copyTo(T* rhs) const
