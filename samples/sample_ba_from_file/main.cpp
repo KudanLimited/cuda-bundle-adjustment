@@ -15,8 +15,8 @@ limitations under the License.
 */
 
 #include <ba_types.h>
-#include <icp_types.h>
 #include <cuda_graph_optimisation.h>
+#include <icp_types.h>
 #include <opencv2/core.hpp>
 #include <optimisable_graph.h>
 #include <robust_kernel.h>

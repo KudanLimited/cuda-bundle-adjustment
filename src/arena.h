@@ -17,8 +17,8 @@ class ArenaPtr
 public:
     ArenaPtr() = default;
 
-    ArenaPtr(size_t capacity, void* data, size_t offset)
-        : size_(0), data_((T*)data), capacity_(capacity), offset_(offset)
+    ArenaPtr(size_t capacity, T* data, size_t offset)
+        : size_(0), data_(data), capacity_(capacity), offset_(offset)
     {
     }
     ~ArenaPtr() {}
@@ -73,14 +73,40 @@ public:
     }
 
     template <typename T>
-    std::unique_ptr<ArenaPtr<T>> reserve(size_t size) noexcept
+    T* aligned_alloc(std::size_t a = alignof(T))
+    {
+        if (std::align(a, sizeof(T), p, sz))
+        {
+            T* result = reinterpret_cast<T*>(p);
+            p = (char*)p + sizeof(T);
+            sz -= sizeof(T);
+            return result;
+        }
+        return nullptr;
+    }
+
+    template <typename T>
+    std::unique_ptr<ArenaPtr<T>> allocate(size_t size) noexcept
     {
         size_t bytesInsert = size * sizeof(T);
         assert(bytesInsert < capacity_);
         void* arena_ptr = static_cast<char*>(arena_) + currSize_;
+
+        // check pointer aligned to 64bit - otherwise we will get errors in cuda
+        std::size_t a = alignof(T);
+        T* aligned_ptr = nullptr;
+        if (std::align(a, sizeof(T), arena_ptr, capacity_))
+        {
+            aligned_ptr = reinterpret_cast<T*>(arena_ptr);
+        }
+        else
+        {
+            std::runtime_error("Alignment error whilst trying to allocate arena ptr.");
+        }
+
         size_t offset = currSize_;
         currSize_ += bytesInsert;
-        return std::make_unique<ArenaPtr<T>>(size, arena_ptr, offset);
+        return std::make_unique<ArenaPtr<T>>(size, aligned_ptr, offset);
     }
 
     void resize(size_t size) noexcept

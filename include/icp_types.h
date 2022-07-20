@@ -29,7 +29,7 @@ public:
     {
         GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getDeviceEstimates();
         return gpu::computeActiveErrors_Line(
-            estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi);
+            estimates, d_measurements, d_omega, d_edge2PL, d_errors, d_Xcs, chi);
     }
 
     void constructQuadraticForm(
@@ -47,7 +47,7 @@ public:
             se3_data,
             d_errors,
             d_measurements,
-            d_omegas,
+            d_omega,
             d_edge2PL,
             d_edge2Hpl,
             d_edgeFlags,
@@ -75,7 +75,7 @@ public:
     {
         GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getDeviceEstimates();
         return gpu::computeActiveErrors_Plane(
-            estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi, stream);
+            estimates, d_measurements, d_omega, d_edge2PL, d_errors, d_Xcs, chi, stream);
     }
 
     void constructQuadraticForm(
@@ -93,7 +93,7 @@ public:
             se3_data,
             d_errors,
             d_measurements,
-            d_omegas,
+            d_omega,
             d_edge2PL,
             d_edge2Hpl,
             d_edgeFlags,
