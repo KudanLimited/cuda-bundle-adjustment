@@ -2125,7 +2125,8 @@ Scalar computeActiveErrors_DepthBa(
         Xcs,
         chi);
     CUDA_CHECK(cudaGetLastError());
-
+    cudaDeviceSynchronize();
+    
     Scalar h_chi = 0;
     CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
 
@@ -2157,6 +2158,7 @@ Scalar computeActiveErrors_Line(
     computeActiveErrorsKernel_Line<<<grid, block>>>(
         nedges, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
     CUDA_CHECK(cudaGetLastError());
+    cudaDeviceSynchronize();
 
     Scalar h_chi = 0;
     CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
@@ -2188,6 +2190,7 @@ Scalar computeActiveErrors_Plane(
     computeActiveErrorsKernel_Plane<<<grid, block, sharedBytes, stream>>>(
         nedges, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
     CUDA_CHECK(cudaGetLastError());
+    cudaDeviceSynchronize();
 
     Scalar h_chi = 0;
     CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
@@ -2222,6 +2225,7 @@ void constructQuadraticForm_Plane(
     constructQuadraticFormKernel_Plane<1><<<grid, block, 0, stream>>>(
         nedges, se3, errors, measurements, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
     CUDA_CHECK(cudaGetLastError());
+    cudaDeviceSynchronize();
 }
 
 void constructQuadraticForm_Line(
@@ -2250,6 +2254,7 @@ void constructQuadraticForm_Line(
     constructQuadraticFormKernel_Line<1><<<grid, block>>>(
         nedges, se3, errors, measurements, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
     CUDA_CHECK(cudaGetLastError());
+    cudaDeviceSynchronize();
 }
 
 } // namespace gpu
