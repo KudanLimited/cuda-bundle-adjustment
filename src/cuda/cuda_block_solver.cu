@@ -827,6 +827,46 @@ __device__ int reduce_sum(cg::thread_group group, Scalar* temp, Scalar val)
     return val;
 }
 
+__device__ int reduceHppSum(cg::thread_group group, Matx<Scalar, 6, 6>* temp, Matx<Scalar, 6, 6> val)
+{
+    int lane = group.thread_rank();
+
+    for (int i = group.size() / 2; i > 0; i >>= 1)
+    {
+        temp[lane] = val;
+        group.sync();
+        if (lane < i)
+        {
+            for(int i = 0; i < 6; ++i)
+            {
+                for(int j = 0; j < 6; ++j)
+                {
+                    val(i, j) += temp[lane + 1](i, j);
+                }
+            }
+        }
+        group.sync();
+    }
+    return val;
+}
+
+__device__ int reduceBpSum(cg::thread_group group, Matx<Scalar, 1, 6>* temp, Matx<Scalar, 1, 6> val)
+{
+    int lane = group.thread_rank();
+
+    for (int i = group.size() / 2; i > 0; i >>= 1)
+    {
+        temp[lane] = val;
+        group.sync();
+        if (lane < i)
+        {
+            
+        }
+        group.sync();
+    }
+    return val;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////
 // Kernel functions
 ////////////////////////////////////////////////////////////////////////////////////
@@ -2004,33 +2044,51 @@ __global__ void constructQuadraticFormKernel_Plane(
     Lx1BlockPtr bl,
     PxLBlockPtr Hpl)
 {
-    const int iE = blockIdx.x * blockDim.x + threadIdx.x;
-    if (iE >= nedges)
+    Matx<Scalar, 6, 6> accumHpp;
+    Matx<Scalar, 1, 6> accumBp;
+    for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
-        return;
+    #ifdef USE_PER_EDGE_INFORMATION
+        const Scalar omega = omegas[iE];
+    #else
+        const Scalar omega = omegas[0];
+    #endif
+        const int iP = edge2PL[iE][0];
+        const int flag = flags[iE];
+        const PointToPlaneMatch<double> measurement = measurements[iE];
+
+        const Se3D rt = se3[iP];
+        Vec1d error;
+        error[0] = errors[iE];
+
+        // compute Jacobians
+        Matx<Scalar, MDIM, PDIM> JP = computeJacobians_Plane(rt, measurement);
+
+        if (!(flag & EDGE_FLAG_FIXED_P))
+        {
+            // Hpp += JPT*Ω*JP
+            MatTMulMat<PDIM, MDIM, PDIM, ACCUM_ATOMIC>(JP.data, JP.data, accumHpp.data, omega);
+            // bp -= JPT*Ω*r
+            MatTMulVec<PDIM, MDIM, DEACCUM_ATOMIC>(JP.data, error.data, accumBp.data, omega);
+        }
     }
-#ifdef USE_PER_EDGE_INFORMATION
-    const Scalar omega = omegas[iE];
-#else
-    const Scalar omega = omegas[0];
-#endif
-    const int iP = edge2PL[iE][0];
-    const int flag = flags[iE];
-    const PointToPlaneMatch<double> measurement = measurements[iE];
 
-    const Se3D rt = se3[iP];
-    Vec1d error;
-    error[0] = errors[iE];
+    extern __shared__ Matx<Scalar, 6, 6> cacheHpp[];
+    extern __shared__ Matx<Scalar, 1, 6> cacheBp[];
 
-    // compute Jacobians
-    Matx<Scalar, MDIM, PDIM> JP = computeJacobians_Plane(rt, measurement);
+    auto group = cg::this_thread_block();
+    auto tileIdx = group.thread_rank() / 32;
 
-    if (!(flag & EDGE_FLAG_FIXED_P))
+    Matx<Scalar, 6, 6>* tileCacheHpp = &cacheHpp[32 * tileIdx];
+    Matx<Scalar, 1, 6>* tileCacheBp = &cacheBp[32 * tileIdx];
+
+    auto tile32 = cg::tiled_partition(group, 32);
+    Matx<Scalar, 6, 6> tileHpp = reduceHppSum(tile32, tileCacheHpp, accumHpp);
+    Matx<Scalar, 1, 6> tileBp = reduceBpSum(tile32, tileCacheBp, accumBp);
+
+    if (tile32.thread_rank() == 0)
     {
-        // Hpp += JPT*Ω*JP
-        MatTMulMat<PDIM, MDIM, PDIM, ACCUM_ATOMIC>(JP.data, JP.data, Hpp.at(iP), omega);
-        // bp -= JPT*Ω*r
-        MatTMulVec<PDIM, MDIM, DEACCUM_ATOMIC>(JP.data, error.data, bp.at(iP), omega);
+        atomicAdd(chi, tile_chi);
     }
 }
 
