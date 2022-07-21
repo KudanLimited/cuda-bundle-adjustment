@@ -196,6 +196,14 @@ void BlockSolver::buildStructure(
         d_xl_.map(numL, d_x_.data() + numP * PDIM);
         d_bl_.map(numL, d_b_.data() + numP * PDIM);
     }
+    else
+    {
+        d_Hpp_.resize(numP);
+
+        Hpp_.resize(numP, numP);
+        Hpp_.constructFromVertices(verticesP);
+        Hpp_.convertBSRToCSR();
+    }
 
     d_xp_.map(numP, d_x_.data());
     d_bp_.map(numP, d_b_.data());
@@ -221,31 +229,10 @@ void BlockSolver::buildStructure(
 
     d_chi_.resize(1);
 
-    // as the set up for the pose sparse matrix is not dependent on data
-    // from above, we can construct the matrix here. The advantage is that the
-    // data upload for the edge sets happens async, so the matrix can
-    // be built at the same time as the upoload occurs.
-    if (!doSchur)
+    const auto t1 = get_time_point();
+
+    if (doSchur)
     {
-        d_Hpp_.resize(numP);
-
-        Hpp_.resize(numP, numP);
-        Hpp_.constructFromVertices(verticesP);
-        Hpp_.convertBSRToCSR();
-
-        const auto t1 = get_time_point();
-
-        DenseLinearSolver* sparseLinearSolver =
-            static_cast<DenseLinearSolver*>(linearSolver_.get());
-        sparseLinearSolver->initialize(Hpp_);
-
-        const auto t2 = get_time_point();
-        profItems_[PROF_ITEM_SOLVE_HPP] += get_duration(t1, t2);
-    }
-    else
-    {
-        const auto t1 = get_time_point();
-
         HscSparseLinearSolver* sparseLinearSolver =
             static_cast<HscSparseLinearSolver*>(linearSolver_.get());
 
@@ -254,6 +241,15 @@ void BlockSolver::buildStructure(
 
         const auto t2 = get_time_point();
         profItems_[PROF_ITEM_DECOMP_SYMBOLIC] += get_duration(t1, t2);
+    }
+    else
+    {
+        DenseLinearSolver* sparseLinearSolver =
+            static_cast<DenseLinearSolver*>(linearSolver_.get());
+        sparseLinearSolver->initialize(Hpp_);
+
+        const auto t2 = get_time_point();
+        profItems_[PROF_ITEM_SOLVE_HPP] += get_duration(t1, t2);
     }
 
     profItems_[PROF_ITEM_BUILD_STRUCTURE] += get_duration(t0, t1);
