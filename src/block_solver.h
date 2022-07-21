@@ -91,6 +91,10 @@ private:
 
     int nedges_;
 
+    // transient storage for active pose vertices - is a class member
+    // as used on a seperate thread.
+    std::vector<BaseVertex*> verticesP;
+
     // graph components
     std::vector<BaseEdge*> baseEdges_;
 

@@ -20,6 +20,7 @@ limitations under the License.
 #include "constants.h"
 
 #include <Eigen/Core>
+#include <thread>
 #include <vector>
 
 namespace cugo
@@ -80,8 +81,10 @@ public:
 class PoseSparseBlockMatrix : public SparseBlockMatrix<PDIM, PDIM, COL_MAJOR>
 {
 public:
-    void constructFromVertices(const std::vector<BaseVertex*>& vertices);
+    void constructFromVertices(const std::vector<BaseVertex*>& vertices, bool BSRtoCSR);
     void convertBSRToCSR();
+    void constructFromVerticesThreaded(const std::vector<BaseVertex*>& vertices, bool BSRtoCSR);
+    void joinConvertThread();
 
     const int* rowPtr() const { return rowPtr_.data(); }
     const int* colInd() const { return colInd_.data(); }
@@ -94,6 +97,7 @@ public:
 private:
     int nmultiplies_;
     Eigen::VectorXi rowPtr_, colInd_, nnzPerRow_, BSR2CSR_;
+    std::thread convertThread_;
 };
 
 using HschurSparseBlockMatrix = PoseSparseBlockMatrix;

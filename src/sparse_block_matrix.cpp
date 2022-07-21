@@ -59,7 +59,8 @@ void HplSparseBlockMatrix::constructFromBlockPos(std::vector<HplBlockPos>& block
     }
 }
 
-void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex*>& vertices)
+void HschurSparseBlockMatrix::constructFromVertices(
+    const std::vector<BaseVertex*>& vertices, bool BSRtoCSR)
 {
     struct BlockPos
     {
@@ -148,6 +149,11 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
         const int colId = blockpos[i].col;
         const int k = nnzPerRow_[rowId]++;
         bcolInd_[k] = colId;
+    }
+
+    if (BSRtoCSR)
+    {
+        convertBSRToCSR();
     }
 }
 
@@ -256,5 +262,14 @@ void HschurSparseBlockMatrix::convertBSRToCSR()
         }
     }
 }
+
+void HschurSparseBlockMatrix::constructFromVerticesThreaded(
+    const std::vector<BaseVertex*>& vertices, bool BSRtoCSR)
+{
+    convertThread_ =
+        std::thread(&HppSparseBlockMatrix::constructFromVertices, this, std::ref(vertices), true);
+}
+
+void HschurSparseBlockMatrix::joinConvertThread() { convertThread_.join(); }
 
 } // namespace cugo

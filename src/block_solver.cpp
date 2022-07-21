@@ -32,6 +32,8 @@ void BlockSolver::initialize(
             this->doSchur = true;
         }
     }
+    linearSolver_ = nullptr;
+    verticesP.clear();
 
     // upload camera parameters to constant memory if defined
     if (camera)
@@ -43,19 +45,6 @@ void BlockSolver::initialize(
         cameraParams[3] = ScalarCast(camera->cy);
         cameraParams[4] = ScalarCast(camera->bf);
         gpu::setCameraParameters(cameraParams.data());
-    }
-
-    // initialise the linear solver
-    if (!linearSolver_)
-    {
-        if (doSchur)
-        {
-            linearSolver_ = std::make_unique<HscSparseLinearSolver>();
-        }
-        else
-        {
-            linearSolver_ = std::make_unique<DenseLinearSolver>();
-        }
     }
 
     profItems_.assign(PROF_ITEM_NUM, 0);
@@ -95,7 +84,6 @@ void BlockSolver::buildStructure(
     d_solution_.resize(totalSizeL * 3 + totalSizeP * 7);
     d_solutionBackup_.resize(d_solution_.size());
 
-    std::vector<BaseVertex*> verticesP;
     std::vector<BaseVertex*> verticesL;
     verticesP.reserve(totalSizeP);
     if (doSchur)
@@ -169,8 +157,7 @@ void BlockSolver::buildStructure(
 
         // build host Hschur sparse block matrix structure
         Hsc_.resize(numP, numP);
-        Hsc_.constructFromVertices(verticesL);
-        Hsc_.convertBSRToCSR();
+        Hsc_.constructFromVertices(verticesL, true);
 
         // initialise the device schur hessian matrix
         d_Hsc_.resize(numP, numP);
@@ -201,8 +188,10 @@ void BlockSolver::buildStructure(
         d_Hpp_.resize(numP);
 
         Hpp_.resize(numP, numP);
-        Hpp_.constructFromVertices(verticesP);
-        Hpp_.convertBSRToCSR();
+
+        // Do the sparse matrix setup in a seperate thread as
+        // this isn't required until the linear equation stage
+        Hpp_.constructFromVerticesThreaded(verticesP, true);
     }
 
     d_xp_.map(numP, d_x_.data());
@@ -230,27 +219,6 @@ void BlockSolver::buildStructure(
     d_chi_.resize(1);
 
     const auto t1 = get_time_point();
-
-    if (doSchur)
-    {
-        HscSparseLinearSolver* sparseLinearSolver =
-            static_cast<HscSparseLinearSolver*>(linearSolver_.get());
-
-        // analyze pattern of Hschur matrix (symbolic decomposition)
-        sparseLinearSolver->initialize(Hsc_);
-
-        const auto t2 = get_time_point();
-        profItems_[PROF_ITEM_DECOMP_SYMBOLIC] += get_duration(t1, t2);
-    }
-    else
-    {
-        DenseLinearSolver* sparseLinearSolver =
-            static_cast<DenseLinearSolver*>(linearSolver_.get());
-        sparseLinearSolver->initialize(Hpp_);
-
-        const auto t2 = get_time_point();
-        profItems_[PROF_ITEM_SOLVE_HPP] += get_duration(t1, t2);
-    }
 
     profItems_[PROF_ITEM_BUILD_STRUCTURE] += get_duration(t0, t1);
 }
@@ -351,6 +319,28 @@ void BlockSolver::restoreDiagonal()
 
 bool BlockSolver::solve()
 {
+    if (!linearSolver_)
+    {
+        if (doSchur)
+        {
+            linearSolver_ = std::make_unique<HscSparseLinearSolver>();
+            HscSparseLinearSolver* sparseLinearSolver =
+                static_cast<HscSparseLinearSolver*>(linearSolver_.get());
+            sparseLinearSolver->initialize(Hsc_);
+        }
+        else
+        {
+            // wait for the sparse matrix initialisation thread to finish before
+            // creating the solver
+            Hpp_.joinConvertThread();
+
+            linearSolver_ = std::make_unique<DenseLinearSolver>();
+            DenseLinearSolver* sparseLinearSolver =
+                static_cast<DenseLinearSolver*>(linearSolver_.get());
+            sparseLinearSolver->initialize(Hpp_);
+        }
+    }
+
     if (!doSchur)
     {
         const auto t1 = get_time_point();
