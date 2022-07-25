@@ -105,7 +105,7 @@ target_compile_options(
 )
 target_compile_definitions(
 	cugo
-	PRIVATE
+	INTERFACE
 	${CUGO_DEFINITIONS}
 )
 
