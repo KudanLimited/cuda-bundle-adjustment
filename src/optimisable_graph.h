@@ -51,6 +51,8 @@ public:
 
     virtual void removeEdge(BaseEdge* edge) = 0;
 
+    virtual void setFixed(bool status) = 0;
+
     virtual bool isFixed() const = 0;
 
     virtual int getIndex() const = 0;
@@ -99,6 +101,8 @@ public:
         edges.erase(edge);
     }
 
+    void setFixed(bool status) override { fixed = status; }
+
     bool isFixed() const override { return fixed; }
 
     void setId(const int id) override { this->id = id; }
@@ -120,7 +124,6 @@ protected:
     int idx; //!< ID of the vertex (internally used).
     Set<BaseEdge*> edges; //!< connected edges.
 };
-
 
 using PoseVertex = Vertex<maths::Se3D, false>;
 using LandmarkVertex = Vertex<maths::Vec3d, true>;
