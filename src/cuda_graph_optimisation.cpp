@@ -17,6 +17,7 @@ limitations under the License.
 #include "cuda_graph_optimisation.h"
 
 #include "constants.h"
+#include "cuda_device.h"
 #include "device_buffer.h"
 #include "device_matrix.h"
 #include "optimisable_graph.h"
@@ -70,13 +71,13 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
 
         if (iteration == 0)
         {
-            solver_->buildStructure(edgeSets, vertexSets);
+            solver_->buildStructure(edgeSets, vertexSets, streams_);
         }
 
-        const double iniF = solver_->computeErrors(edgeSets, vertexSets);
+        const double iniF = solver_->computeErrors(edgeSets, vertexSets, streams_);
         F = iniF;
 
-        solver_->buildSystem(edgeSets, vertexSets);
+        solver_->buildSystem(edgeSets, vertexSets, streams_);
 
         if (iteration == 0)
         {
@@ -96,13 +97,13 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
             solver_->update(vertexSets);
             solver_->restoreDiagonal();
 
-            const double Fhat = solver_->computeErrors(edgeSets, vertexSets);
+            const double Fhat = solver_->computeErrors(edgeSets, vertexSets, streams_);
             const double scale = solver_->computeScale(lambda) + 1e-3;
             rho = success ? (F - Fhat) / scale : -1;
 
             if (rho > 0)
             {
-                lambda *= clamp(attenuation(rho), 1. / 3, 2. / 3);
+                lambda *= clamp(attenuation(rho), 1.0 / 3, 2.0 / 3);
                 nu = 2;
                 F = Fhat;
                 break;
@@ -133,7 +134,7 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
                 solver_->nedges());
         }
 
-        if (q == maxq || rho <= 1e-4 || !std::isfinite(lambda))
+        if (q == maxq || rho == 0 || !std::isfinite(lambda))
         {
             break;
         }
@@ -144,62 +145,35 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
     solver_->getTimeProfile(timeProfile_);
 }
 
-void CudaGraphOptimisationImpl::clearEdgeSets()
-{
-    for (auto* edgeSet : edgeSets)
-    {
-        edgeSet->clearEdges();
-        delete edgeSet;
-        edgeSet = nullptr;
-    }
-    edgeSets.clear();
-}
+void CudaGraphOptimisationImpl::clearEdgeSets() { edgeSets.clear(); }
 
-void CudaGraphOptimisationImpl::clearVertexSets()
-{
-    for (BaseVertexSet* vertexSet : vertexSets)
-    {
-        if (!vertexSet->isMarginilised())
-        {
-            PoseVertexSet* poseVertexSet = dynamic_cast<PoseVertexSet*>(vertexSet);
-            for (auto* vertex : poseVertexSet->get())
-            {
-                if (vertex)
-                {
-                    delete vertex;
-                    vertex = nullptr;
-                }
-            }
-        }
-        else
-        {
-            LandmarkVertexSet* lmVertexSet = dynamic_cast<LandmarkVertexSet*>(vertexSet);
-            for (auto* vertex : lmVertexSet->get())
-            {
-                if (vertex)
-                {
-                    delete vertex;
-                    vertex = nullptr;
-                }
-            }
-        }
-        delete vertexSet;
-        vertexSet = nullptr;
-    }
-    vertexSets.clear();
-}
+void CudaGraphOptimisationImpl::clearVertexSets() { vertexSets.clear(); }
 
 BatchStatistics& CudaGraphOptimisationImpl::batchStatistics() { return stats_; }
 
 const TimeProfile& CudaGraphOptimisationImpl::timeProfile() { return timeProfile_; }
 
-CudaGraphOptimisationImpl::CudaGraphOptimisationImpl() : solver_(std::make_unique<BlockSolver>()) {}
-
-CudaGraphOptimisationImpl::~CudaGraphOptimisationImpl()
+CudaGraphOptimisationImpl::CudaGraphOptimisationImpl() : solver_(std::make_unique<BlockSolver>())
 {
-    clearVertexSets();
-    clearEdgeSets();
+    deviceId_ = findCudaDevice();
+    CUDA_CHECK(cudaGetDeviceProperties(&deviceProp_, deviceId_));
+
+#ifndef USE_ZERO_COPY
+    for (int i = 0; i < streams_.size(); ++i)
+    {
+        CUDA_CHECK(cudaStreamCreate(&streams_[i]));
+    }
+#else
+    // use default stream if using zero copy as copying data to the device
+    // async is no longer required.
+    for (int i = 0; i < streams_.size(); ++i)
+    {
+        streams_[i] = 0;
+    }
+#endif
 }
+
+CudaGraphOptimisationImpl::~CudaGraphOptimisationImpl() {}
 
 CudaGraphOptimisation::Ptr CudaGraphOptimisation::create()
 {

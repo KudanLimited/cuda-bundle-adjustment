@@ -38,7 +38,11 @@ void waitForKernelCompletion();
 void setCameraParameters(const Scalar* camera);
 
 void buildHplStructure(
-    GpuVec3i& blockpos, GpuHplBlockMat& Hpl, GpuVec1i& indexPL, GpuVec1i& nnzPerCol);
+    GpuVec3i& blockpos,
+    GpuHplBlockMat& Hpl,
+    GpuVec1i& indexPL,
+    GpuVec1i& nnzPerCol,
+    cudaStream_t stream);
 
 void findHschureMulBlockIndices(
     const GpuHplBlockMat& Hpl, const GpuHscBlockMat& Hsc, GpuVec3i& mulBlockIds);
@@ -114,7 +118,8 @@ void CUGO_API constructQuadraticForm_(
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
-    GpuHplBlockMat& Hpl);
+    GpuHplBlockMat& Hpl,
+    cudaStream_t stream);
 
 template <int M>
 Scalar CUGO_API computeActiveErrors_(
@@ -127,7 +132,8 @@ Scalar CUGO_API computeActiveErrors_(
     GpuVecxd<M>& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
-    Scalar* chi);
+    Scalar* chi,
+    cudaStream_t stream);
 
 Scalar CUGO_API computeActiveErrors_DepthBa(
     const GpuVecSe3d& poseEstimate,
@@ -139,7 +145,8 @@ Scalar CUGO_API computeActiveErrors_DepthBa(
     GpuVec3d& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
-    Scalar* chi);
+    Scalar* chi,
+    cudaStream_t stream);
 
 Scalar CUGO_API computeActiveErrors_Line(
     const GpuVecSe3d& poseEstimate,
@@ -157,16 +164,8 @@ Scalar CUGO_API computeActiveErrors_Plane(
     const GpuVec2i& edge2PL,
     GpuVec1d& errors,
     GpuVec3d& Xcs,
-    Scalar* chi);
-
-Scalar CUGO_API computeActiveErrors_PriorPose(
-    const GpuVecSe3d& poseEstimate,
-    const GpuVecSe3d& measurements,
-    const GpuVec1d& omegas,
-    const GpuVec2i& edge2PL,
-    GpuVec6d& errors,
-    GpuVec3d& Xcs,
-    Scalar* chi);
+    Scalar* chi,
+    cudaStream_t stream);
 
 void CUGO_API constructQuadraticForm_Line(
     const GpuVecSe3d& se3,
@@ -194,7 +193,8 @@ void CUGO_API constructQuadraticForm_Plane(
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
-    GpuHplBlockMat& Hpl);
+    GpuHplBlockMat& Hpl,
+    cudaStream_t stream);
 
 } // namespace gpu
 

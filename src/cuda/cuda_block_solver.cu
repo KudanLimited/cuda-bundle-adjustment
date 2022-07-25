@@ -16,6 +16,7 @@ limitations under the License.
 
 #include "cuda_block_solver.h"
 
+#include <cooperative_groups.h>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <thrust/device_ptr.h>
@@ -24,6 +25,8 @@ limitations under the License.
 #include <thrust/sort.h>
 
 #include <algorithm>
+
+namespace cg = cooperative_groups;
 
 namespace cugo
 {
@@ -44,7 +47,9 @@ struct LessRowId
     __device__ bool operator()(const Vec3i& lhs, const Vec3i& rhs) const
     {
         if (lhs[0] == rhs[0])
+        {
             return lhs[1] < rhs[1];
+        }
         return lhs[0] < rhs[0];
     }
 };
@@ -54,7 +59,9 @@ struct LessColId
     __device__ bool operator()(const Vec3i& lhs, const Vec3i& rhs) const
     {
         if (lhs[1] == rhs[1])
+        {
             return lhs[0] < rhs[0];
+        }
         return lhs[1] < rhs[1];
     }
 };
@@ -83,139 +90,10 @@ struct Matx
     __device__ inline T& operator()(int i, int j) { return data[j * ROWS + i]; }
     __device__ inline T operator()(int i, int j) const { return data[j * ROWS + i]; }
 
-    __device__ inline Matx<T, ROWS, COLS> operator*(const T& f)
-    {
-        Matx<T, ROWS, COLS> result;
-        for (int rowIdx = 0; rowIdx < ROWS; ++rowIdx)
-        {
-#pragma unroll
-            for (int colIdx = 0; colIdx < COLS; ++colIdx)
-            {
-                this->data[colIdx * ROWS + rowIdx] = f * this->data[colIdx * ROWS + rowIdx];
-            }
-        }
-    }
-
-    __device__ inline void zero()
-    {
-        for (int rowIdx = 0; rowIdx < ROWS; ++rowIdx)
-        {
-#pragma unroll
-            for (int colIdx = 0; colIdx < COLS; ++colIdx)
-            {
-                this->data[colIdx * ROWS + rowIdx] = 0.0;
-            }
-        }
-    }
-
-    template <int blockRowCount, int blockColCount, int rowCount, int colCount>
-    __device__ inline void
-    setBlock(int rowIndex, int colIndex, const Matx<Scalar, blockRowCount, blockColCount>& b)
-    {
-        const Scalar* bPtr = b.data;
-        Scalar* thisPtr = data + rowIndex * colCount + colIndex;
-        for (int blockRowIndex = 0; blockRowIndex < blockRowCount; ++blockRowIndex)
-        {
-            for (int blockColIndex = 0; blockColIndex < blockColCount; ++blockColIndex)
-            {
-                *thisPtr++ = *bPtr++;
-            }
-            thisPtr += colCount - blockColCount;
-        }
-    }
-
     __device__ inline operator View() { return View(data); }
     __device__ inline operator ConstView() const { return ConstView(data); }
     T data[ROWS * COLS];
 };
-
-template <typename T, int ROWS, int COLS>
-__device__ inline Matx<T, ROWS, COLS> operator*(const T& f, const Matx<T, ROWS, COLS>& m)
-{
-    Matx<T, ROWS, COLS> result;
-    for (int rowIdx = 0; rowIdx < ROWS; ++rowIdx)
-    {
-#pragma unroll
-        for (int colIdx = 0; colIdx < COLS; ++colIdx)
-        {
-            result.data[colIdx * ROWS + rowIdx] = f * m.data[colIdx * ROWS + rowIdx];
-        }
-    }
-    return result;
-}
-
-template <typename T, int ROWS, int COLS, int INNER>
-__device__ inline Matx<T, ROWS, COLS>
-operator*(const Matx<T, ROWS, INNER>& m1, const Matx<T, INNER, COLS>& m2)
-{
-    Matx<T, ROWS, COLS> result;
-    result.zero();
-    T* resultPtr = result.data;
-    const T* m1RowPtr = m1.data;
-    for (int rowIndex = 0; rowIndex < ROWS; ++rowIndex)
-    {
-        for (int colIndex = 0; colIndex < COLS; ++colIndex)
-        {
-            const T* m1Ptr = m1RowPtr;
-            const T* m2Ptr = m2.data + colIndex;
-            for (int innerIndex = 0; innerIndex < INNER; ++innerIndex)
-            {
-                *resultPtr += *m1Ptr++ * *m2Ptr;
-                m2Ptr += COLS;
-            }
-            ++resultPtr;
-        }
-        m1RowPtr += INNER;
-    }
-    return result;
-}
-
-template <typename T, int ROWS, int COLS>
-__device__ inline Matx<T, ROWS, COLS> operator+(const Matx<T, ROWS, COLS>& m, const T& f)
-{
-    Matx<T, ROWS, COLS> result;
-    for (int rowIdx = 0; rowIdx < ROWS; ++rowIdx)
-    {
-#pragma unroll
-        for (int colIdx = 0; colIdx < COLS; ++colIdx)
-        {
-            result.data[colIdx * ROWS + rowIdx] = m.data[colIdx * ROWS + rowIdx] + f;
-        }
-    }
-    return result;
-}
-
-template <typename T, int ROWS, int COLS>
-__device__ inline Matx<T, ROWS, COLS>
-operator-(const Matx<T, ROWS, COLS>& m1, const Matx<T, ROWS, COLS>& m2)
-{
-    Matx<T, ROWS, COLS> result;
-    for (int rowIdx = 0; rowIdx < ROWS; ++rowIdx)
-    {
-#pragma unroll
-        for (int colIdx = 0; colIdx < COLS; ++colIdx)
-        {
-            int matIdx = colIdx * ROWS + rowIdx;
-            result.data[matIdx] = m1.data[matIdx] - m2.data[matIdx];
-        }
-    }
-    return result;
-}
-
-template <typename T, int ROWS, int COLS>
-__device__ inline Matx<T, COLS, ROWS> transpose(const Matx<T, ROWS, COLS>& m)
-{
-    Matx<T, COLS, ROWS> result;
-    for (int rowIndex = 0; rowIndex < ROWS; ++rowIndex)
-    {
-#pragma unroll
-        for (int colIndex = 0; colIndex < COLS; ++colIndex)
-        {
-            result(colIndex, rowIndex) = m(rowIndex, colIndex);
-        }
-    }
-    return result;
-}
 
 using MatView2x3d = MatView<Scalar, 2, 3>;
 using MatView2x6d = MatView<Scalar, 2, 6>;
@@ -275,6 +153,11 @@ __device__ inline Scalar dot_stride_<1, PDIM, PDIM>(const Scalar* a, const Scala
 {
     return a[0] * b[0];
 }
+template <>
+__device__ inline Scalar dot_stride_<3, 1, 1>(const Scalar* a, const Scalar* b)
+{
+    return a[0] * b[0];
+}
 
 // matrix(tansposed)-vector product: b = AT*x
 template <int M, int N, AssignOP OP = ASSIGN>
@@ -282,7 +165,9 @@ __device__ inline void MatTMulVec(const Scalar* A, const Scalar* x, Scalar* b, S
 {
 #pragma unroll
     for (int i = 0; i < M; i++)
+    {
         OP(b + i, omega * dot_<N>(A + i * N, x));
+    }
 }
 
 // matrix(tansposed)-matrix product: C = AT*B
@@ -291,7 +176,9 @@ __device__ inline void MatTMulMat(const Scalar* A, const Scalar* B, Scalar* C, S
 {
 #pragma unroll
     for (int i = 0; i < N; i++)
+    {
         MatTMulVec<L, M, OP>(A, B + i * M, C + i * L, omega);
+    }
 }
 
 // matrix-vector product: b = A*x
@@ -300,7 +187,9 @@ __device__ inline void MatMulVec(const Scalar* A, const Scalar* x, Scalar* b)
 {
 #pragma unroll
     for (int i = 0; i < M; i++)
+    {
         OP(b + i, dot_stride_<N, M, S>(A + i, x));
+    }
 }
 
 // matrix-matrix product: C = A*B
@@ -309,7 +198,9 @@ __device__ inline void MatMulMat(const Scalar* A, const Scalar* B, Scalar* C)
 {
 #pragma unroll
     for (int i = 0; i < N; i++)
+    {
         MatMulVec<L, M, 1, OP>(A, B + i * M, C + i * L);
+    }
 }
 
 // matrix-matrix(tansposed) product: C = A*BT
@@ -318,7 +209,9 @@ __device__ inline void MatMulMatT(const Scalar* A, const Scalar* B, Scalar* C)
 {
 #pragma unroll
     for (int i = 0; i < N; i++)
+    {
         MatMulVec<L, M, N, OP>(A, B + i, C + i * L);
+    }
 }
 
 // squared L2 norm
@@ -347,6 +240,18 @@ __device__ inline Scalar norm(const Vecxd<N>& x)
 }
 
 __device__ inline Scalar norm(const QuatD& x) { return norm<4>(x.data); }
+
+__device__ inline Matx<Scalar, 1, 6> Vec1x3MulMat3x6(Scalar* mat, Scalar* vec)
+{
+    Matx<Scalar, 1, 6> output;
+    output(0, 0) = vec[0] * mat[0] + vec[1] * mat[6] + vec[2] * mat[12];
+    output(0, 1) = vec[0] * mat[1] + vec[1] * mat[7] + vec[2] * mat[13];
+    output(0, 2) = vec[0] * mat[2] + vec[1] * mat[8] + vec[2] * mat[14];
+    output(0, 3) = vec[0] * mat[3] + vec[1] * mat[9] + vec[2] * mat[15];
+    output(0, 4) = vec[0] * mat[4] + vec[1] * mat[10] + vec[2] * mat[16];
+    output(0, 5) = vec[0] * mat[5] + vec[1] * mat[11] + vec[2] * mat[17];
+    return output;
+}
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Device functions
@@ -803,9 +708,13 @@ __device__ inline void rotationMatrixToQuaternion(ConstMatView3x3d R, QuatD& q)
     {
         int i = 0;
         if (R(1, 1) > R(0, 0))
+        {
             i = 1;
+        }
         if (R(2, 2) > R(i, i))
+        {
             i = 2;
+        }
         int j = (i + 1) % 3;
         int k = (j + 1) % 3;
 
@@ -830,10 +739,13 @@ __device__ inline void normalizeQuaternion(const QuatD& a, QuatD& b)
 {
     Scalar invn = 1 / norm(a);
     if (a[3] < 0)
+    {
         invn = -invn;
-
+    }
     for (int i = 0; i < 4; i++)
+    {
         b[i] = invn * a[i];
+    }
 }
 
 __device__ inline void updateExp(const Scalar* update, QuatD& rot, Vec3d& trans)
@@ -872,8 +784,9 @@ __device__ inline void updatePose(const QuatD& q1, const Vec3d& t1, QuatD& q2, V
     rotate(q1, t2, u);
 
     for (int i = 0; i < 3; i++)
+    {
         t2[i] = t1[i] + u[i];
-
+    }
     QuatD r;
     multiplyQuaternion(q1, q2, r);
     normalizeQuaternion(r, q2);
@@ -883,7 +796,9 @@ template <int N>
 __device__ inline void copy(const Scalar* src, Scalar* dst)
 {
     for (int i = 0; i < N; i++)
+    {
         dst[i] = src[i];
+    }
 }
 
 __device__ inline Vec3i makeVec3i(int i, int j, int k)
@@ -895,89 +810,61 @@ __device__ inline Vec3i makeVec3i(int i, int j, int k)
     return vec;
 }
 
-__device__ inline Vec<Scalar, 6> log(const Se3D& se3)
+__device__ int reduce_sum(cg::thread_group group, Scalar* temp, Scalar val)
 {
-    Vec<Scalar, 6> output;
-    Vec3d rComplex, upsilon;
-    rComplex[0] = se3.r[0];
-    rComplex[1] = se3.r[1];
-    rComplex[2] = se3.r[2];
-    const Scalar& rReal = se3.r[3];
+    int lane = group.thread_rank();
 
-    const Scalar rComplexLengthSquared = squaredNorm(rComplex);
-    const Scalar rComplexLength = sqrt(rComplexLengthSquared);
-
-    Scalar twoAtanRVecLengthByRVecComplexByRVecLength;
-
-    if (rComplexLength < 1e-6)
+    for (int i = group.size() / 2; i > 0; i >>= 1)
     {
-        const Scalar squared_rReal = rReal * rReal;
-        twoAtanRVecLengthByRVecComplexByRVecLength =
-            2.0 / rReal - 2.0 * (rComplexLengthSquared) / (rReal * squared_rReal);
-    }
-    else
-    {
-        if (abs(rReal) < 1e-6)
+        temp[lane] = val;
+        group.sync();
+        if (lane < i)
         {
-            if (rReal > 0.0)
+            val += temp[lane + 1];
+        }
+        group.sync();
+    }
+    return val;
+}
+
+__device__ int reduceHppSum(cg::thread_group group, Matx<Scalar, 6, 6>* temp, Matx<Scalar, 6, 6> val)
+{
+    int lane = group.thread_rank();
+
+    for (int i = group.size() / 2; i > 0; i >>= 1)
+    {
+        temp[lane] = val;
+        group.sync();
+        if (lane < i)
+        {
+            for(int i = 0; i < 6; ++i)
             {
-                twoAtanRVecLengthByRVecComplexByRVecLength = M_PI / rComplexLength;
-            }
-            else
-            {
-                twoAtanRVecLengthByRVecComplexByRVecLength = -M_PI / rComplexLength;
+                for(int j = 0; j < 6; ++j)
+                {
+                    val(i, j) += temp[lane + 1](i, j);
+                }
             }
         }
-        else
+        group.sync();
+    }
+    return val;
+}
+
+__device__ int reduceBpSum(cg::thread_group group, Matx<Scalar, 1, 6>* temp, Matx<Scalar, 1, 6> val)
+{
+    int lane = group.thread_rank();
+
+    for (int i = group.size() / 2; i > 0; i >>= 1)
+    {
+        temp[lane] = val;
+        group.sync();
+        if (lane < i)
         {
-            twoAtanRVecLengthByRVecComplexByRVecLength =
-                2.0 * atan(rComplexLength / rReal) / rComplexLength;
+            
         }
+        group.sync();
     }
-
-    Scalar theta = twoAtanRVecLengthByRVecComplexByRVecLength * rComplexLength;
-    Vec3d omega = twoAtanRVecLengthByRVecComplexByRVecLength * rComplex;
-
-    Matx<Scalar, 3, 3> omegaMat, omegaMat2, inverseV2;
-    skew1(omega[0], omega[1], omega[2], omegaMat);
-
-    if (abs(theta) < 1e-6)
-    {
-        const Scalar oneOver12 = 1.0 / 12.0;
-        MatMulMat<3, 3, 3>(omegaMat.data, omegaMat.data, omegaMat2.data);
-        Matx<Scalar, 3, 3> I = identityMat3x3();
-        Matx<Scalar, 3, 3> inverseV = I - 0.5 * omegaMat + oneOver12;
-        MatMulMat<3, 3, 3>(inverseV.data, omegaMat2.data, inverseV2.data);
-        MatMulVec<3, 3>(inverseV2.data, se3.t.data, upsilon.data);
-
-        output[0] = omega[0];
-        output[1] = omega[1];
-        output[2] = omega[2];
-        output[3] = upsilon[0];
-        output[4] = upsilon[1];
-        output[5] = upsilon[2];
-        return output;
-    }
-    else
-    {
-        const Scalar halfTheta = 0.5 * theta;
-        MatMulMat<3, 3, 3>(omegaMat.data, omegaMat.data, omegaMat2.data);
-        Matx<Scalar, 3, 3> I = identityMat3x3();
-
-        Matx<Scalar, 3, 3> inverseV =
-            (I - 0.5 * omegaMat +
-             (1.0 - theta * cos(halfTheta) / 2.0 * sin(halfTheta)) / (theta * theta));
-        MatMulMat<3, 3, 3>(inverseV.data, omegaMat2.data, inverseV2.data);
-        MatMulVec<3, 3>(inverseV2.data, se3.t.data, upsilon.data);
-
-        output[0] = omega[0];
-        output[1] = omega[1];
-        output[2] = omega[2];
-        output[3] = upsilon[0];
-        output[4] = upsilon[1];
-        output[5] = upsilon[2];
-        return output;
-    }
+    return val;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -1000,12 +887,14 @@ __global__ void computeActiveErrorsKernel(
 {
     using Vecmd = Vecxd<MDIM>;
 
-    const int sharedIdx = threadIdx.x;
-    __shared__ Scalar cache[BLOCK_ACTIVE_ERRORS];
-
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
+#ifdef USE_PER_EDGE_INFORMATION
+        Scalar omega = omegas[iE];
+#else
+        Scalar omega = omegas[0];
+#endif
         const Vec2i index = edge2PL[iE];
         const int iP = index[0];
         const int iL = index[1];
@@ -1033,7 +922,7 @@ __global__ void computeActiveErrorsKernel(
         errors[iE] = error;
         Xcs[iE] = Xc;
 
-        const Scalar chi2 = omegas[iE] * squaredNorm(error);
+        const Scalar chi2 = omega * squaredNorm(error);
         sumchi += chi2;
         if (errorThreshold > 0.0 && chi2 > errorThreshold)
         {
@@ -1041,21 +930,17 @@ __global__ void computeActiveErrorsKernel(
         }
     }
 
-    cache[sharedIdx] = sumchi;
-    __syncthreads();
+    extern __shared__ Scalar cache[];
+    auto group = cg::this_thread_block();
+    auto tileIdx = group.thread_rank() / 32;
+    Scalar* tileCache = &cache[32 * tileIdx];
 
-    for (int stride = BLOCK_ACTIVE_ERRORS / 2; stride > 0; stride >>= 1)
-    {
-        if (sharedIdx < stride)
-        {
-            cache[sharedIdx] += cache[sharedIdx + stride];
-        }
-        __syncthreads();
-    }
+    auto tile32 = cg::tiled_partition(group, 32);
+    Scalar tile_chi = reduce_sum(tile32, tileCache, sumchi);
 
-    if (sharedIdx == 0)
+    if (tile32.thread_rank() == 0)
     {
-        atomicAdd(chi, cache[0]);
+        atomicAdd(chi, tile_chi);
     }
 }
 
@@ -1079,9 +964,15 @@ __global__ void constructQuadraticFormKernel(
 
     const int iE = blockIdx.x * blockDim.x + threadIdx.x;
     if (iE >= nedges)
+    {
         return;
+    }
 
-    const Scalar omega = omegas[iE];
+#ifdef USE_PER_EDGE_INFORMATION
+    Scalar omega = omegas[iE];
+#else
+    Scalar omega = omegas[0];
+#endif
     const int iP = edge2PL[iE][0];
     const int iL = edge2PL[iE][1];
     const int iPL = edge2Hpl[iE];
@@ -1140,7 +1031,9 @@ __global__ void maxDiagonalKernel(int size, const Scalar* D, Scalar* maxD)
     for (int stride = BLOCK_MAX_DIAGONAL / 2; stride > 0; stride >>= 1)
     {
         if (sharedIdx < stride)
+        {
             cache[sharedIdx] = max(cache[sharedIdx], cache[sharedIdx + stride]);
+        }
         __syncthreads();
     }
 
@@ -1155,8 +1048,9 @@ __global__ void addLambdaKernel(int size, Scalar* D, Scalar lambda, Scalar* back
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= size)
+    {
         return;
-
+    }
     const int j = i / DIM;
     const int k = i % DIM;
     Scalar* ptrBlock = D + j * DIM * DIM;
@@ -1169,8 +1063,9 @@ __global__ void restoreDiagonalKernel(int size, Scalar* D, const Scalar* backup)
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= size)
+    {
         return;
-
+    }
     const int j = i / DIM;
     const int k = i % DIM;
     Scalar* ptrBlock = D + j * DIM * DIM;
@@ -1190,8 +1085,9 @@ __global__ void computeBschureKernel(
 {
     const int colId = blockIdx.x * blockDim.x + threadIdx.x;
     if (colId >= cols)
+    {
         return;
-
+    }
     Scalar iHll[LDIM * LDIM];
     Scalar Hpl_iHll[PDIM * LDIM];
 
@@ -1211,8 +1107,9 @@ initializeHschurKernel(int rows, PxPBlockPtr Hpp, PxPBlockPtr Hsc, const int* Hs
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= rows)
+    {
         return;
-
+    }
     copy<PDIM * PDIM>(Hpp.at(rowId), Hsc.at(HscRowPtr[rowId]));
 }
 
@@ -1221,8 +1118,9 @@ __global__ void computeHschureKernel(
 {
     const int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= size)
+    {
         return;
-
+    }
     const Vec3i index = mulBlockIds[tid];
     Scalar A[PDIM * LDIM];
     Scalar B[PDIM * LDIM];
@@ -1242,8 +1140,9 @@ __global__ void findHschureMulBlockIndicesKernel(
 {
     const int colId = blockIdx.x * blockDim.x + threadIdx.x;
     if (colId >= cols)
+    {
         return;
-
+    }
     const int i0 = HplColPtr[colId];
     const int i1 = HplColPtr[colId + 1];
     for (int i = i0; i < i1; i++)
@@ -1254,7 +1153,9 @@ __global__ void findHschureMulBlockIndicesKernel(
         {
             const int iP2 = HplRowInd[j];
             while (HscColInd[k] < iP2)
+            {
                 k++;
+            }
             const int pos = atomicAdd(nindices, 1);
             mulBlockIds[pos] = makeVec3i(i, j, k);
         }
@@ -1265,8 +1166,9 @@ __global__ void permuteNnzPerRowKernel(int size, const int* srcRowPtr, const int
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= size)
+    {
         return;
-
+    }
     nnzPerRow[P[rowId]] = srcRowPtr[rowId + 1] - srcRowPtr[rowId];
 }
 
@@ -1281,8 +1183,9 @@ __global__ void permuteColIndKernel(
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= size)
+    {
         return;
-
+    }
     const int i0 = srcRowPtr[rowId];
     const int i1 = srcRowPtr[rowId + 1];
     const int permRowId = P[rowId];
@@ -1306,14 +1209,16 @@ __global__ void schurComplementPostKernel(
 {
     const int colId = blockIdx.x * blockDim.x + threadIdx.x;
     if (colId >= cols)
+    {
         return;
-
+    }
     Scalar cl[LDIM];
     copy<LDIM>(bl.at(colId), cl);
 
     for (int i = HplColPtr[colId]; i < HplColPtr[colId + 1]; i++)
+    {
         MatTMulVec<3, 6, DEACCUM>(Hpl.at(i), xp.at(HplRowInd[i]), cl, 1);
-
+    }
     MatMulVec<3, 3>(invHll.at(colId), cl, xl.at(colId));
 }
 
@@ -1321,8 +1226,9 @@ __global__ void updatePosesKernel(int size, Px1BlockPtr xp, Se3D* est)
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= size)
+    {
         return;
-
+    }
     QuatD expq;
     Vec3d expt;
     updateExp(xp.at(i), expq, expt);
@@ -1333,8 +1239,9 @@ __global__ void updateLandmarksKernel(int size, Lx1BlockPtr xl, Vec3d* Xws)
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= size)
+    {
         return;
-
+    }
     const Scalar* dXw = xl.at(i);
     Vec3d& Xw = Xws[i];
     Xw[0] += dXw[0];
@@ -1350,7 +1257,9 @@ computeScaleKernel(const Scalar* x, const Scalar* b, Scalar* scale, Scalar lambd
 
     Scalar sum = 0;
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += gridDim.x * blockDim.x)
+    {
         sum += x[i] * (lambda * x[i] + b[i]);
+    }
 
     cache[sharedIdx] = sum;
     __syncthreads();
@@ -1358,20 +1267,25 @@ computeScaleKernel(const Scalar* x, const Scalar* b, Scalar* scale, Scalar lambd
     for (int stride = BLOCK_COMPUTE_SCALE / 2; stride > 0; stride >>= 1)
     {
         if (sharedIdx < stride)
+        {
             cache[sharedIdx] += cache[sharedIdx + stride];
+        }
         __syncthreads();
     }
 
     if (sharedIdx == 0)
+    {
         atomicAdd(scale, cache[0]);
+    }
 }
 
 __global__ void convertBSRToCSRKernel(int size, const Scalar* src, Scalar* dst, const int* map)
 {
     const int dstk = blockIdx.x * blockDim.x + threadIdx.x;
     if (dstk >= size)
+    {
         return;
-
+    }
     dst[dstk] = src[map[dstk]];
 }
 
@@ -1379,8 +1293,9 @@ __global__ void nnzPerColKernel(const Vec3i* blockpos, int nblocks, int* nnzPerC
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= nblocks)
+    {
         return;
-
+    }
     const int colId = blockpos[i][1];
     atomicAdd(&nnzPerCol[colId], 1);
 }
@@ -1389,8 +1304,9 @@ __global__ void setRowIndKernel(const Vec3i* blockpos, int nblocks, int* rowInd,
 {
     const int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= nblocks)
+    {
         return;
-
+    }
     const int rowId = blockpos[k][0];
     const int edgeId = blockpos[k][2];
     rowInd[k] = rowId;
@@ -1416,7 +1332,11 @@ void exclusiveScan(const int* src, int* dst, int size)
 }
 
 void buildHplStructure(
-    GpuVec3i& blockpos, GpuHplBlockMat& Hpl, GpuVec1i& indexPL, GpuVec1i& nnzPerCol)
+    GpuVec3i& blockpos,
+    GpuHplBlockMat& Hpl,
+    GpuVec1i& indexPL,
+    GpuVec1i& nnzPerCol,
+    cudaStream_t stream)
 {
     const int nblocks = Hpl.nnz();
     const int block = 1024;
@@ -1428,7 +1348,7 @@ void buildHplStructure(
     thrust::sort(ptrBlockPos, ptrBlockPos + nblocks, LessColId());
 
     CUDA_CHECK(cudaMemset(nnzPerCol, 0, sizeof(int) * (Hpl.cols() + 1)));
-    nnzPerColKernel<<<grid, block>>>(blockpos, nblocks, nnzPerCol);
+    nnzPerColKernel<<<grid, block, 0, stream>>>(blockpos, nblocks, nnzPerCol);
     exclusiveScan(nnzPerCol, colPtr, Hpl.cols() + 1);
     setRowIndKernel<<<grid, block>>>(blockpos, nblocks, rowInd, indexPL);
 }
@@ -1468,7 +1388,8 @@ Scalar computeActiveErrors_(
     GpuVecxd<M>& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
-    Scalar* chi)
+    Scalar* chi,
+    cudaStream_t stream)
 {
 }
 
@@ -1483,11 +1404,13 @@ Scalar computeActiveErrors_<2>(
     GpuVecxd<2>& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
-    Scalar* chi)
+    Scalar* chi,
+    cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
     const int grid = 16;
+    const int sharedBytes = block * sizeof(Scalar);
 
     if (nedges <= 0)
     {
@@ -1499,7 +1422,7 @@ Scalar computeActiveErrors_<2>(
     {
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
-    computeActiveErrorsKernel<2><<<grid, block>>>(
+    computeActiveErrorsKernel<2><<<grid, block, sharedBytes, stream>>>(
         nedges,
         poseEstimate,
         landmarkEstimate,
@@ -1530,11 +1453,13 @@ Scalar computeActiveErrors_<3>(
     GpuVecxd<3>& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
-    Scalar* chi)
+    Scalar* chi,
+    cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
     const int grid = 16;
+    const int sharedBytes = block * sizeof(Scalar);
 
     if (nedges <= 0)
     {
@@ -1546,7 +1471,7 @@ Scalar computeActiveErrors_<3>(
     {
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
-    computeActiveErrorsKernel<3><<<grid, block>>>(
+    computeActiveErrorsKernel<3><<<grid, block, sharedBytes, stream>>>(
         nedges,
         poseEstimate,
         landmarkEstimate,
@@ -1579,7 +1504,8 @@ void constructQuadraticForm_(
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
-    GpuHplBlockMat& Hpl)
+    GpuHplBlockMat& Hpl,
+    cudaStream_t stream)
 {
 }
 
@@ -1596,7 +1522,8 @@ void constructQuadraticForm_<2>(
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
-    GpuHplBlockMat& Hpl)
+    GpuHplBlockMat& Hpl,
+    cudaStream_t stream)
 {
     const int nedges = errors.ssize();
     const int block = 512;
@@ -1607,7 +1534,7 @@ void constructQuadraticForm_<2>(
         return;
     }
 
-    constructQuadraticFormKernel<2><<<grid, block>>>(
+    constructQuadraticFormKernel<2><<<grid, block, 0, stream>>>(
         nedges, Xcs, se3, errors, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -1625,7 +1552,8 @@ void constructQuadraticForm_<3>(
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
-    GpuHplBlockMat& Hpl)
+    GpuHplBlockMat& Hpl,
+    cudaStream_t stream)
 {
     const int nedges = errors.ssize();
     const int block = 512;
@@ -1636,7 +1564,7 @@ void constructQuadraticForm_<3>(
         return;
     }
 
-    constructQuadraticFormKernel<3><<<grid, block>>>(
+    constructQuadraticFormKernel<3><<<grid, block, 0, stream>>>(
         nedges, Xcs, se3, errors, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -1646,7 +1574,7 @@ Scalar maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* maxD)
 {
     constexpr int block = BLOCK_MAX_DIAGONAL;
     constexpr int grid = 4;
-    const int size = D.rows() * DIM;
+    const int size = D.size() * DIM;
 
     maxDiagonalKernel<DIM><<<grid, block>>>(size, D.values(), maxD);
     CUDA_CHECK(cudaGetLastError());
@@ -1656,8 +1584,9 @@ Scalar maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* maxD)
 
     Scalar maxv = 0;
     for (int i = 0; i < grid; i++)
+    {
         maxv = std::max(maxv, tmpMax[i]);
-
+    }
     return maxv;
 }
 
@@ -1669,9 +1598,9 @@ template <typename T, int DIM>
 void addLambda_(
     DeviceBlockVector<T, DIM, DIM>& D, Scalar lambda, DeviceBlockVector<T, DIM, 1>& backup)
 {
-    const int size = D.rows() * DIM;
+    const int size = D.size() * DIM;
     const int block = 1024;
-    const int grid = divUp(size, block);
+    const int grid = 4;
     addLambdaKernel<DIM><<<grid, block>>>(size, D.values(), lambda, backup.values());
     CUDA_CHECK(cudaGetLastError());
 }
@@ -1689,9 +1618,9 @@ void addLambda(GpuLxLBlockVec& Hll, Scalar lambda, GpuLx1BlockVec& backup)
 template <typename T, int DIM>
 void restoreDiagonal_(DeviceBlockVector<T, DIM, DIM>& D, const DeviceBlockVector<T, DIM, 1>& backup)
 {
-    const int size = D.rows() * DIM;
+    const int size = D.size() * DIM;
     const int block = 1024;
-    const int grid = divUp(size, block);
+    const int grid = 4;
     restoreDiagonalKernel<DIM><<<grid, block>>>(size, D.values(), backup.values());
     CUDA_CHECK(cudaGetLastError());
 }
@@ -1715,7 +1644,7 @@ void computeBschure(
     GpuLxLBlockVec& invHll,
     GpuPxLBlockVec& Hpl_invHll)
 {
-    const int cols = Hll.cols();
+    const int cols = Hll.size();
     const int block = 256;
     const int grid = divUp(cols, block);
 
@@ -1845,20 +1774,35 @@ computeJacobians_Plane(const Se3D& est, const PointToPlaneMatch<double>& measure
     Jdot(0, 1) = measurement.normal[1];
     Jdot(0, 2) = measurement.normal[2];
 
-    Matx<Scalar, 3, 3> I = identityMat3x3();
-    Matx<Scalar, 3, 6> Jse3exp;
-    Jse3exp.zero();
-    Jse3exp.setBlock<3, 3, 3, 6>(0, 3, I);
-
     // LEFT side is negative skew symmetric of Y
     // where Y = SE(3) * point = Pw
     Matx<Scalar, 3, 3> Yx;
     skew1(Pw[0], Pw[1], Pw[2], Yx);
-    Jse3exp.setBlock<3, 3, 3, 6>(0, 0, Yx);
+
+    Matx<Scalar, 3, 6> Jse3exp1;
+    /* clang-format off */ 
+    Jse3exp1(0, 0) = Yx(0, 0); 
+    Jse3exp1(1, 0) = Yx(1, 0);  
+    Jse3exp1(2, 0) = Yx(2, 0); 
+    Jse3exp1(0, 1) = 1.0; 
+    Jse3exp1(1, 1) = 0.0; 
+    Jse3exp1(2, 1) = 0.0; 
+    Jse3exp1(0, 2) = Yx(0, 1);
+    Jse3exp1(1, 2) = Yx(1, 1);
+    Jse3exp1(2, 2) = Yx(2, 1);
+    Jse3exp1(0, 3) = 0.0; 
+    Jse3exp1(1, 3) = 1.0; 
+    Jse3exp1(2, 3) = 0.0; 
+    Jse3exp1(0, 4) = Yx(0, 2); 
+    Jse3exp1(1, 4) = Yx(1, 2);
+    Jse3exp1(2, 4) = Yx(2, 2);
+    Jse3exp1(0, 5) = 0.0;
+    Jse3exp1(1, 5) = 0.0;
+    Jse3exp1(2, 5) = 1.0;
+    /* clang-format on */
 
     // Multiply them all together and we're done (maybe!)
-    Matx<Scalar, 1, 6> J = Jdot * Jse3exp;
-    // MatMulMat<6, 3, 1>(Jdot.data, Jse3exp.data, J.data);
+    Matx<Scalar, 1, 6> J = Vec1x3MulMat3x6(Jse3exp1.data, Jdot.data);
     return J;
 }
 
@@ -1884,26 +1828,43 @@ computeJacobians_Line(const Se3D& est, const PointToLineMatch<double>& measureme
         Jnorm(0, 2) = crossAB[2] * invNormCrossAB;
     }
 
-    Matx<Scalar, 3, 3> I = identityMat3x3();
-    Matx<Scalar, 3, 6> Jse3exp;
-    Jse3exp.zero();
-    Jse3exp.setBlock<3, 3, 3, 6>(0, 3, I);
-
     // LEFT side is negative skew symmetric of Y
     // where Y = SE(3) * point = Pw
     Matx<Scalar, 3, 3> Yx;
     skew1(Pw[0], Pw[1], Pw[2], Yx);
-    Jse3exp.setBlock<3, 3, 3, 6>(0, 0, Yx);
+
+    Matx<Scalar, 3, 6> Jse3exp1;
+    /* clang-format off */ 
+    Jse3exp1(0, 0) = Yx(0, 0); 
+    Jse3exp1(1, 0) = Yx(1, 0);  
+    Jse3exp1(2, 0) = Yx(2, 0); 
+    Jse3exp1(0, 1) = 1.0; 
+    Jse3exp1(1, 1) = 0.0; 
+    Jse3exp1(2, 1) = 0.0; 
+    Jse3exp1(0, 2) = Yx(0, 1);
+    Jse3exp1(1, 2) = Yx(1, 1);
+    Jse3exp1(2, 2) = Yx(2, 1);
+    Jse3exp1(0, 3) = 0.0; 
+    Jse3exp1(1, 3) = 1.0; 
+    Jse3exp1(2, 3) = 0.0; 
+    Jse3exp1(0, 4) = Yx(0, 2); 
+    Jse3exp1(1, 4) = Yx(1, 2);
+    Jse3exp1(2, 4) = Yx(2, 2);
+    Jse3exp1(0, 5) = 0.0;
+    Jse3exp1(1, 5) = 0.0;
+    Jse3exp1(2, 5) = 1.0;
+    /* clang-format on */
 
     Matx<Scalar, 3, 3> Ax, Bx;
     skew1(A[0], A[1], A[2], Ax);
     skew1(B[0], B[1], B[2], Bx);
 
-    Matx<Scalar, 3, 3> ABdiff = Ax - Bx;
-    Matx<Scalar, 3, 6> Jcross = ABdiff * Jse3exp;
+    Matx<Scalar, 3, 3> ABdiff; // = Ax - Bx;
+    Matx<Scalar, 3, 6> Jcross;
+    MatMulMat<3, 3, 6>(ABdiff.data, Jse3exp1.data, Jcross.data);
 
     // assemble everything
-    Matx<Scalar, 1, 6> J = Jnorm * Jcross;
+    Matx<Scalar, 1, 6> J = Vec1x3MulMat3x6(Jcross.data, Jnorm.data);
     return J;
     //_jacobianOplusXi = Jnorm * Jcross / measurement.start() - measurement.end();
 }
@@ -1931,6 +1892,11 @@ __global__ void computeActiveErrorsKernel_DepthBa(
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
+#ifdef USE_PER_EDGE_INFORMATION
+        Scalar omega = omegas[iE];
+#else
+        Scalar omega = omegas[0];
+#endif
         const Vec2i index = edge2PL[iE];
         const int iP = index[0];
         const int iL = index[1];
@@ -1956,7 +1922,7 @@ __global__ void computeActiveErrorsKernel_DepthBa(
         errors[iE] = error;
         Xcs[iE] = Xc;
 
-        const Scalar chi2 = omegas[iE] * squaredNorm(error);
+        const Scalar chi2 = omega * squaredNorm(error);
         sumchi += chi2;
         if (errorThreshold > 0.0 && chi2 > errorThreshold)
         {
@@ -1970,7 +1936,9 @@ __global__ void computeActiveErrorsKernel_DepthBa(
     for (int stride = BLOCK_ACTIVE_ERRORS / 2; stride > 0; stride >>= 1)
     {
         if (sharedIdx < stride)
+        {
             cache[sharedIdx] += cache[sharedIdx + stride];
+        }
         __syncthreads();
     }
 
@@ -2025,12 +1993,14 @@ __global__ void computeActiveErrorsKernel_Plane(
     Vec3d* Xcs,
     Scalar* chi)
 {
-    const int sharedIdx = threadIdx.x;
-    __shared__ Scalar cache[BLOCK_ACTIVE_ERRORS];
-
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
+#ifdef USE_PER_EDGE_INFORMATION
+        Scalar omega = omegas[iE];
+#else
+        Scalar omega = omegas[0];
+#endif
         const int iP = edge2PL[iE][0];
         const Se3D est = poseEstimate[iP];
         const PointToPlaneMatch<double> measurement = measurements[iE];
@@ -2041,22 +2011,20 @@ __global__ void computeActiveErrorsKernel_Plane(
         // compute residual
         Scalar error = signedDistance(Pw, measurement.normal, measurement.originDistance);
         errors[iE] = error;
-        sumchi += (errors[iE] * errors[iE]) * omegas[iE];
+        sumchi += (errors[iE] * errors[iE]) * omega;
     }
 
-    cache[sharedIdx] = sumchi;
-    __syncthreads();
+    extern __shared__ Scalar cache[];
+    auto group = cg::this_thread_block();
+    auto tileIdx = group.thread_rank() / 32;
+    Scalar* tileCache = &cache[32 * tileIdx];
 
-    for (int stride = BLOCK_ACTIVE_ERRORS / 2; stride > 0; stride >>= 1)
-    {
-        if (sharedIdx < stride)
-            cache[sharedIdx] += cache[sharedIdx + stride];
-        __syncthreads();
-    }
+    auto tile32 = cg::tiled_partition(group, 32);
+    Scalar tile_chi = reduce_sum(tile32, tileCache, sumchi);
 
-    if (sharedIdx == 0)
+    if (tile32.thread_rank() == 0)
     {
-        atomicAdd(chi, cache[0]);
+        atomicAdd(chi, tile_chi);
     }
 }
 
@@ -2076,28 +2044,51 @@ __global__ void constructQuadraticFormKernel_Plane(
     Lx1BlockPtr bl,
     PxLBlockPtr Hpl)
 {
-    const int iE = blockIdx.x * blockDim.x + threadIdx.x;
-    if (iE >= nedges)
-        return;
-
-    const Scalar omega = omegas[iE];
-    const int iP = edge2PL[iE][0];
-    const int flag = flags[iE];
-    const PointToPlaneMatch<double> measurement = measurements[iE];
-
-    const Se3D rt = se3[iP];
-    Vec1d error;
-    error[0] = errors[iE];
-
-    // compute Jacobians
-    Matx<Scalar, MDIM, PDIM> JP = computeJacobians_Plane(rt, measurement);
-
-    if (!(flag & EDGE_FLAG_FIXED_P))
+    Matx<Scalar, 6, 6> accumHpp;
+    Matx<Scalar, 1, 6> accumBp;
+    for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
-        // Hpp += JPT*Ω*JP
-        MatTMulMat<PDIM, MDIM, PDIM, ACCUM_ATOMIC>(JP.data, JP.data, Hpp.at(iP), omega);
-        // bp -= JPT*Ω*r
-        MatTMulVec<PDIM, MDIM, DEACCUM_ATOMIC>(JP.data, error.data, bp.at(iP), omega);
+    #ifdef USE_PER_EDGE_INFORMATION
+        const Scalar omega = omegas[iE];
+    #else
+        const Scalar omega = omegas[0];
+    #endif
+        const int iP = edge2PL[iE][0];
+        const int flag = flags[iE];
+        const PointToPlaneMatch<double> measurement = measurements[iE];
+
+        const Se3D rt = se3[iP];
+        Vec1d error;
+        error[0] = errors[iE];
+
+        // compute Jacobians
+        Matx<Scalar, MDIM, PDIM> JP = computeJacobians_Plane(rt, measurement);
+
+        if (!(flag & EDGE_FLAG_FIXED_P))
+        {
+            // Hpp += JPT*Ω*JP
+            MatTMulMat<PDIM, MDIM, PDIM, ACCUM_ATOMIC>(JP.data, JP.data, accumHpp.data, omega);
+            // bp -= JPT*Ω*r
+            MatTMulVec<PDIM, MDIM, DEACCUM_ATOMIC>(JP.data, error.data, accumBp.data, omega);
+        }
+    }
+
+    extern __shared__ Matx<Scalar, 6, 6> cacheHpp[];
+    extern __shared__ Matx<Scalar, 1, 6> cacheBp[];
+
+    auto group = cg::this_thread_block();
+    auto tileIdx = group.thread_rank() / 32;
+
+    Matx<Scalar, 6, 6>* tileCacheHpp = &cacheHpp[32 * tileIdx];
+    Matx<Scalar, 1, 6>* tileCacheBp = &cacheBp[32 * tileIdx];
+
+    auto tile32 = cg::tiled_partition(group, 32);
+    Matx<Scalar, 6, 6> tileHpp = reduceHppSum(tile32, tileCacheHpp, accumHpp);
+    Matx<Scalar, 1, 6> tileBp = reduceBpSum(tile32, tileCacheBp, accumBp);
+
+    if (tile32.thread_rank() == 0)
+    {
+        atomicAdd(chi, tile_chi);
     }
 }
 
@@ -2119,9 +2110,14 @@ __global__ void constructQuadraticFormKernel_Line(
 {
     const int iE = blockIdx.x * blockDim.x + threadIdx.x;
     if (iE >= nedges)
+    {
         return;
-
+    }
+#ifdef USE_PER_EDGE_INFORMATION
     const Scalar omega = omegas[iE];
+#else
+    const Scalar omega = omegas[0];
+#endif
     const int iP = edge2PL[iE][0];
     const int flag = flags[iE];
     const PointToLineMatch<double> measurement = measurements[iE];
@@ -2157,7 +2153,8 @@ Scalar computeActiveErrors_DepthBa(
     GpuVec3d& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
-    Scalar* chi)
+    Scalar* chi,
+    cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
@@ -2173,7 +2170,7 @@ Scalar computeActiveErrors_DepthBa(
     {
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
-    computeActiveErrorsKernel_DepthBa<<<grid, block>>>(
+    computeActiveErrorsKernel_DepthBa<<<grid, block, 0, stream>>>(
         nedges,
         poseEstimate,
         landmarkEstimate,
@@ -2210,7 +2207,9 @@ Scalar computeActiveErrors_Line(
     const int grid = 16;
 
     if (nedges <= 0)
+    {
         return 0;
+    }
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     computeActiveErrorsKernel_Line<<<grid, block>>>(
@@ -2230,17 +2229,21 @@ Scalar computeActiveErrors_Plane(
     const GpuVec2i& edge2PL,
     GpuVec1d& errors,
     GpuVec3d& Xcs,
-    Scalar* chi)
+    Scalar* chi,
+    cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
     const int grid = divUp(nedges, block);
+    const int sharedBytes = block * sizeof(Scalar);
 
     if (nedges <= 0)
+    {
         return 0;
+    }
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-    computeActiveErrorsKernel_Plane<<<grid, block>>>(
+    computeActiveErrorsKernel_Plane<<<grid, block, sharedBytes, stream>>>(
         nedges, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
     CUDA_CHECK(cudaGetLastError());
 
@@ -2258,14 +2261,15 @@ void constructQuadraticForm_Plane(
     const GpuVec2i& edge2PL,
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
-    GpuHppBlockMat& Hpp,
+    GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
-    GpuHllBlockMat& Hll,
+    GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
-    GpuHplBlockMat& Hpl)
+    GpuHplBlockMat& Hpl,
+    cudaStream_t stream)
 {
     const int nedges = errors.ssize();
-    const int block = 512;
+    const int block = BLOCK_QUADRATIC_FORM;
     const int grid = divUp(nedges, block);
 
     if (nedges <= 0)
@@ -2273,7 +2277,7 @@ void constructQuadraticForm_Plane(
         return;
     }
 
-    constructQuadraticFormKernel_Plane<1><<<grid, block>>>(
+    constructQuadraticFormKernel_Plane<1><<<grid, block, 0, stream>>>(
         nedges, se3, errors, measurements, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -2286,14 +2290,14 @@ void constructQuadraticForm_Line(
     const GpuVec2i& edge2PL,
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
-    GpuHppBlockMat& Hpp,
+    GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
-    GpuHllBlockMat& Hll,
+    GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl)
 {
     const int nedges = errors.ssize();
-    const int block = 512;
+    const int block = BLOCK_QUADRATIC_FORM;
     const int grid = divUp(nedges, block);
 
     if (nedges <= 0)

@@ -5,7 +5,7 @@ import os
 
 
 class CugoConan(ConanFile):
-    name = "cuba"
+    name = "cugo"
     license = "Apache License 2.0"
     author = "fixstars"
     url = "https://github.com/fixstars/cuda-bundle-adjustment"

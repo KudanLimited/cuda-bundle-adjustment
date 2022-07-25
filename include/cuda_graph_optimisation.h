@@ -249,6 +249,11 @@ private:
 
     BatchStatistics stats_;
     TimeProfile timeProfile_;
+
+    // cuda streams
+    std::array<cudaStream_t, 3> streams_;
+    int deviceId_;
+    cudaDeviceProp deviceProp_;
 };
 
 } // namespace cugo

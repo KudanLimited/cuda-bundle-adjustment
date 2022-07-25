@@ -16,7 +16,7 @@
 
 namespace cugo
 {
-class CUGO_API LineEdgeSet 
+class CUGO_API LineEdgeSet
     : public EdgeSet<1, PointToLineMatch<double>, PointToLineMatch<double>, PoseVertex>
 {
 public:
@@ -25,11 +25,11 @@ public:
     LineEdgeSet() {}
     ~LineEdgeSet() {}
 
-    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi) override
+    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream) override
     {
         GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getDeviceEstimates();
         return gpu::computeActiveErrors_Line(
-            estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi);
+            estimates, d_measurements, d_omega, d_edge2PL, d_errors, d_Xcs, chi);
     }
 
     void constructQuadraticForm(
@@ -38,7 +38,8 @@ public:
         GpuPx1BlockVec& bp,
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
-        GpuHplBlockMat& Hpl) override
+        GpuHplBlockMat& Hpl,
+        cudaStream_t stream) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d se3_data = poseVertexSet->getDeviceEstimates();
@@ -46,7 +47,7 @@ public:
             se3_data,
             d_errors,
             d_measurements,
-            d_omegas,
+            d_omega,
             d_edge2PL,
             d_edge2Hpl,
             d_edgeFlags,
@@ -70,11 +71,11 @@ public:
     PlaneEdgeSet() {}
     ~PlaneEdgeSet() {}
 
-    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi) override
+    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream) override
     {
         GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getDeviceEstimates();
         return gpu::computeActiveErrors_Plane(
-            estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi);
+            estimates, d_measurements, d_omega, d_edge2PL, d_errors, d_Xcs, chi, stream);
     }
 
     void constructQuadraticForm(
@@ -83,7 +84,8 @@ public:
         GpuPx1BlockVec& bp,
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
-        GpuHplBlockMat& Hpl) override
+        GpuHplBlockMat& Hpl,
+        cudaStream_t stream) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d se3_data = poseVertexSet->getDeviceEstimates();
@@ -91,7 +93,7 @@ public:
             se3_data,
             d_errors,
             d_measurements,
-            d_omegas,
+            d_omega,
             d_edge2PL,
             d_edge2Hpl,
             d_edgeFlags,
@@ -99,7 +101,8 @@ public:
             bp,
             Hll,
             bl,
-            Hpl);
+            Hpl,
+            stream);
     }
 
 private:
@@ -122,28 +125,6 @@ public:
 
     void* getMeasurement() override { return static_cast<void*>(&measurement); }
 };
-
-/*
-/
-class PriorPoseEdge : public EdgeSet<6, maths::Se3D, Se3D, PoseVertex>
-{
-public:
-
-    PriorPoseEdge() = default;
-
-    void computeError(const VertexSetVec& vertexSets, Scalar* chi) override
-    {
-        GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getEstimates();
-        return gpu::computeActiveErrors_PriorPose(poseEstimates, d_measurements, d_omegas,
-d_edge2PL, d_errors, d_Xcs, chi);
-    }
-
-
-
-private:
-
-};*/
-
 
 } // namespace cugo
 
