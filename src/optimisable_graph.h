@@ -260,7 +260,7 @@ public:
      */
     virtual int dim() const = 0;
 
-#ifdef USE_PER_EDGE_INFORMATION
+    //#ifdef USE_PER_EDGE_INFORMATION
     using Information = double;
     /** @brief Sets the information for this edge. This should only be used
      * if it's known that edges will have differing information values
@@ -272,7 +272,7 @@ public:
     /** @brief Returns the global information for this edge set.
      */
     virtual Information getInformation() = 0;
-#endif
+    //#endif
 };
 
 /** @brief Edge with N-dimensional measurement.
@@ -333,18 +333,18 @@ public:
 
     void setMeasurement(const Measurement& m) { measurement = m; }
 
-#ifdef USE_PER_EDGE_INFORMATION
+    //#ifdef USE_PER_EDGE_INFORMATION
     void setInformation(const Information info) override { info_ = info; }
 
     Information getInformation() override { return info_; }
-#endif
+    //#endif
 
 protected:
     Measurement measurement;
 
-#ifdef USE_PER_EDGE_INFORMATION
+    //#ifdef USE_PER_EDGE_INFORMATION
     Information info_; //!< information matrix (represented by a scalar for performance).
-#endif
+    //#endif
 
     BaseVertex* vertices[VertexSize];
 };
