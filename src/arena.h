@@ -5,8 +5,8 @@
 #include <cuda_runtime.h>
 
 #include <cassert>
-#include <memory>
 #include <cstring>
+#include <memory>
 
 namespace cugo
 {
@@ -77,7 +77,12 @@ public:
     std::unique_ptr<ArenaPtr<T>> allocate(size_t size) noexcept
     {
         size_t bytesInsert = size * sizeof(T);
-        assert(bytesInsert < capacity_);
+        // destroy the current memory chunk, and allocate a larger one
+        // if we have exceeded the capacity
+        if (bytesInsert > capacity_)
+        {
+            allocate(bytesInsert);
+        }
         void* arena_ptr = static_cast<char*>(arena_) + currSize_;
 
         // check pointer aligned to 64bit - otherwise we will get errors in cuda
