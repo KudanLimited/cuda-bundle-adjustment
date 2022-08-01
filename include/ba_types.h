@@ -73,7 +73,6 @@ public:
     {
         // NOTE: This assumes the pose vertex is of the SE3 form - also would break if more than one
         // pose vertexset.
-        assert(is_initialised == true);
         for (auto* vertexSet : vertexSets)
         {
             if (!vertexSet->isMarginilised())
@@ -145,7 +144,6 @@ public:
     {
         // NOTE: This assumes the pose vertex is of the SE3 form - also would break if more than one
         // pose vertexset.
-        assert(is_initialised == true);
         for (auto* vertexSet : vertexSets)
         {
             if (!vertexSet->isMarginilised())
@@ -217,7 +215,6 @@ public:
     {
         // NOTE: This assumes the pose vertex is of the SE3 form - also would break if more than one
         // pose vertexset.
-        assert(is_initialised == true);
         for (auto* vertexSet : vertexSets)
         {
             if (!vertexSet->isMarginilised())
@@ -251,7 +248,7 @@ class CUGO_API MonoEdge : public Edge<2, maths::Vec2d, PoseVertex, LandmarkVerte
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-    void* getMeasurement() override { return static_cast<void*>(measurement.data()); }
+    void* getMeasurement() noexcept override { return static_cast<void*>(measurement.data()); }
 };
 
 /** @brief Edge with 3-dimensional measurement (stereo observation).
@@ -261,7 +258,7 @@ class CUGO_API StereoEdge : public Edge<3, maths::Vec3d, PoseVertex, LandmarkVer
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-    void* getMeasurement() override { return static_cast<void*>(measurement.data()); }
+    void* getMeasurement() noexcept override { return static_cast<void*>(measurement.data()); }
 };
 
 /** @brief Edge with 3-dimensional measurement (depth observation).
@@ -271,7 +268,7 @@ class CUGO_API DepthEdge : public Edge<3, maths::Vec3d, PoseVertex, LandmarkVert
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-    void* getMeasurement() override { return static_cast<void*>(measurement.data()); }
+    void* getMeasurement() noexcept override { return static_cast<void*>(measurement.data()); }
 };
 
 } // namespace cugo

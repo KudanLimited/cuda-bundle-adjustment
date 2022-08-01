@@ -834,6 +834,7 @@ __device__ int reduce_sum(cg::thread_group group, Scalar* temp, Scalar val)
 template <int MDIM>
 __global__ void computeActiveErrorsKernel(
     int nedges,
+    int nomegas,
     const Se3D* se3,
     const Vec3d* Xws,
     const Vecxd<MDIM>* measurements,
@@ -850,7 +851,7 @@ __global__ void computeActiveErrorsKernel(
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
-        Scalar omega = omegas[iE];
+        Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
         const Vec2i index = edge2PL[iE];
         const int iP = index[0];
         const int iL = index[1];
@@ -903,6 +904,7 @@ __global__ void computeActiveErrorsKernel(
 template <int MDIM>
 __global__ void constructQuadraticFormKernel(
     int nedges,
+    int nomegas,
     const Vec3d* Xcs,
     const Se3D* se3,
     const Vecxd<MDIM>* errors,
@@ -924,7 +926,7 @@ __global__ void constructQuadraticFormKernel(
         return;
     }
 
-    Scalar omega = omegas[iE];
+    Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
     const int iP = edge2PL[iE][0];
     const int iL = edge2PL[iE][1];
     const int iPL = edge2Hpl[iE];
@@ -1360,6 +1362,7 @@ Scalar computeActiveErrors_<2>(
     cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
+    const int nomegas = omegas.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
     const int grid = 16;
     const int sharedBytes = block * sizeof(Scalar);
@@ -1376,6 +1379,7 @@ Scalar computeActiveErrors_<2>(
     }
     computeActiveErrorsKernel<2><<<grid, block, sharedBytes, stream>>>(
         nedges,
+        nomegas,
         poseEstimate,
         landmarkEstimate,
         measurements,
@@ -1409,6 +1413,7 @@ Scalar computeActiveErrors_<3>(
     cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
+    const int nomegas = omegas.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
     const int grid = 16;
     const int sharedBytes = block * sizeof(Scalar);
@@ -1425,6 +1430,7 @@ Scalar computeActiveErrors_<3>(
     }
     computeActiveErrorsKernel<3><<<grid, block, sharedBytes, stream>>>(
         nedges,
+        nomegas,
         poseEstimate,
         landmarkEstimate,
         measurements,
@@ -1478,6 +1484,7 @@ void constructQuadraticForm_<2>(
     cudaStream_t stream)
 {
     const int nedges = errors.ssize();
+    const int nomegas = omegas.ssize();
     const int block = 512;
     const int grid = divUp(nedges, block);
 
@@ -1487,7 +1494,7 @@ void constructQuadraticForm_<2>(
     }
 
     constructQuadraticFormKernel<2><<<grid, block, 0, stream>>>(
-        nedges, Xcs, se3, errors, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
+        nedges, nomegas, Xcs, se3, errors, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
     CUDA_CHECK(cudaGetLastError());
 }
 
@@ -1508,6 +1515,7 @@ void constructQuadraticForm_<3>(
     cudaStream_t stream)
 {
     const int nedges = errors.ssize();
+    const int nomegas = omegas.ssize();
     const int block = 512;
     const int grid = divUp(nedges, block);
 
@@ -1517,7 +1525,7 @@ void constructQuadraticForm_<3>(
     }
 
     constructQuadraticFormKernel<3><<<grid, block, 0, stream>>>(
-        nedges, Xcs, se3, errors, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
+        nedges, nomegas, Xcs, se3, errors, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
     CUDA_CHECK(cudaGetLastError());
 }
 
@@ -1827,6 +1835,7 @@ computeJacobians_Line(const Se3D& est, const PointToLineMatch<double>& measureme
 
 __global__ void computeActiveErrorsKernel_DepthBa(
     int nedges,
+    int nomegas,
     const Se3D* se3,
     const Vec3d* Xws,
     const Vec3d* measurements,
@@ -1844,7 +1853,7 @@ __global__ void computeActiveErrorsKernel_DepthBa(
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
-        const Scalar omega = omegas[iE];
+        Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
         const Vec2i index = edge2PL[iE];
         const int iP = index[0];
         const int iL = index[1];
@@ -1902,6 +1911,7 @@ __global__ void computeActiveErrorsKernel_DepthBa(
 
 __global__ void computeActiveErrorsKernel_Line(
     int nedges,
+    int nomegas,
     const Se3D* poseEstimate,
     const PointToLineMatch<double>* measurements,
     const Scalar* omegas,
@@ -1933,6 +1943,7 @@ __global__ void computeActiveErrorsKernel_Line(
 
 __global__ void computeActiveErrorsKernel_Plane(
     int nedges,
+    int nomegas,
     const Se3D* poseEstimate,
     const PointToPlaneMatch<double>* measurements,
     const Scalar* omegas,
@@ -1944,7 +1955,7 @@ __global__ void computeActiveErrorsKernel_Plane(
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
-        const Scalar omega = omegas[iE];
+        Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
         const int iP = edge2PL[iE][0];
         const Se3D est = poseEstimate[iP];
         const PointToPlaneMatch<double> measurement = measurements[iE];
@@ -1975,6 +1986,7 @@ __global__ void computeActiveErrorsKernel_Plane(
 template <int MDIM>
 __global__ void constructQuadraticFormKernel_Plane(
     int nedges,
+    int nomegas,
     const Se3D* se3,
     const Scalar* errors,
     const PointToPlaneMatch<double>* measurements,
@@ -1993,7 +2005,7 @@ __global__ void constructQuadraticFormKernel_Plane(
     {
         return;
     }
-    const Scalar omega = omegas[iE];
+    Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
     const int iP = edge2PL[iE][0];
     const int flag = flags[iE];
     const PointToPlaneMatch<double> measurement = measurements[iE];
@@ -2017,6 +2029,7 @@ __global__ void constructQuadraticFormKernel_Plane(
 template <int MDIM>
 __global__ void constructQuadraticFormKernel_Line(
     int nedges,
+    int nomegas,
     const Se3D* se3,
     const Scalar* errors,
     const PointToLineMatch<double>* measurements,
@@ -2035,7 +2048,7 @@ __global__ void constructQuadraticFormKernel_Line(
     {
         return;
     }
-    const Scalar omega = omegas[iE];
+    Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
     const int iP = edge2PL[iE][0];
     const int flag = flags[iE];
     const PointToLineMatch<double> measurement = measurements[iE];
@@ -2075,6 +2088,7 @@ Scalar computeActiveErrors_DepthBa(
     cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
+    const int nomegas = omegas.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
     const int grid = 16;
 
@@ -2090,6 +2104,7 @@ Scalar computeActiveErrors_DepthBa(
     }
     computeActiveErrorsKernel_DepthBa<<<grid, block, 0, stream>>>(
         nedges,
+        nomegas,
         poseEstimate,
         landmarkEstimate,
         measurements,
@@ -2121,6 +2136,7 @@ Scalar computeActiveErrors_Line(
     Scalar* chi)
 {
     const int nedges = measurements.ssize();
+    const int nomegas = omegas.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
     const int grid = 16;
 
@@ -2131,7 +2147,7 @@ Scalar computeActiveErrors_Line(
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     computeActiveErrorsKernel_Line<<<grid, block>>>(
-        nedges, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
+        nedges, nomegas, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
     CUDA_CHECK(cudaGetLastError());
 
     Scalar h_chi = 0;
@@ -2151,6 +2167,7 @@ Scalar computeActiveErrors_Plane(
     cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
+    const int nomegas = omegas.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
     const int grid = divUp(nedges, block);
     const int sharedBytes = block * sizeof(Scalar);
@@ -2162,7 +2179,7 @@ Scalar computeActiveErrors_Plane(
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     computeActiveErrorsKernel_Plane<<<grid, block, sharedBytes, stream>>>(
-        nedges, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
+        nedges, nomegas, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
     CUDA_CHECK(cudaGetLastError());
 
     Scalar h_chi = 0;
@@ -2187,6 +2204,7 @@ void constructQuadraticForm_Plane(
     cudaStream_t stream)
 {
     const int nedges = errors.ssize();
+    const int nomegas = omegas.ssize();
     const int block = BLOCK_QUADRATIC_FORM;
     const int grid = divUp(nedges, block);
 
@@ -2196,7 +2214,20 @@ void constructQuadraticForm_Plane(
     }
 
     constructQuadraticFormKernel_Plane<1><<<grid, block, 0, stream>>>(
-        nedges, se3, errors, measurements, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
+        nedges,
+        nomegas,
+        se3,
+        errors,
+        measurements,
+        omegas,
+        edge2PL,
+        edge2Hpl,
+        flags,
+        Hpp,
+        bp,
+        Hll,
+        bl,
+        Hpl);
     CUDA_CHECK(cudaGetLastError());
 }
 
@@ -2215,6 +2246,7 @@ void constructQuadraticForm_Line(
     GpuHplBlockMat& Hpl)
 {
     const int nedges = errors.ssize();
+    const int nomegas = omegas.ssize();
     const int block = BLOCK_QUADRATIC_FORM;
     const int grid = divUp(nedges, block);
 
@@ -2224,7 +2256,20 @@ void constructQuadraticForm_Line(
     }
 
     constructQuadraticFormKernel_Line<1><<<grid, block>>>(
-        nedges, se3, errors, measurements, omegas, edge2PL, edge2Hpl, flags, Hpp, bp, Hll, bl, Hpl);
+        nedges,
+        nomegas,
+        se3,
+        errors,
+        measurements,
+        omegas,
+        edge2PL,
+        edge2Hpl,
+        flags,
+        Hpp,
+        bp,
+        Hll,
+        bl,
+        Hpl);
     CUDA_CHECK(cudaGetLastError());
 }
 

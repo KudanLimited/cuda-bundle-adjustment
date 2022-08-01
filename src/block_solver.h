@@ -1,11 +1,11 @@
-#ifndef __BLOCK_SOLVER_H__
-#define __BLOCK_SOLVER_H__
+#pragma once
 
 #include "arena.h"
 #include "cuda_graph_optimisation.h"
 #include "cuda_linear_solver.h"
 #include "device_buffer.h"
 #include "device_matrix.h"
+#include "graph_optimisation_options.h"
 #include "sparse_block_matrix.h"
 
 #include <array>
@@ -18,8 +18,10 @@ class BaseEdge;
 class BaseEdgeSet;
 struct CameraParams;
 
-/** @brief Implementation of Block solver.
+/**
+ * @brief The block solver for the optimisation problem.
  */
+
 class BlockSolver
 {
 public:
@@ -37,39 +39,117 @@ public:
         PROF_ITEM_NUM
     };
 
+    BlockSolver() = delete;
+    BlockSolver(GraphOptimisationOptions& options) : options(options), doSchur(false), nedges_(0) {}
+
+    /**
+     * @brief Initialise the block solver. This will clear the old estimate values (if an
+     * optimisation has already been carried out.)
+     * @param camera A pointer to a @see CameraParams struct detailing the camera calibration
+     * details
+     * @param edgeSets Edge sets associated with the graph optimisation.
+     * @param vertexSets Vertex sets associated with the graph optimisation.
+     */
     void
     initialize(CameraParams* camera, const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
 
+    /**
+     * @brief BUilds the graph structure based on the vertices and connecting edges.
+     * @param edgeSets Edge sets associated with the graph optimisation.
+     * @param vertexSets Vertex sets associated with the graph optimisation.
+     * @param streams A vector of CUDA streams
+     */
     void buildStructure(
         const EdgeSetVec& edgeSets,
         const VertexSetVec& vertexSets,
         std::array<cudaStream_t, 3>& streams);
 
+    /**
+     * @brief Compute the error of the graph.
+     * @param edgeSets Edge sets associated with the graph optimisation.
+     * @param vertexSets Vertex sets associated with the graph optimisation.
+     * @param streams A vector of CUDA streams
+     * @return double The calculated error value.
+     */
     double computeErrors(
         const EdgeSetVec& edgeSets,
         const VertexSetVec& vertexSets,
         std::array<cudaStream_t, 3>& streams);
 
+    /**
+     * @brief Compute the quadratic equation of the graph.
+     * @param edgeSets Edge sets associated with the graph optimisation.
+     * @param vertexSets Vertex sets associated with the graph optimisation.
+     * @param streams  A vector of CUDA streams
+     */
     void buildSystem(
         const EdgeSetVec& edgeSets,
         const VertexSetVec& vertexSets,
         std::array<cudaStream_t, 3>& streams);
+
+    /**
+     * @brief Compute the maximum value on the hessain matrix as computed by @see buildSystem
+     * @return The maximum value on the diagonal of the H matrix.
+     */
     double maxDiagonal();
 
+    /**
+     * @brief Set the lambda value on the H matrix diagonal.
+     * @param lambda The lambda value to set.
+     */
     void setLambda(double lambda);
+
+    /**
+     * @brief Restore the H matrix diagonal back to the values before the @see setLambda call.
+     *
+     */
     void restoreDiagonal();
 
+    /**
+     * @brief Solve the linear equation Ax = b
+     * @return If the equation is successful, returns true.
+     */
     bool solve();
+
     void update(const VertexSetVec& vertexSets);
 
     double computeScale(double lambda);
 
+    /**
+     * @brief Push the current H matrix into the backup buffer
+     */
     void push();
+
+    /**
+     * @brief Retrieve the H matrix from the backup buffer and use as current matrix
+     */
     void pop();
 
+    /**
+     * @brief Copy the new estimates into the host container.
+     * @param vertexSets The vertex sets which will be updated.
+     */
     void finalize(const VertexSetVec& vertexSets);
+
+    /**
+     * @brief Get the Time Profile object
+     * @param prof
+     */
     void getTimeProfile(TimeProfile& prof) const;
 
+    /**
+     * @brief The total number of edges that will be used by the block solver.
+     * @return The total edge count.
+     */
+    int nedges() const { return nedges_; }
+
+    /**
+     * @brief Create a bit-flag that is used on the device to determine if pose or landmark vertex
+     * types are fixed.
+     * @param fixedP States if the pose veretex is fixed.
+     * @param fixedL States if the landmark veretex is fixed.
+     * @return uint8_t The generated edge fixed bit flag
+     */
     static inline uint8_t makeEdgeFlag(bool fixedP, bool fixedL)
     {
         uint8_t flag = 0;
@@ -80,17 +160,15 @@ public:
         return flag;
     }
 
-    int nedges() const { return nedges_; }
-
-    ////////////////////////////////////////////////////////////////////////////////////
-    // host buffers
-    ////////////////////////////////////////////////////////////////////////////////////
-
 private:
+    // a reference to the options used by the graph optimiser
+    GraphOptimisationOptions& options;
+
     bool doSchur;
 
     int nedges_;
 
+    // host buffers
     // graph components
     std::vector<BaseEdge*> baseEdges_;
 
@@ -103,10 +181,7 @@ private:
     std::unique_ptr<LinearSolver> linearSolver_;
     std::vector<HplBlockPos> HplBlockPos_;
 
-    ////////////////////////////////////////////////////////////////////////////////////
     // device buffers
-    ////////////////////////////////////////////////////////////////////////////////////
-
     // solution vectors
     GpuVec1d d_solution_, d_solutionBackup_;
 
@@ -149,13 +224,7 @@ private:
     DeviceBuffer<Scalar> d_chi_;
     GpuVec1i d_nnzPerCol_;
 
-    ////////////////////////////////////////////////////////////////////////////////////
-    // statistics
-    ////////////////////////////////////////////////////////////////////////////////////
-
     std::vector<double> profItems_;
 };
 
 } // namespace cugo
-
-#endif

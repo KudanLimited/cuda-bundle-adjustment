@@ -20,6 +20,7 @@ limitations under the License.
 #include "cuda/cuda_constants.h"
 #include "device_matrix.h"
 #include "fixed_vector.h"
+#include "graph_optimisation_options.h"
 #include "measurements.h"
 
 namespace cugo
