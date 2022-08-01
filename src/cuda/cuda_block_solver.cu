@@ -850,11 +850,7 @@ __global__ void computeActiveErrorsKernel(
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
-#ifdef USE_PER_EDGE_INFORMATION
         Scalar omega = omegas[iE];
-#else
-        Scalar omega = omegas[0];
-#endif
         const Vec2i index = edge2PL[iE];
         const int iP = index[0];
         const int iL = index[1];
@@ -928,11 +924,7 @@ __global__ void constructQuadraticFormKernel(
         return;
     }
 
-#ifdef USE_PER_EDGE_INFORMATION
     Scalar omega = omegas[iE];
-#else
-    Scalar omega = omegas[0];
-#endif
     const int iP = edge2PL[iE][0];
     const int iL = edge2PL[iE][1];
     const int iPL = edge2Hpl[iE];
@@ -1852,11 +1844,7 @@ __global__ void computeActiveErrorsKernel_DepthBa(
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
-#ifdef USE_PER_EDGE_INFORMATION
-        Scalar omega = omegas[iE];
-#else
-        Scalar omega = omegas[0];
-#endif
+        const Scalar omega = omegas[iE];
         const Vec2i index = edge2PL[iE];
         const int iP = index[0];
         const int iL = index[1];
@@ -1956,11 +1944,7 @@ __global__ void computeActiveErrorsKernel_Plane(
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
-#ifdef USE_PER_EDGE_INFORMATION
-        Scalar omega = omegas[iE];
-#else
-        Scalar omega = omegas[0];
-#endif
+        const Scalar omega = omegas[iE];
         const int iP = edge2PL[iE][0];
         const Se3D est = poseEstimate[iP];
         const PointToPlaneMatch<double> measurement = measurements[iE];
@@ -2009,11 +1993,7 @@ __global__ void constructQuadraticFormKernel_Plane(
     {
         return;
     }
-#ifdef USE_PER_EDGE_INFORMATION
     const Scalar omega = omegas[iE];
-#else
-    const Scalar omega = omegas[0];
-#endif
     const int iP = edge2PL[iE][0];
     const int flag = flags[iE];
     const PointToPlaneMatch<double> measurement = measurements[iE];
@@ -2055,11 +2035,7 @@ __global__ void constructQuadraticFormKernel_Line(
     {
         return;
     }
-#ifdef USE_PER_EDGE_INFORMATION
     const Scalar omega = omegas[iE];
-#else
-    const Scalar omega = omegas[0];
-#endif
     const int iP = edge2PL[iE][0];
     const int flag = flags[iE];
     const PointToLineMatch<double> measurement = measurements[iE];

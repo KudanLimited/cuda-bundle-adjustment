@@ -143,13 +143,18 @@ void BlockSolver::buildStructure(
 
     if (doSchur)
     {
-        hBlockPosArena.resize(10000000000);
+        hBlockPosArena.resize(10000);
     }
 
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
+        if (!edgeSet->nedges())
+        {
+            continue;
+        }
         edgeSet->init(hBlockPosArena, edgeIdOffset, streams[0], doSchur);
         nedges_ += edgeSet->nedges();
+        edgeIdOffset += nedges_;
         if (doSchur)
         {
             nVertexBlockPos += edgeSet->getHessianBlockPosSize();
@@ -159,7 +164,7 @@ void BlockSolver::buildStructure(
     if (doSchur)
     {
         d_Hpl_.resize(numP, numL);
-        d_Hpl_.resizeNonZeros(d_HplBlockPos_.size());
+        d_Hpl_.resizeNonZeros(nVertexBlockPos);
         d_nnzPerCol_.resize(numL + 1);
         d_edge2Hpl_.resize(nedges_);
 
@@ -212,8 +217,12 @@ void BlockSolver::buildStructure(
 
     // upload edge information to device memory
     int prevEdgeSize = 0;
-    for (int i = 0; i < edgeSets.size(); ++i)
+    for (BaseEdgeSet* edgeSet : edgeSets)
     {
+        if (!edgeSet->nedges())
+        {
+            continue;
+        }
         // upload the graph data to the device
         // Note: nullptr passed to map function if no landmark
         // data as the Hpl matrix then doesn't make sense.
@@ -223,8 +232,8 @@ void BlockSolver::buildStructure(
             // data layout is pose data first followed by landmark
             edge2HplPtr = d_edge2Hpl_.data() + prevEdgeSize;
         }
-        edgeSets[i]->mapDevice(edge2HplPtr, streams[0]);
-        prevEdgeSize += edgeSets[i]->nedges();
+        edgeSet->mapDevice(edge2HplPtr, streams[0]);
+        prevEdgeSize += edgeSet->nedges();
     }
 
     d_chi_.resize(1);
@@ -266,8 +275,13 @@ double BlockSolver::computeErrors(
     Scalar accumChi = 0;
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
+        if (!edgeSet->nedges())
+        {
+            continue;
+        }
         const Scalar chi = edgeSet->computeError(vertexSets, d_chi_, streams[0]);
-        if (edgeSet->robustKernel())
+        BaseRobustKernel* kernel = edgeSet->robustKernel();
+        if (kernel != nullptr)
         {
             edgeSet->robustKernel()->robustify(chi, rho);
             accumChi += rho[0];
@@ -311,6 +325,10 @@ void BlockSolver::buildSystem(
 
     for (auto* edgeSet : edgeSets)
     {
+        if (!edgeSet->nedges())
+        {
+            continue;
+        }
         edgeSet->constructQuadraticForm(
             vertexSets, d_Hpp_, d_bp_, d_Hll_, d_bl_, d_Hpl_, streams[0]);
     }
