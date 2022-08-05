@@ -44,29 +44,69 @@ public:
     BaseVertex() {};
     virtual ~BaseVertex() {}
 
-    virtual int getId() const = 0;
+    /**
+     * @brief Get the id of the vertex.
+     * @return The id of the vertex.
+     */
+    virtual int getId() const noexcept = 0;
 
-    virtual void setId(const int id) = 0;
+    /**
+     * @brief Set the id of the vertex
+     * @param id The id number the vertex will use.
+     */
+    virtual void setId(const int id) noexcept = 0;
 
-    virtual Set<BaseEdge*>& getEdges() = 0;
+    /**
+     * @brief Returns all the edges associated with the vertex
+     * @return A container with the edges added to this vertex
+     */
+    virtual Set<BaseEdge*>& getEdges() noexcept = 0;
 
+    /**
+     * @brief Adds an edge to the vertex
+     * @param edge A pointer to the edge to add.
+     */
     virtual void addEdge(BaseEdge* edge) = 0;
 
+    /**
+     * @brief Removes an edge from the vertex
+     * @param edge A pointer to the edge to remove.
+     */
     virtual void removeEdge(BaseEdge* edge) = 0;
 
-    virtual void setFixed(bool status) = 0;
+    /**
+     * @brief States whether this vertex will have a hard constraint applied and will
+     * stay at its initial values.
+     * @param status States whether this edge is fixed (true) or not (false)
+     */
+    virtual void setFixed(bool status) noexcept = 0;
 
-    virtual bool isFixed() const = 0;
+    /**
+     * @brief Returns whether this vertex is fixed or not.
+     * @return If fixed, returns true. Otherwise, false.
+     */
+    virtual bool isFixed() const noexcept = 0;
 
-    virtual int getIndex() const = 0;
+    virtual int getIndex() const noexcept = 0;
 
-    virtual void setIndex(const int idx) = 0;
+    virtual void setIndex(const int idx) noexcept = 0;
 
-    virtual bool isMarginilised() const = 0;
+    virtual bool isMarginilised() const noexcept = 0;
 
-    virtual void clearEdges() = 0;
+    /**
+     * @brief Clears all edges from this vertex.
+     */
+    virtual void clearEdges() noexcept = 0;
 };
 
+/**
+ * @brief A vertex used in the graph optimisation problem.
+ *
+ * @tparam T The type of this vertex.
+ * @tparam Marginilised Whether this is a marginilised vertex as per Shcur complement calculations
+ * for Bundle Adjustemt. Pose vertices are usually not marginilised (false), whereas Landmark
+ * vertices are marginilised.
+ */
 template <typename T, bool Marginilised>
 class Vertex : public BaseVertex
 {
@@ -77,55 +117,39 @@ public:
     const bool marginilised = Marginilised;
 
     Vertex() {}
-    virtual ~Vertex() {}
-
     Vertex(int id, const EstimateType& est, bool fixed = false)
         : estimate(est), fixed(fixed), id(id), idx(-1)
     {
     }
-
     Vertex(int id, bool fixed = false) : fixed(fixed), id(id), idx(-1) {}
 
-    EstimateType& getEstimate() { return estimate; }
+    virtual ~Vertex() {}
 
-    void setEstimate(const EstimateType& est) { estimate = est; }
-
-    Set<BaseEdge*>& getEdges() override { return edges; }
-
-    void addEdge(BaseEdge* edge) override
-    {
-        assert(edge != nullptr);
-        edges.insert(edge);
-    }
-
-    void removeEdge(BaseEdge* edge) override
-    {
-        assert(edge != nullptr);
-        edges.erase(edge);
-    }
-
-    void setFixed(bool status) override { fixed = status; }
-
-    bool isFixed() const override { return fixed; }
-
-    void setId(const int id) override { this->id = id; }
-
-    int getId() const override { return id; }
-
-    int getIndex() const override { return idx; }
-
-    void setIndex(const int idx) override { this->idx = idx; }
-
-    bool isMarginilised() const override { return marginilised; }
-
-    void clearEdges() override { edges.clear(); }
+    EstimateType& getEstimate() noexcept;
+    void setEstimate(const EstimateType& est) noexcept;
+    Set<BaseEdge*>& getEdges() noexcept override;
+    void addEdge(BaseEdge* edge) override;
+    void removeEdge(BaseEdge* edge) override;
+    void setFixed(bool status) noexcept override;
+    bool isFixed() const noexcept override;
+    void setId(const int id) noexcept override;
+    int getId() const noexcept override;
+    int getIndex() const noexcept override;
+    void setIndex(const int idx) noexcept override;
+    bool isMarginilised() const noexcept override;
+    void clearEdges() noexcept override;
 
 protected:
+    /// The estimate for this vertex.
     EstimateType estimate;
-    bool fixed; //!< if true, the state variables are fixed during optimization.
-    int id; //!< ID of the vertex.
-    int idx; //!< ID of the vertex (internally used).
-    Set<BaseEdge*> edges; //!< connected edges.
+    /// if true, the state variables are fixed during optimization.
+    bool fixed;
+    /// ID of the vertex.
+    int id;
+    ///  ID of the vertex (internally used).
+    int idx;
+    ///  connected edges.
+    Set<BaseEdge*> edges;
 };
 
 using PoseVertex = Vertex<maths::Se3D, false>;
@@ -141,23 +165,63 @@ public:
     BaseVertexSet() {};
     virtual ~BaseVertexSet() {}
 
-    virtual bool removeVertex(BaseVertex* v, BaseEdgeSet* edgeSet, BaseVertexSet* vertexSet) = 0;
+    /**
+     * @brief Remove a vertex from the set.
+     * @param v Pointer to vertex to remove
+     * @param edgeSet The edge set associated with the vertex to remove - will  be removed from here
+     * to.
+     * @return If successfully removed, returns true.
+     */
+    virtual bool removeVertex(BaseVertex* v, BaseEdgeSet* edgeSet) = 0;
 
-    virtual size_t size() const = 0;
+    /**
+     * @brief The number of vertices in this set
+     * @return Returns the vertices count.
+     */
+    virtual size_t size() const noexcept = 0;
 
-    virtual size_t estimateDataSize() const = 0;
+    /**
+     * @brief The number of estimates associated with this set on the host.
+     * @return The host estimates count.
+     */
+    virtual size_t estimateDataSize() const noexcept = 0;
 
-    virtual size_t getDeviceEstimateSize() = 0;
+    /**
+     * @brief The number of estimates associated with this set on the device.
+     * @return The device estimates count.
+     */
+    virtual size_t getDeviceEstimateSize() noexcept = 0;
 
-    virtual bool isMarginilised() const = 0;
+    /**
+     * @brief Retuens the marginilised state of this set.
+     * @return If the set is marginilised, returns true.
+     */
+    virtual bool isMarginilised() const noexcept = 0;
 
-    virtual int getActiveSize() const = 0;
+    /**
+     * @brief Returns the number of active (non-fixed) vertices in the set.
+     * @return The active vertices count.
+     */
+    virtual int getActiveSize() const noexcept = 0;
 
-    virtual void clearEstimates() = 0;
+    /**
+     * @brief Clears all of the host estimates from the set.
+     */
+    virtual void clearEstimates() noexcept = 0;
 
-    virtual void clearVertices() = 0;
+    /**
+     * @brief Clears all of the vertices from the set.
+     */
+    virtual void clearVertices() noexcept = 0;
 };
 
+/**
+ * @brief A collection of vertices and their data
+ *
+ * @tparam T The type for the vertex
+ * @tparam E The type for the estimate (host)
+ * @tparam D The type for the device estimate. This should correlate with type @see E
+ */
 template <typename T, typename E, typename D>
 class VertexSet : public BaseVertexSet
 {
@@ -167,22 +231,29 @@ public:
     using DeviceType = D;
     using DeviceVecType = GpuVec<DeviceType>;
 
+    // static_assert(EstimateType == T::EstimateType);
+
     VertexSet(bool marg) : marginilised(marg) {}
     virtual ~VertexSet() {}
 
-    void addVertex(T* vertex)
-    {
-        assert(vertex != nullptr);
-        vertexMap.emplace(vertex->getId(), std::move(vertex));
-    }
+    // non-virtual functions
+    /**
+     * @brief Adds a vertex to the set
+     * @param vertex A pointer to the vertex to add.
+     */
+    void addVertex(T* vertex);
 
+    /**
+     * @brief Get the specified vertex from the set.
+     * @param id The id of the vertex to return
+     * @return The vertex assocaited with the specified id.
+     */
     T* getVertex(const int id) const;
 
-    bool removeVertex(BaseVertex* v, BaseEdgeSet* edgeSet, BaseVertexSet* vertexSet) override;
-
-    size_t size() const override { return vertexMap.size(); }
-
-    bool isMarginilised() const override { return marginilised; }
+    // virtual functions
+    bool removeVertex(BaseVertex* v, BaseEdgeSet* edgeSet) override;
+    size_t size() const noexcept override;
+    bool isMarginilised() const noexcept override;
 
 protected:
     std::map<int, VertexType*> vertexMap; //!< connected vertices.
@@ -191,40 +262,61 @@ protected:
 
 public:
     // device functions
+    // non-virtual functions
+    /**
+     * @brief Maps the specified data onto the device allocated space
+     * @param d_dataPtr A pointer to the data that will be uploaded
+     */
     void mapEstimateData(Scalar* d_dataPtr);
 
+    /**
+     * @brief Copy the estimate from the device to the host estimate container.
+     * Used to update the host once optimisation has been conducted.
+     */
     void finalise();
 
-    size_t estimateDataSize() const override { return estimates.size(); }
+    /**
+     * @brief Get the allocated device memory pointer
+     * @return Returns the estimates allocated device memory address as a void type
+     */
+    void* getDeviceEstimateData() noexcept;
 
-    void* getDeviceEstimateData() { return static_cast<void*>(d_estimate.data()); }
-    size_t getDeviceEstimateSize() override { return d_estimate.size(); }
+    /**
+     * @brief Get all of the vertices associated with this set.
+     * @return A vector of vertices.
+     */
+    std::vector<T*>& get() noexcept;
 
-    std::vector<T*>& get() { return vertices; }
+    /**
+     * @brief Returns the estimates as a device buffer.
+     * @return A @see DeviceVecType buffer conatining estimates
+     */
+    DeviceVecType& getDeviceEstimates() noexcept;
 
-    DeviceVecType& getDeviceEstimates() { return d_estimate; }
-    std::vector<DeviceType>& getEstimates() { return estimates; }
+    /**
+     * @brief Get the estimates associated with this vertex set (host)
+     * @return A vector of estimates
+     */
+    std::vector<DeviceType>& getEstimates() noexcept;
 
-    int getActiveSize() const override { return activeSize; }
-
-    void clearEstimates() override
-    {
-        estimates.clear();
-        vertices.clear();
-        activeSize = 0;
-    }
-
-    void clearVertices() override { vertexMap.clear(); }
+    // virtual functions
+    size_t estimateDataSize() const noexcept override;
+    size_t getDeviceEstimateSize() noexcept override;
+    int getActiveSize() const noexcept override;
+    void clearEstimates() noexcept override;
+    void clearVertices() noexcept override;
 
 private:
-    // gpu hosted estimate data vec
+    /// gpu hosted estimate data vec
     DeviceVecType d_estimate;
 
-    // cpu-gpu estimate data
+    /// cpu-gpu estimate data
     std::vector<DeviceType> estimates;
 
+    /// the vertices associated with this set
     std::vector<VertexType*> vertices;
 
+    /// the number of active vertices
     int activeSize = 0;
 };
 
@@ -241,75 +333,100 @@ using LandmarkVertexSet = VertexSet<LandmarkVertex, maths::Vec3d, Vec3d>;
 class BaseEdge
 {
 public:
-    using Information = double;
+    using Information = Scalar;
 
     BaseEdge() = default;
     virtual ~BaseEdge() {}
 
-    /** @brief Returns the vertex based on the type at index.
+    /**
+     * @brief Returns the vertex based on the type at index.
      */
     virtual BaseVertex* getVertex(const int index) = 0;
 
-    /** @brief Adds a vertex of type specified by the template parameters
+    /**
+     * @brief Adds a vertex of type specified by the template parameters
      */
     virtual void setVertex(BaseVertex* vertex, const int index) = 0;
 
-    virtual bool allVerticesFixed() const = 0;
-
-    virtual void* getMeasurement() { return nullptr; };
-
-    /** @brief Returns the dimension of measurement.
+    /**
+     * @brief Check whether all vertex types are fixed.
+     * @return If all vertex types are fixed, returns true.
      */
-    virtual int dim() const = 0;
-    /** @brief Sets the information for this edge.
-     */
-    virtual void setInformation(const Information info) = 0;
+    virtual bool allVerticesFixed() const noexcept = 0;
 
-    /** @brief Returns the global information for this edge set.
+    /**
+     * @brief Get the measurement associated with the edge.
+     * @return Returns the measurment as a void pointer.
      */
-    virtual Information getInformation() = 0;
+    virtual void* getMeasurement() noexcept { return nullptr; };
+
+    /**
+     * @brief Returns the dimension of measurement.
+     * @return The measurements dimensions
+     */
+    virtual int dim() const noexcept = 0;
+
+    /**
+     * @brief Sets the weight to add for this edge. Note:
+     * @param info The weight value to set for this edge
+     */
+    virtual void setInformation(const Information info) noexcept = 0;
+
+    /**
+     * @brief Get the weight associated with this edge
+     * @return The weight as type @see Information
+     */
+    virtual Information getInformation() noexcept = 0;
 };
 
-/** @brief Edge with N-dimensional measurement.
-@tparam DIM dimension of the measurement vector.
-*/
+/**
+ * @brief Edge with N-dimensional measurement.
+ * @tparam DIM dimension of the measurement vector.
+ * @tparam E The measurement type for this edge
+ * @tparam VertexTypes A varadic template of vertex types associated with this edge.
+ */
 template <int DIM, typename E, typename... VertexTypes>
 class Edge : public BaseEdge
 {
 public:
     using Measurement = E;
 
+    /// The number of vertex types for this edge
     static constexpr auto VertexSize = sizeof...(VertexTypes);
 
+    /// The Nth Vertex type in the tuple
     template <int N, typename... Types>
     using VertexNth = typename std::tuple_element<N, std::tuple<Types...>>::type;
 
     template <int N>
     using VertexNthType = VertexNth<N, VertexTypes...>;
 
+    /// get a vertex from the template list as a constant
     template <int N>
     const VertexNthType<N>* getVertexN() const
     {
         return static_cast<const VertexNthType<N>*>(vertices[N]);
     }
+
+    /// get a vertex from the template list
     template <int N>
     VertexNthType<N>* getVertexN()
     {
         return static_cast<VertexNthType<N>*>(vertices[N]);
     }
 
-    /** @brief The constructor.
-     */
     Edge() : measurement(Measurement()) {}
-
-    /** @brief the destructor.
-     */
     virtual ~Edge() {}
 
-    BaseVertex* getVertex(const int index) override { return vertices[index]; }
+    // virtual functions
+    BaseVertex* getVertex(const int index) override;
+    void setVertex(BaseVertex* vertex, const int index) override;
+    bool allVerticesFixed() const noexcept override;
+    int dim() const noexcept override;
+    void setInformation(const Information info) noexcept override;
+    Information getInformation() noexcept override;
 
-    void setVertex(BaseVertex* vertex, const int index) override { vertices[index] = vertex; }
-
+    // non-virtual functions
     template <std::size_t... Ints>
     bool allVerticesFixedNs(std::index_sequence<Ints...>) const
     {
@@ -317,25 +434,18 @@ public:
         return std::all_of(std::begin(fixed), std::end(fixed), [](bool value) { return value; });
     }
 
-    bool allVerticesFixed() const override
-    {
-        return allVerticesFixedNs(std::make_index_sequence<VertexSize>());
-    }
-
-    /** @brief Returns the dimension of measurement.
+    /**
+     * @brief Set the measurement for the edge.
+     * @param The measurement
      */
-    int dim() const override { return DIM; }
-
-    void setMeasurement(const Measurement& m) { measurement = m; }
-
-    void setInformation(const Information info) override { info_ = info; }
-
-    Information getInformation() override { return info_; }
+    void setMeasurement(const Measurement& m) noexcept;
 
 protected:
+    /// The measurement for the edge
     Measurement measurement;
-    Information info_; //!< information matrix (represented by a scalar for performance).
-
+    /// information matrix (represented by a scalar for performance).
+    Information info_; //!<
+    /// The vertex types for the edge
     BaseVertex* vertices[VertexSize];
 };
 
@@ -347,32 +457,134 @@ protected:
 class BaseEdgeSet
 {
 public:
+    using Information = Scalar;
+
+    /**
+     * @brief Add an edge to the set. Type is determined by @see EdgeSet
+     * @param edge The edge to add.
+     */
     virtual void addEdge(BaseEdge* edge) = 0;
 
+    /**
+     * @brief Remove an edge from the set.
+     * @param The edge to remove.
+     */
     virtual void removeEdge(BaseEdge* edge) = 0;
 
-    virtual size_t nedges() const = 0;
+    /**
+     * @brief The number of edges associated with this set.
+     * @return The edge count.
+     */
+    virtual size_t nedges() const noexcept = 0;
 
-    virtual const std::unordered_set<BaseEdge*>& get() = 0;
+    /**
+     * @brief Get a container of edges associated with this set.
+     * @return A vector of edges.
+     */
+    virtual const std::unordered_set<BaseEdge*>& get() noexcept = 0;
 
-    virtual const int dim() const = 0;
+    /**
+     * @brief Dimension of the measurement vector associated with the edges.
+     * This must be identical to the @see Edge DIM
+     * @return The dimensions of the measurement vector.
+     */
+    virtual const int dim() const noexcept = 0;
 
-    virtual void* getHessianBlockPos() = 0;
+    /**
+     * @brief Get the Hessian Block position data created by the @see init function.
+     * @return A pointer to the hessian block position data.
+     */
+    virtual void* getHessianBlockPos() noexcept = 0;
 
-    virtual size_t getHessianBlockPosSize() const = 0;
+    /**
+     * @brief The number of elements in the hessian block position data field.
+     * @return The block position count.
+     */
+    virtual size_t getHessianBlockPosSize() const noexcept = 0;
 
+    /**
+     * @brief Initialise the edge vertex set.
+     * @param hBlockPosArena If using the schur complement, this defines the memory allocation
+     * poolfor the block positions.
+     * @param edgeIdOffset The offset that the edge ids will begin from.
+     * @param stream A CUDA stream object.
+     * @param doSchur States whether this optimiser will conduct Schur complement calculations
+     * @param options A @see GraphOptimisationOptions object
+     */
+    virtual void init(
+        Arena& hBlockPosArena,
+        const int edgeIdOffset,
+        cudaStream_t stream,
+        bool doSchur,
+        const GraphOptimisationOptions& options) = 0;
+
+    /**
+     * @brief Maps the data derived from the @see init call to the device.
+     * @param edge2HData A pointer to an edge set hessian data used when Schur complemenet is
+     * active.
+     * @param stream A CUDA stream object.
+     * @param options A @see GraphOptimisationOptions object
+     */
     virtual void
-    init(Arena& hBlockPosArena, const int edgeIdOffset, cudaStream_t stream, bool doSchur) = 0;
+    mapDevice(int* edge2HData, cudaStream_t stream, const GraphOptimisationOptions& options) = 0;
 
-    virtual void mapDevice(int* edge2HData, cudaStream_t stream) = 0;
+    /**
+     * @brief Clear the device side containers in this set. Note: This does not deallocate device
+     * memory.
+     */
+    virtual void clearDevice() noexcept = 0;
 
-    virtual void clearDevice() = 0;
+    /**
+     * @brief Clear the edges from the set.
+     */
+    virtual void clearEdges() noexcept = 0;
 
-    virtual void clearEdges() = 0;
-
+    /**
+     * @brief Return outliers that are calculated on the device. This is only relevant when @see
+     * outlierThreshold is greater than 0.0
+     * @return A vector of outliers.
+     */
     virtual std::vector<int>& outliers() = 0;
 
+    /**
+     * @brief Set the Robust Kernel associated with this set (applied to all edges)
+     * @param kernel A initialised Robust Kernel class @see BaseRobustKernel
+     */
+    virtual void setRobustKernel(BaseRobustKernel* kernel) noexcept = 0;
+
+    /**
+     * @brief Get the Robust Kernel associated with this set.
+     * @return A pointer to the RobustKernel class associated with this set. If not set, will be
+     * nullptr.
+     */
+    virtual BaseRobustKernel* robustKernel() noexcept = 0;
+
+    /**
+     * @brief Sets the information for this edge set.
+     */
+    virtual void setInformation(const Information info) noexcept = 0;
+
+    /**
+     * @brief Returns the global information for this edge set.
+     */
+    virtual Information getInformation() noexcept = 0;
+
     // device side virtual functions
+    /**
+     * @brief Constructs the quadratic equation for this set.
+     *
+     * @param vertexSets A vector of VertexSets that constitute the "nodes" to be used in the
+     * optimisation algorithm
+     * @param Hpp An initialised pose hessian matrix (device). This will be written to by the call.
+     * @param bp
+     * @param Hll An initialised landmark hessian matrix (device). This will be written to by the
+     * call. Not used if no landmark (marginilised) vertex is part of the optimisation.
+     * @param bl
+     * @param Hpl An initialised pose-landmark hessian matrix as used in Schur complement
+     * calculations (device). This will be written to by the call. Not used if no landmark
+     * (marginilised) vertex is part of the optimisation.
+     * @param stream A CUDA stream object
+     */
     virtual void constructQuadraticForm(
         const VertexSetVec& vertexSets,
         GpuPxPBlockVec& Hpp,
@@ -384,16 +596,28 @@ public:
     {
     }
 
+    /**
+     * @brief Calculate the errors based on the optimisation inputs.
+     *
+     * @param vertexSets A vector of VertexSets that constitute the "nodes" to be used in the
+     * optimisation algorithm
+     * @param chi Device memory allocation where the chi value will be stored on the device side.
+     * @param stream A CUDA stream object
+     * @return Scalar The calculated chi2 value
+     */
     virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream)
     {
         return 0;
     }
-
-    virtual void setRobustKernel(BaseRobustKernel* kernel) = 0;
-    virtual BaseRobustKernel* robustKernel() = 0;
 };
 
-/** @brief groups together a set of edges of the same type.
+/**
+ * @brief Group together a set of edges of the same type.
+ * @tparam DIM dimension of the measurement vector.
+ * @tparam E The measurement type for this edge (host)
+ * @tparam F The measurement type for this edge (device). TODO: Merge the E and F template paramters
+ * into one.
+ * @tparam VertexTypes A varadic template of vertex types associated with this edge.
  */
 template <int DIM, typename E, typename F, typename... VertexTypes>
 class EdgeSet : public BaseEdgeSet
@@ -409,179 +633,60 @@ public:
     // If only one vertex is stated, the second element will be ignored.
     using VIndex = std::array<int, 2>;
 
-    // cpu side
-    EdgeSet() : kernel(nullptr), outlierThreshold(0.0) {}
+    // host side
+    EdgeSet() : kernel(nullptr), outlierThreshold(0.0), info_(0.0), totalBufferSize_(0) {}
     virtual ~EdgeSet() {}
 
     // vitual functions
-    void addEdge(BaseEdge* edge) override
-    {
-        for (int i = 0; i < VertexSize; ++i)
-        {
-            edge->getVertex(i)->addEdge(edge);
-        }
-        edges.insert(edge);
-    }
+    void addEdge(BaseEdge* edge) override;
+    void removeEdge(BaseEdge* edge) override;
+    size_t nedges() const noexcept override;
+    const std::unordered_set<BaseEdge*>& get() noexcept;
+    void* getHessianBlockPos() noexcept override;
+    size_t getHessianBlockPosSize() const noexcept override;
+    const int dim() const noexcept override;
+    void setRobustKernel(BaseRobustKernel* kernel) noexcept override;
+    BaseRobustKernel* robustKernel() noexcept override;
+    std::vector<int>& outliers() override;
+    void clearEdges() noexcept override;
+    void setInformation(const Information info) noexcept override;
+    Information getInformation() noexcept override;
 
-    void removeEdge(BaseEdge* edge) override
-    {
-        for (int i = 0; i < VertexSize; ++i)
-        {
-            BaseVertex* vertex = edge->getVertex(i);
-            if (vertex->getEdges().count(edge))
-            {
-                vertex->removeEdge(edge);
-            }
-        }
-        if (edges.count(edge))
-        {
-            edges.erase(edge);
-        }
-    }
-
-    size_t nedges() const override { return edges.size(); }
-
-    const std::unordered_set<BaseEdge*>& get() { return edges; }
-
-    void* getHessianBlockPos() override { return hessianBlockPos->data(); }
-
-    size_t getHessianBlockPosSize() const override { return hessianBlockPos->size(); }
-
-    const int dim() const override { return DIM; }
-
-    void setRobustKernel(BaseRobustKernel* kernel) override { this->kernel = kernel; }
-    BaseRobustKernel* robustKernel() override { return kernel; }
-
-    void setOutlierThreshold(const Scalar errorThreshold)
-    {
-        this->outlierThreshold = errorThreshold;
-    }
-
-    std::vector<int>& outliers() override
-    {
-        assert(
-            outlierThreshold > 0.0 &&
-            "No error threshold set for this edgeSet, thus no outliers will have been calcuated "
-            "during graph optimisation.");
-        edgeLevels.resize(edges.size());
-        d_outliers.copyTo(edgeLevels.data());
-        return edgeLevels;
-    }
-
-    void clearEdges() override { edges.clear(); }
+    // non-virtual functions
+    /**
+     * @brief Set the threshold in which a error value is considered an outlier
+     * @param errorThreshold The outlier threshold value
+     */
+    void setOutlierThreshold(const Scalar errorThreshold) noexcept;
 
 protected:
     std::unordered_set<BaseEdge*> edges;
     BaseRobustKernel* kernel;
     Scalar outlierThreshold;
     std::vector<int> edgeLevels;
-    size_t totalBufferSize_ = 0;
+    size_t totalBufferSize_;
+    Information info_;
 
 public:
     // device side
-
     using ErrorVec = typename std::conditional<(DIM == 1), GpuVec1d, GpuVec<VecNd<DIM>>>::type;
     using MeasurementVec = GpuVec<GpuMeasurementType>;
 
-    void
-    init(Arena& hBlockPosArena, const int edgeIdOffset, cudaStream_t stream, bool doSchur) override
-    {
-        size_t edgeSize = edges.size();
-        int edgeId = edgeIdOffset;
+    void init(
+        Arena& hBlockPosArena,
+        const int edgeIdOffset,
+        cudaStream_t stream,
+        bool doSchur,
+        const GraphOptimisationOptions& options) override;
 
-        totalBufferSize_ = sizeof(MeasurementType) * edgeSize + sizeof(VIndex) * edgeSize +
-            sizeof(uint8_t) * edgeSize + sizeof(Scalar) * edgeSize;
+    void mapDevice(
+        int* edge2HData, cudaStream_t stream, const GraphOptimisationOptions& options) override;
 
-        // allocate more buffers than needed to reduce the need
-        // for resizing.
-        arena.resize(totalBufferSize_ * 2);
-        measurements = arena.allocate<MeasurementType>(edgeSize);
-        edge2PL = arena.allocate<VIndex>(edgeSize);
-        edgeFlags = arena.allocate<uint8_t>(edgeSize);
-        omega = arena.allocate<Scalar>(edgeSize);
-
-        // all heassian block positions are also
-        if (doSchur)
-        {
-            hessianBlockPos = hBlockPosArena.allocate<HplBlockPos>(edgeSize);
-        }
-
-        for (BaseEdge* edge : edges)
-        {
-            VIndex vec;
-            for (int i = 0; i < VertexSize; ++i)
-            {
-                BaseVertex* vertex = edge->getVertex(i);
-                // non-marginilised (pose) indices are first
-                if (!vertex->isMarginilised())
-                {
-                    vec[0] = vertex->getIndex();
-                    assert(vec[0] != -1);
-                }
-                else
-                {
-                    vec[1] = vertex->getIndex();
-                    assert(vec[1] != -1);
-                }
-            }
-            edge2PL->push_back(vec);
-
-            if (doSchur && !edge->allVerticesFixed())
-            {
-                hessianBlockPos->push_back({vec[0], vec[1], edgeId});
-            }
-
-            omega->push_back(ScalarCast(edge->getInformation()));
-            measurements->push_back(*(static_cast<MeasurementType*>(edge->getMeasurement())));
-
-            if (VertexSize == 1)
-            {
-                edgeFlags->push_back(
-                    BlockSolver::makeEdgeFlag(edge->getVertex(0)->isFixed(), false));
-            }
-            else
-            {
-                edgeFlags->push_back(BlockSolver::makeEdgeFlag(
-                    edge->getVertex(0)->isFixed(), edge->getVertex(1)->isFixed()));
-            }
-
-            ++edgeId;
-        }
-    }
-
-    void mapDevice(int* edge2HData, cudaStream_t stream) override
-    {
-        size_t edgeSize = edges.size();
-
-        // buffers filled by the gpu kernels.
-        d_errors.resize(edgeSize);
-        d_Xcs.resize(edgeSize);
-
-        if (outlierThreshold > 0.0)
-        {
-            d_outlierThreshold.assign(1, &outlierThreshold);
-            d_outliers.resize(edgeSize);
-        }
-        if (edge2HData)
-        {
-            d_edge2Hpl.map(edgeSize, edge2HData);
-        }
-
-        // The main mega buffer which contains all of the data used
-        // in optimising the graph - transferring one large buffer async
-        // is far more optimal than transferring multiple smaller buffers
-        d_dataBuffer.assignAsync(totalBufferSize_, arena.data(), stream);
-
-        d_edgeFlags.offset(d_dataBuffer, edgeSize, edgeFlags->bufferOffset());
-        d_edge2PL.offset(d_dataBuffer, edgeSize, edge2PL->bufferOffset());
-        d_measurements.offset(d_dataBuffer, edgeSize, measurements->bufferOffset());
-        d_omega.offset(d_dataBuffer, edgeSize, omega->bufferOffset());
-    }
-
-    void clearDevice() override { arena.clear(); }
+    void clearDevice() noexcept override;
 
 protected:
-    // cpu - using pinned memory for async access
+    /// A memory pool for allocating a chunk of memory for all edge set data. Uses pinned memory to
+    /// allow for async mem copies.
     Arena arena;
     std::unique_ptr<ArenaPtr<Scalar>> omega;
     std::unique_ptr<ArenaPtr<VIndex>> edge2PL;

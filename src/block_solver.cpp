@@ -152,7 +152,7 @@ void BlockSolver::buildStructure(
         {
             continue;
         }
-        edgeSet->init(hBlockPosArena, edgeIdOffset, streams[0], doSchur);
+        edgeSet->init(hBlockPosArena, edgeIdOffset, streams[0], doSchur, options);
         nedges_ += edgeSet->nedges();
         edgeIdOffset += nedges_;
         if (doSchur)
@@ -214,6 +214,7 @@ void BlockSolver::buildStructure(
     d_bp_.map(numP, d_b_.data());
 
     d_HppBackup_.resize(numP);
+    d_chi_.resize(1);
 
     // upload edge information to device memory
     int prevEdgeSize = 0;
@@ -232,11 +233,9 @@ void BlockSolver::buildStructure(
             // data layout is pose data first followed by landmark
             edge2HplPtr = d_edge2Hpl_.data() + prevEdgeSize;
         }
-        edgeSet->mapDevice(edge2HplPtr, streams[0]);
+        edgeSet->mapDevice(edge2HplPtr, streams[0], options);
         prevEdgeSize += edgeSet->nedges();
     }
-
-    d_chi_.resize(1);
 
     const auto t1 = get_time_point();
 

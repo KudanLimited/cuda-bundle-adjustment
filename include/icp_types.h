@@ -114,7 +114,7 @@ class CUGO_API PlaneEdge : public Edge<1, cugo::PointToPlaneMatch<double>, cugo:
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-    void* getMeasurement() override { return static_cast<void*>(&measurement); }
+    void* getMeasurement() noexcept override { return static_cast<void*>(&measurement); }
 };
 
 
@@ -123,7 +123,7 @@ class CUGO_API LineEdge : public Edge<1, cugo::PointToLineMatch<double>, cugo::P
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-    void* getMeasurement() override { return static_cast<void*>(&measurement); }
+    void* getMeasurement() noexcept override { return static_cast<void*>(&measurement); }
 };
 
 } // namespace cugo
