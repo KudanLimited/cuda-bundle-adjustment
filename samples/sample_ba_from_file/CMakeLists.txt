@@ -38,9 +38,4 @@ target_link_libraries(
 	opencv::opencv 
 	Eigen3::Eigen3
 )
-target_compile_definitions(
-	sample_ba_from_file 
-	PRIVATE
-	USE_PER_EDGE_INFORMATION
-)
 

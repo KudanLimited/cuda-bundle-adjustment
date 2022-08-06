@@ -153,7 +153,7 @@ BatchStatistics& CudaGraphOptimisationImpl::batchStatistics() { return stats_; }
 
 const TimeProfile& CudaGraphOptimisationImpl::timeProfile() { return timeProfile_; }
 
-CudaGraphOptimisationImpl::CudaGraphOptimisationImpl() : solver_(std::make_unique<BlockSolver>())
+void CudaGraphOptimisationImpl::initCuda()
 {
     deviceId_ = findCudaDevice();
     CUDA_CHECK(cudaGetDeviceProperties(&deviceProp_, deviceId_));
@@ -174,6 +174,18 @@ CudaGraphOptimisationImpl::CudaGraphOptimisationImpl() : solver_(std::make_uniqu
         streams_[i] = 0;
     }
 #endif
+}
+
+CudaGraphOptimisationImpl::CudaGraphOptimisationImpl()
+    : solver_(std::make_unique<BlockSolver>(options))
+{
+    initCuda();
+}
+
+CudaGraphOptimisationImpl::CudaGraphOptimisationImpl(GraphOptimisationOptions& options)
+    : solver_(std::make_unique<BlockSolver>(options)), options(options)
+{
+    initCuda();
 }
 
 CudaGraphOptimisationImpl::~CudaGraphOptimisationImpl() {}

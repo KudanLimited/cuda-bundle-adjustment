@@ -1,4 +1,4 @@
-# cuda-bundle-adjustment
+y # cuda-bundle-adjustment
 A CUDA implementation of Bundle Adjustment
 
 ## Description

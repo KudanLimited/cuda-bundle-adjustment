@@ -27,6 +27,7 @@ find_package(CUDAToolkit REQUIRED)
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
   set(CMAKE_CUDA_ARCHITECTURES 61 75)
 endif()
+
 message(STATUS "CUDA Found: ${CUDAToolkit_FOUND}")
 message(STATUS "CUDA Toolkit version: ${CUDAToolkit_VERSION}")
 
@@ -44,9 +45,11 @@ endif()
 if (USE_ZERO_COPY)
 	list(APPEND CUGO_DEFINITIONS USE_ZERO_COPY)
 endif()
-if (USE_PER_EDGE_INFORMATION)
-	list(APPEND CUGO_DEFINITIONS USE_PER_EDGE_INFORMATION)
-endif()
+
+message("\nCompiler definitions:    ${CUGO_DEFINITIONS}")
+message("Compiler options:        ${CUDA_COMPILE_FLAGS}")
+message("CUDA toolkit build type: ${CUDA_TOOLKIT_LIB_TYPE}")
+message("CUDA compiler flags:     ${CMAKE_CUDA_FLAGS}\n")
 
 file(GLOB_RECURSE srcs ./*.cpp ./*.h ./*.cu ${CUGO_INCLUDE_DIR}/*.h)
 
@@ -105,7 +108,7 @@ target_compile_options(
 )
 target_compile_definitions(
 	cugo
-	PRIVATE
+	PUBLIC
 	${CUGO_DEFINITIONS}
 )
 

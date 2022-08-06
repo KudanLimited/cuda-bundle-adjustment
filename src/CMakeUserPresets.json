@@ -1,0 +1,9 @@
+{
+    "version": 4,
+    "include": [
+        "C:\\Users\\devops\\Documents\\Github\\cuda-bundle-adjustment\\build/Conan\\CMakePresets.json"
+    ],
+    "vendor": {
+        "conan": {}
+    }
+}

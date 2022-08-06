@@ -7,6 +7,10 @@
 namespace cugo
 {
 
+/**
+ * @brief A simple vector that uses pinned memory allocations for use with CUDA async mem copies
+ * @tparam T The data type that will be stored in the vector.
+ */
 template <typename T>
 class async_vector
 {
@@ -22,6 +26,11 @@ public:
         }
     }
 
+    /**
+     * @brief Allocate pinned memory based on the number of elements specified (size * sizeof T will
+     * be the allocated size)
+     * @param size The number of elements to reserve.
+     */
     void reserve(size_t size) noexcept
     {
         // only resize if we the new size is greater than the
@@ -32,6 +41,10 @@ public:
         }
     }
 
+    /**
+     * @brief Copy the specified element of the type @p T after the current element.
+     * @param data The data to push into the vector
+     */
     void push_back(const T& data) noexcept
     {
         assert(data_);
@@ -41,6 +54,10 @@ public:
         ++size_;
     }
 
+    /**
+     * @brief Move the specified element of the type @p T after the current element.
+     * @param data The data to move into memory after the current element.
+     */
     void push_back(const T&& data) noexcept
     {
         assert(data_);
@@ -50,12 +67,21 @@ public:
         ++size_;
     }
 
+    /**
+     * @brief Clears all elements from the vector. Resets the current data pointer to the beginning
+     * of the allocated memory space.
+     *
+     */
     void clear() noexcept
     {
         curr_data_ = data_;
         size_ = 0;
     }
 
+    /**
+     * @brief Get the pointer to the allocated pinned memory space.
+     * @return A pointer to the allocated pinned memory space.
+     */
     void* data() noexcept { return static_cast<void*>(data_); }
 
     T& operator[](int index) noexcept
@@ -73,6 +99,11 @@ public:
     size_t size() const noexcept { return size_; }
 
 private:
+    /**
+     * @brief Allocate the required pinned memory. If a chunk is already allocated, this will be
+     * destroyed and the required chunk allocated.
+     * @param The size of the memory chunk to allocate - the number of elements of type @p T
+     */
     void allocate(size_t size) noexcept
     {
         if (data_)
@@ -85,6 +116,9 @@ private:
         capacity_ = size;
     }
 
+    /**
+     * @brief Deallocates the current memory block and resets all variables.
+     */
     void destroy() noexcept
     {
         CUDA_CHECK(cudaFreeHost(data_));
