@@ -33,6 +33,9 @@ void BlockSolver::initialize(
         }
     }
 
+    // clear the H blockpos memory pool
+    hBlockPosArena.clear();
+
     // upload camera parameters to constant memory if defined
     if (camera)
     {
