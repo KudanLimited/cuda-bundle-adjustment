@@ -39,6 +39,8 @@ public:
         PROF_ITEM_NUM
     };
 
+    static constexpr int HBLOCKPOS_ARENA_SIZE = 10000;
+
     BlockSolver() = delete;
     BlockSolver(GraphOptimisationOptions& options) : options(options), doSchur(false), nedges_(0) {}
 

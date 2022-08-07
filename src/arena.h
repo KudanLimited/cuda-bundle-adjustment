@@ -18,16 +18,16 @@ class Arena;
  * @tparam T The type of data that is referred to by this chunk
  */
 template <typename T>
-class ArenaPtr
+class ArenaPool
 {
 public:
-    ArenaPtr() = default;
+    ArenaPool() = default;
 
-    ArenaPtr(size_t capacity, T* data, size_t offset)
+    ArenaPool(size_t capacity, T* data, size_t offset)
         : size_(0), data_(data), capacity_(capacity), offset_(offset)
     {
     }
-    ~ArenaPtr() {}
+    ~ArenaPool() {}
 
     /**
      * @brief Copies data to the memory slot after the current element. Must be within the allocated
@@ -68,6 +68,12 @@ public:
     void* data() noexcept { return static_cast<void*>(data_); }
 
     /**
+     * @brief Get the last item from the pool.
+     * @return The last value of type @p T pushed to the pool
+     */
+    T& back() noexcept { return *(data_ + (size_ - 1)); }
+
+    /**
      * @brief Clear all elements from this chunk.
      */
     void clear() noexcept { size_ = 0; }
@@ -97,7 +103,7 @@ private:
 class Arena
 {
 public:
-    Arena() : arena_(nullptr), currSize_(0), capacity_(0) {}
+    Arena() : arena_(nullptr), last_(nullptr), currSize_(0), capacity_(0) {}
 
     Arena(size_t totalSize) : capacity_(totalSize), currSize_(0) { allocatePool(totalSize); }
 
@@ -120,37 +126,28 @@ public:
      * @return A @p ArenaPtr that manages the chunk.
      */
     template <typename T>
-    std::unique_ptr<ArenaPtr<T>> allocate(size_t size) noexcept
+    std::unique_ptr<ArenaPool<T>> allocate(size_t size) noexcept
     {
-        size_t bytesInsert = size * sizeof(T);
+        std::size_t totalSize = size * sizeof(T);
         // destroy the current memory chunk, and allocate a larger one
-        // if we have exceeded the capacity
-        if (bytesInsert > capacity_)
+        // if we have exceeded the capacity. Copy the contents from the old space to the
+        // newly allocated memory.
+        if (totalSize > capacity_)
         {
-            allocatePool(bytesInsert);
-        }
-        void* arena_ptr = static_cast<char*>(arena_) + currSize_;
-
-        // check pointer aligned to 64bit - otherwise we will get errors in cuda
-        std::size_t a = alignof(T);
-        T* aligned_ptr = nullptr;
-        if (std::align(a, sizeof(T), arena_ptr, capacity_))
-        {
-            aligned_ptr = reinterpret_cast<T*>(arena_ptr);
-        }
-        else
-        {
-            std::runtime_error("Alignment error whilst trying to allocate arena ptr.");
+            allocatePool(currSize_ + totalSize, true);
         }
 
-        size_t offset = currSize_;
-        currSize_ += bytesInsert;
-        return std::make_unique<ArenaPtr<T>>(size, aligned_ptr, offset);
+        T* alignedArenaPtr = reinterpret_cast<T*>(alignedPtr<T>(arena_ + currSize_));
+        std::size_t alignedOffset = reinterpret_cast<uint8_t*>(alignedArenaPtr) - last_;
+        last_ = reinterpret_cast<uint8_t*>(alignedArenaPtr);
+        currSize_ += totalSize;
+        return std::make_unique<ArenaPool<T>>(size, alignedArenaPtr, alignedOffset);
     }
 
     /**
      * @brief Resize the memory pool to the specified size. If the pool has been allocated,
      * and the current size is greater than the requested size, then no allocation will occur.
+     * Note: this will destroy all elements in the arena.
      * @param size The size of the pool to allocate in bytes.
      */
     void resize(size_t size) noexcept
@@ -165,7 +162,11 @@ public:
     /**
      * @brief Clears all allocated chunks from the pool. This does not deallocate memory.
      */
-    void clear() noexcept { currSize_ = 0; }
+    void clear() noexcept
+    {
+        currSize_ = 0;
+        last_ = arena_;
+    }
 
     /**
      * @brief Get a pointer to the memory pool allocated memory.
@@ -178,16 +179,29 @@ private:
      * @brief Allocate the memory pool. Memory is pinned for use with CUDA async mem copies. If a
      * pool already exists, this will be destroyed before creating the new pool.
      * @param size The size of memory to allocate in bytes.
+     * @param retain If an arena is already allocated, if true, copies the old arena to the
+     * newly allocated space.
+     *
      */
-    void allocatePool(size_t size) noexcept
+    void allocatePool(size_t size, bool retain = false) noexcept
     {
-        if (arena_)
+        uint8_t* oldArena = arena_;
+        CUDA_CHECK(cudaHostAlloc(&arena_, size, cudaHostAllocMapped));
+
+        // if stated, copy the old contents into the newly allocated space
+        if (oldArena && retain)
         {
-            CUDA_CHECK(cudaFreeHost(arena_));
+            memcpy(arena_, oldArena, capacity_);
+        }
+
+        capacity_ = size;
+        last_ = arena_;
+
+        if (oldArena)
+        {
+            CUDA_CHECK(cudaFreeHost(oldArena));
             currSize_ = 0;
         }
-        CUDA_CHECK(cudaHostAlloc(&arena_, size, cudaHostAllocMapped));
-        capacity_ = size;
     }
 
     /**
@@ -197,12 +211,29 @@ private:
     {
         CUDA_CHECK(cudaFreeHost(arena_));
         arena_ = nullptr;
+        last_ = nullptr;
         capacity_ = 0;
         currSize_ = 0;
     }
 
+    /**
+     * @brief Align a pointer based upon the memory specifications
+     * @tparam T The type of the pointer
+     * @param ptr The pointer to align
+     * @return The aligned pointer as a void type
+     */
+    template <typename T>
+    void* alignedPtr(void* ptr)
+    {
+        std::size_t alignment = alignof(T);
+        std::uintptr_t uintPtr = reinterpret_cast<std::uintptr_t>(ptr);
+        std::uintptr_t alignedPtr = (uintPtr + (alignment - 1)) & ~(alignment - 1);
+        return reinterpret_cast<void*>(alignedPtr);
+    }
+
 private:
-    void* arena_;
+    uint8_t* arena_;
+    uint8_t* last_;
     size_t currSize_;
     size_t capacity_;
 };
