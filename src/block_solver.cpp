@@ -146,7 +146,7 @@ void BlockSolver::buildStructure(
 
     if (doSchur)
     {
-        hBlockPosArena.resize(10000);
+        hBlockPosArena.resize(HBLOCKPOS_ARENA_SIZE);
     }
 
     for (BaseEdgeSet* edgeSet : edgeSets)

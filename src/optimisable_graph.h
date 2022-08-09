@@ -663,7 +663,7 @@ protected:
     std::unordered_set<BaseEdge*> edges;
     BaseRobustKernel* kernel;
     Scalar outlierThreshold;
-    std::vector<int> edgeLevels;
+    std::vector<int> edgeOutliers;
     size_t totalBufferSize_;
     Information info_;
 
@@ -688,11 +688,11 @@ protected:
     /// A memory pool for allocating a chunk of memory for all edge set data. Uses pinned memory to
     /// allow for async mem copies.
     Arena arena;
-    std::unique_ptr<ArenaPtr<Scalar>> omega;
-    std::unique_ptr<ArenaPtr<VIndex>> edge2PL;
-    std::unique_ptr<ArenaPtr<uint8_t>> edgeFlags;
-    std::unique_ptr<ArenaPtr<MeasurementType>> measurements;
-    std::unique_ptr<ArenaPtr<HplBlockPos>> hessianBlockPos;
+    std::unique_ptr<ArenaPool<Scalar>> omega;
+    std::unique_ptr<ArenaPool<VIndex>> edge2PL;
+    std::unique_ptr<ArenaPool<uint8_t>> edgeFlags;
+    std::unique_ptr<ArenaPool<MeasurementType>> measurements;
+    std::unique_ptr<ArenaPool<HplBlockPos>> hessianBlockPos;
 
     // device
     GpuVec<uint8_t> d_dataBuffer;

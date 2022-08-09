@@ -235,7 +235,7 @@ void VertexSet<T, E, D>::clearEstimates() noexcept
 template <typename T, typename E, typename D>
 void VertexSet<T, E, D>::clearVertices() noexcept
 {
-    vertices.clear();
+    vertexMap.clear();
 }
 
 // edge class functioms
@@ -364,9 +364,9 @@ std::vector<int>& EdgeSet<DIM, E, F, VertexTypes...>::outliers()
         outlierThreshold > 0.0 &&
         "No error threshold set for this edgeSet, thus no outliers will have been calcuated "
         "during graph optimisation.");
-    edgeLevels.resize(edges.size());
-    d_outliers.copyTo(edgeLevels.data());
-    return edgeLevels;
+    edgeOutliers.resize(edges.size());
+    d_outliers.copyTo(edgeOutliers.data());
+    return edgeOutliers;
 }
 
 template <int DIM, typename E, typename F, typename... VertexTypes>
@@ -417,7 +417,7 @@ void EdgeSet<DIM, E, F, VertexTypes...>::init(
         totalBufferSize_ += sizeof(Scalar);
     }
 
-    // allocate more buffers than needed to reduce the need
+    // allocate more buffer space than needed to reduce the need
     // for resizing.
     arena.resize(totalBufferSize_ * 2);
     measurements = arena.allocate<MeasurementType>(edgeSize);
@@ -464,7 +464,9 @@ void EdgeSet<DIM, E, F, VertexTypes...>::init(
         {
             omega->push_back(ScalarCast(edge->getInformation()));
         }
-        measurements->push_back(*(static_cast<MeasurementType*>(edge->getMeasurement())));
+
+        MeasurementType measurement = *(static_cast<MeasurementType*>(edge->getMeasurement()));
+        measurements->push_back(measurement);
 
         if (VertexSize == 1)
         {
@@ -522,4 +524,5 @@ template <int DIM, typename E, typename F, typename... VertexTypes>
 void EdgeSet<DIM, E, F, VertexTypes...>::clearDevice() noexcept
 {
     arena.clear();
+    edgeOutliers.clear();
 }
