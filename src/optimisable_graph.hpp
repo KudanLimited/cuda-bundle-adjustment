@@ -27,7 +27,7 @@ void Vertex<T, Marginilised>::setEstimate(const EstimateType& est) noexcept
 }
 
 template <typename T, bool Marginilised>
-Set<BaseEdge*>& Vertex<T, Marginilised>::getEdges() noexcept
+EdgeContainer& Vertex<T, Marginilised>::getEdges() noexcept
 {
     return edges;
 }
@@ -99,7 +99,7 @@ void VertexSet<T, EstimateType, DeviceType>::mapEstimateData(Scalar* d_dataPtr)
             vertices.push_back(vertex);
 
             EstimateType estimate = vertex->getEstimate();
-            estimates.emplace_back(DeviceType(estimate));
+            estimates.push_back(DeviceType(estimate));
         }
         else
         {
@@ -115,12 +115,12 @@ void VertexSet<T, EstimateType, DeviceType>::mapEstimateData(Scalar* d_dataPtr)
         vertices.push_back(vertex);
 
         EstimateType estimate = vertex->getEstimate();
-        estimates.emplace_back(DeviceType(estimate));
+        estimates.push_back(DeviceType(estimate));
     }
 
     // upload to the device
     d_estimate.map(estimates.size(), d_dataPtr);
-    d_estimate.upload(estimates.data());
+    d_estimate.uploadAsync(estimates.data());
 }
 
 template <typename T, typename EstimateType, typename DeviceType>
@@ -316,7 +316,7 @@ size_t EdgeSet<DIM, E, F, VertexTypes...>::nedges() const noexcept
 }
 
 template <int DIM, typename E, typename F, typename... VertexTypes>
-const std::unordered_set<BaseEdge*>& EdgeSet<DIM, E, F, VertexTypes...>::get() noexcept
+const EdgeContainer& EdgeSet<DIM, E, F, VertexTypes...>::get() noexcept
 {
     return edges;
 }
@@ -365,7 +365,7 @@ std::vector<int>& EdgeSet<DIM, E, F, VertexTypes...>::outliers()
         "No error threshold set for this edgeSet, thus no outliers will have been calcuated "
         "during graph optimisation.");
     edgeOutliers.resize(edges.size());
-    d_outliers.copyTo(edgeOutliers.data());
+    d_outliers.download(edgeOutliers.data());
     return edgeOutliers;
 }
 

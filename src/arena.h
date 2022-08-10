@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <exception>
 #include <memory>
 
 namespace cugo
@@ -27,7 +28,7 @@ public:
         : size_(0), data_(data), capacity_(capacity), offset_(offset)
     {
     }
-    ~ArenaPool() {}
+    virtual ~ArenaPool() {}
 
     /**
      * @brief Copies data to the memory slot after the current element. Must be within the allocated
@@ -56,6 +57,12 @@ public:
     }
 
     /**
+     * @brief Get the last item from the pool.
+     * @return The last value of type @p T pushed to the pool
+     */
+    T& back() noexcept { return *(data_ + (size_ - 1)); }
+
+    /**
      * @brief The number of elements that have been added to this chunk.
      * @return The current element count.
      */
@@ -68,12 +75,6 @@ public:
     void* data() noexcept { return static_cast<void*>(data_); }
 
     /**
-     * @brief Get the last item from the pool.
-     * @return The last value of type @p T pushed to the pool
-     */
-    T& back() noexcept { return *(data_ + (size_ - 1)); }
-
-    /**
      * @brief Clear all elements from this chunk.
      */
     void clear() noexcept { size_ = 0; }
@@ -82,7 +83,7 @@ public:
      * @brief The offset of this chunk in relation to the main memory pool.
      * @return size_t The memory chunk offset.
      */
-    size_t bufferOffset() const { return offset_; }
+    size_t bufferOffset() const noexcept { return offset_; }
 
 private:
     /// Pointer to the beginning of the memory pool chunk that this ArenaPtr points to.
@@ -91,7 +92,7 @@ private:
     size_t size_;
     /// The total number of elements this chunk can store.
     size_t capacity_;
-    /// The offset within the memory pool
+    /// The offset within the memory pool in bytes
     size_t offset_;
 };
 
@@ -103,7 +104,7 @@ private:
 class Arena
 {
 public:
-    Arena() : arena_(nullptr), last_(nullptr), currSize_(0), capacity_(0) {}
+    Arena() : arena_(nullptr), currSize_(0), capacity_(0) {}
 
     Arena(size_t totalSize) : capacity_(totalSize), currSize_(0) { allocatePool(totalSize); }
 
@@ -129,17 +130,17 @@ public:
     std::unique_ptr<ArenaPool<T>> allocate(size_t size) noexcept
     {
         std::size_t totalSize = size * sizeof(T);
-        // destroy the current memory chunk, and allocate a larger one
-        // if we have exceeded the capacity. Copy the contents from the old space to the
-        // newly allocated memory.
+        // TODO: readjust the arena size if the capacity is reached - this will also
+        // require re-adjusting the alreay allocated memory pools with the new mem
+        // address (the tricky bit). Will probably need to add some sort of linked-list
+        // method to the memory pools. Throws an exception for now.
         if (totalSize > capacity_)
         {
-            allocatePool(currSize_ + totalSize, true);
+            std::runtime_error("Capacity reached for Arena. Increase the allocated size.");
         }
 
         T* alignedArenaPtr = reinterpret_cast<T*>(alignedPtr<T>(arena_ + currSize_));
-        std::size_t alignedOffset = reinterpret_cast<uint8_t*>(alignedArenaPtr) - last_;
-        last_ = reinterpret_cast<uint8_t*>(alignedArenaPtr);
+        std::size_t alignedOffset = reinterpret_cast<uint8_t*>(alignedArenaPtr) - arena_;
         currSize_ += totalSize;
         return std::make_unique<ArenaPool<T>>(size, alignedArenaPtr, alignedOffset);
     }
@@ -162,11 +163,7 @@ public:
     /**
      * @brief Clears all allocated chunks from the pool. This does not deallocate memory.
      */
-    void clear() noexcept
-    {
-        currSize_ = 0;
-        last_ = arena_;
-    }
+    void clear() noexcept { currSize_ = 0; }
 
     /**
      * @brief Get a pointer to the memory pool allocated memory.
@@ -195,7 +192,6 @@ private:
         }
 
         capacity_ = size;
-        last_ = arena_;
 
         if (oldArena)
         {
@@ -211,7 +207,6 @@ private:
     {
         CUDA_CHECK(cudaFreeHost(arena_));
         arena_ = nullptr;
-        last_ = nullptr;
         capacity_ = 0;
         currSize_ = 0;
     }
@@ -233,7 +228,6 @@ private:
 
 private:
     uint8_t* arena_;
-    uint8_t* last_;
     size_t currSize_;
     size_t capacity_;
 };

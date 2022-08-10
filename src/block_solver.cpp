@@ -307,14 +307,12 @@ void BlockSolver::buildSystem(
 {
     const auto t0 = get_time_point();
 
-    ////////////////////////////////////////////////////////////////////////////////////
     // Build linear system about solution increments Δx
     // H*Δx = -b
     //
     // coefficient matrix are divided into blocks, and each block is calculated
     // | Hpp  Hpl ||Δxp| = |-bp|
     // | HplT Hll ||Δxl|   |-bl|
-    ////////////////////////////////////////////////////////////////////////////////////
 
     d_Hpp_.fillZero();
     d_bp_.fillZero();
@@ -386,20 +384,16 @@ bool BlockSolver::solve()
 
     const auto t0 = get_time_point();
 
-    ////////////////////////////////////////////////////////////////////////////////////
     // Schur complement
     // bSc = -bp + Hpl*Hll^-1*bl
     // HSc = Hpp - Hpl*Hll^-1*HplT
-    ////////////////////////////////////////////////////////////////////////////////////
     gpu::computeBschure(d_bp_, d_Hpl_, d_Hll_, d_bl_, d_bsc_, d_invHll_, d_Hpl_invHll_);
     gpu::computeHschure(d_Hpp_, d_Hpl_invHll_, d_Hpl_, d_HscMulBlockIds_, d_Hsc_);
 
     const auto t1 = get_time_point();
 
-    ////////////////////////////////////////////////////////////////////////////////////
     // Solve linear equation about Δxp
     // HSc*Δxp = bp
-    ////////////////////////////////////////////////////////////////////////////////////
     gpu::convertHschureBSRToCSR(d_Hsc_, d_BSR2CSR_, d_HscCSR_);
     const bool success = linearSolver_->solve(d_HscCSR_, d_bsc_.values(), d_xp_.values());
     if (!success)
@@ -409,10 +403,8 @@ bool BlockSolver::solve()
 
     const auto t2 = get_time_point();
 
-    ////////////////////////////////////////////////////////////////////////////////////
     // Solve linear equation about Δxl
     // Hll*Δxl = -bl - HplT*Δxp
-    ////////////////////////////////////////////////////////////////////////////////////
     gpu::schurComplementPost(d_invHll_, d_bl_, d_Hpl_, d_xp_, d_xl_);
 
     const auto t3 = get_time_point();
