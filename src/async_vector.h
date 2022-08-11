@@ -82,7 +82,8 @@ public:
      * @brief Get the pointer to the allocated pinned memory space.
      * @return A pointer to the allocated pinned memory space.
      */
-    void* data() noexcept { return static_cast<void*>(data_); }
+    T* data() noexcept { return data_; }
+    const T* data() const noexcept { return data_; }
 
     T& operator[](int index) noexcept
     {

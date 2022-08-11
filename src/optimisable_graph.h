@@ -26,13 +26,12 @@
 namespace cugo
 {
 
-template <class T>
-using Set = std::unordered_set<T>;
 
 // forward declerations
 class BaseEdge;
 class BaseRobustKernel;
 
+using EdgeContainer = std::unordered_set<BaseEdge*>;
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Vertex
@@ -60,7 +59,7 @@ public:
      * @brief Returns all the edges associated with the vertex
      * @return A container with the edges added to this vertex
      */
-    virtual Set<BaseEdge*>& getEdges() noexcept = 0;
+    virtual EdgeContainer& getEdges() noexcept = 0;
 
     /**
      * @brief Adds an edge to the vertex
@@ -127,7 +126,7 @@ public:
 
     EstimateType& getEstimate() noexcept;
     void setEstimate(const EstimateType& est) noexcept;
-    Set<BaseEdge*>& getEdges() noexcept override;
+    EdgeContainer& getEdges() noexcept override;
     void addEdge(BaseEdge* edge) override;
     void removeEdge(BaseEdge* edge) override;
     void setFixed(bool status) noexcept override;
@@ -149,7 +148,7 @@ protected:
     ///  ID of the vertex (internally used).
     int idx;
     ///  connected edges.
-    Set<BaseEdge*> edges;
+    EdgeContainer edges;
 };
 
 using PoseVertex = Vertex<maths::Se3D, false>;
@@ -311,7 +310,7 @@ private:
     DeviceVecType d_estimate;
 
     /// cpu-gpu estimate data
-    std::vector<DeviceType> estimates;
+    async_vector<DeviceType> estimates;
 
     /// the vertices associated with this set
     std::vector<VertexType*> vertices;
@@ -481,7 +480,7 @@ public:
      * @brief Get a container of edges associated with this set.
      * @return A vector of edges.
      */
-    virtual const std::unordered_set<BaseEdge*>& get() noexcept = 0;
+    virtual const EdgeContainer& get() noexcept = 0;
 
     /**
      * @brief Dimension of the measurement vector associated with the edges.
@@ -641,7 +640,7 @@ public:
     void addEdge(BaseEdge* edge) override;
     void removeEdge(BaseEdge* edge) override;
     size_t nedges() const noexcept override;
-    const std::unordered_set<BaseEdge*>& get() noexcept;
+    const EdgeContainer& get() noexcept;
     void* getHessianBlockPos() noexcept override;
     size_t getHessianBlockPosSize() const noexcept override;
     const int dim() const noexcept override;
@@ -660,7 +659,7 @@ public:
     void setOutlierThreshold(const Scalar errorThreshold) noexcept;
 
 protected:
-    std::unordered_set<BaseEdge*> edges;
+    EdgeContainer edges;
     BaseRobustKernel* kernel;
     Scalar outlierThreshold;
     std::vector<int> edgeOutliers;
