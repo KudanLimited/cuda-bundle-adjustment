@@ -1,5 +1,4 @@
-#ifndef __MEASUREMENTS_H__
-#define __MEASUREMENTS_H__
+#pragma once
 
 #include "fixed_vector.h"
 
@@ -97,5 +96,3 @@ public:
 
 
 } // namespace cugo
-
-#endif

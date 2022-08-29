@@ -7,7 +7,7 @@ void SparseCholesky<T>::init(cusolverSpHandle_t handle)
     handle_ = handle;
 
     // create info
-    cusolverSpCreateCsrcholInfo(&info_);
+    CHECK_CUSOLVER(cusolverSpCreateCsrcholInfo(&info_));
 }
 
 template <typename T>
@@ -20,7 +20,7 @@ inline void SparseCholesky<float>::allocateBuffer(const SparseSquareMatrixCSR<fl
 {
     size_t internalData, workSpace;
 
-    cusolverSpScsrcholBufferInfo(
+    CHECK_CUSOLVER(cusolverSpScsrcholBufferInfo(
         handle_,
         A.size(),
         A.nnz(),
@@ -30,7 +30,7 @@ inline void SparseCholesky<float>::allocateBuffer(const SparseSquareMatrixCSR<fl
         A.colInd(),
         info_,
         &internalData,
-        &workSpace);
+        &workSpace));
 
     buffer_.resize(workSpace);
 }
@@ -40,7 +40,7 @@ inline void SparseCholesky<double>::allocateBuffer(const SparseSquareMatrixCSR<d
 {
     size_t internalData, workSpace;
 
-    cusolverSpDcsrcholBufferInfo(
+    CHECK_CUSOLVER(cusolverSpDcsrcholBufferInfo(
         handle_,
         A.size(),
         A.nnz(),
@@ -50,7 +50,7 @@ inline void SparseCholesky<double>::allocateBuffer(const SparseSquareMatrixCSR<d
         A.colInd(),
         info_,
         &internalData,
-        &workSpace);
+        &workSpace));
 
     buffer_.resize(workSpace);
 }
@@ -67,10 +67,12 @@ inline bool SparseCholesky<float>::hasZeroPivot(int* position) const
     const float tol = static_cast<float>(1e-14);
     int singularity = -1;
 
-    cusolverSpScsrcholZeroPivot(handle_, info_, tol, &singularity);
+    CHECK_CUSOLVER(cusolverSpScsrcholZeroPivot(handle_, info_, tol, &singularity));
 
     if (position)
+    {
         *position = singularity;
+    }
     return singularity >= 0;
 }
 
@@ -80,17 +82,20 @@ inline bool SparseCholesky<double>::hasZeroPivot(int* position) const
     const double tol = static_cast<double>(1e-14);
     int singularity = -1;
 
-    cusolverSpDcsrcholZeroPivot(handle_, info_, tol, &singularity);
+    CHECK_CUSOLVER(cusolverSpDcsrcholZeroPivot(handle_, info_, tol, &singularity));
 
     if (position)
+    {
         *position = singularity;
+    }
     return singularity >= 0;
 }
 
 template <typename T>
 bool SparseCholesky<T>::analyze(const SparseSquareMatrixCSR<T>& A)
 {
-    cusolverSpXcsrcholAnalysis(handle_, A.size(), A.nnz(), A.desc(), A.rowPtr(), A.colInd(), info_);
+    CHECK_CUSOLVER(cusolverSpXcsrcholAnalysis(
+        handle_, A.size(), A.nnz(), A.desc(), A.rowPtr(), A.colInd(), info_));
     allocateBuffer(A);
     return true;
 }
@@ -104,7 +109,7 @@ bool SparseCholesky<T>::factorize(SparseSquareMatrixCSR<T>& A)
 template <>
 inline bool SparseCholesky<float>::factorize(SparseSquareMatrixCSR<float>& A)
 {
-    cusolverSpScsrcholFactor(
+    CHECK_CUSOLVER(cusolverSpScsrcholFactor(
         handle_,
         A.size(),
         A.nnz(),
@@ -113,14 +118,14 @@ inline bool SparseCholesky<float>::factorize(SparseSquareMatrixCSR<float>& A)
         A.rowPtr(),
         A.colInd(),
         info_,
-        buffer_.data());
+        buffer_.data()));
     return !hasZeroPivot();
 }
 
 template <>
 inline bool SparseCholesky<double>::factorize(SparseSquareMatrixCSR<double>& A)
 {
-    cusolverSpDcsrcholFactor(
+    CHECK_CUSOLVER(cusolverSpDcsrcholFactor(
         handle_,
         A.size(),
         A.nnz(),
@@ -129,7 +134,7 @@ inline bool SparseCholesky<double>::factorize(SparseSquareMatrixCSR<double>& A)
         A.rowPtr(),
         A.colInd(),
         info_,
-        buffer_.data());
+        buffer_.data()));
     return !hasZeroPivot();
 }
 
@@ -141,19 +146,19 @@ void SparseCholesky<T>::solve(int size, const T* b, T* x)
 template <>
 inline void SparseCholesky<float>::solve(int size, const float* b, float* x)
 {
-    cusolverSpScsrcholSolve(handle_, size, b, x, info_, buffer_.data());
+    CHECK_CUSOLVER(cusolverSpScsrcholSolve(handle_, size, b, x, info_, buffer_.data()));
 }
 
 template <>
 inline void SparseCholesky<double>::solve(int size, const double* b, double* x)
 {
-    cusolverSpDcsrcholSolve(handle_, size, b, x, info_, buffer_.data());
+    CHECK_CUSOLVER(cusolverSpDcsrcholSolve(handle_, size, b, x, info_, buffer_.data()));
 }
 
 template <typename T>
 void SparseCholesky<T>::destroy()
 {
-    cusolverSpDestroyCsrcholInfo(info_);
+    CHECK_CUSOLVER(cusolverSpDestroyCsrcholInfo(info_));
 }
 
 template <typename T>
@@ -249,7 +254,9 @@ void CuSparseCholeskySolver<T>::factorize(const T* d_A)
 
     // M = L * LT
     if (!cholesky.factorize(Acsr))
+    {
         information = Info::NUMERICAL_ISSUE;
+    }
 }
 
 template <typename T>
@@ -283,7 +290,8 @@ template <typename T>
 void CuSparseCholeskySolver<T>::reordering(
     int size, int nnz, const int* csrRowPtr, const int* csrColInd, int* P) const
 {
-    cusolverSpXcsrmetisndHost(cusolver, size, nnz, Acsr.desc(), csrRowPtr, csrColInd, nullptr, P);
+    CHECK_CUSOLVER(cusolverSpXcsrmetisndHost(
+        cusolver, size, nnz, Acsr.desc(), csrRowPtr, csrColInd, nullptr, P));
 }
 
 template <typename T>
@@ -389,17 +397,27 @@ DenseCholesky<T>::sparseToDense(const SparseSquareMatrixCSR<T>& A, DenseSquareMa
 }
 
 template <>
-inline void
-DenseCholesky<float>::sparseToDense(const SparseSquareMatrixCSR<float>& A, DenseSquareMatrix<float>& B)
+inline void DenseCholesky<float>::sparseToDense(
+    const SparseSquareMatrixCSR<float>& A, DenseSquareMatrix<float>& B)
 {
-   // CHECK_CUSPARSE(cusparseCcsr2dense(spHandle_, A.rows(), A.cols(), A.desc(), A.val(), A.rowPtr(), A.colInd(), B.val(), A.rows()));
+    // CHECK_CUSPARSE(cusparseCcsr2dense(spHandle_, A.rows(), A.cols(), A.desc(), A.val(),
+    // A.rowPtr(), A.colInd(), B.val(), A.rows()));
 }
 
 template <>
-inline void
-DenseCholesky<double>::sparseToDense(const SparseSquareMatrixCSR<double>& A, DenseSquareMatrix<double>& B)
+inline void DenseCholesky<double>::sparseToDense(
+    const SparseSquareMatrixCSR<double>& A, DenseSquareMatrix<double>& B)
 {
-    CHECK_CUSPARSE(cusparseDcsr2dense(spHandle_, A.rows(), A.cols(), A.desc(), A.val(), A.rowPtr(), A.colInd(), B.val(), A.rows()));
+    CHECK_CUSPARSE(cusparseDcsr2dense(
+        spHandle_,
+        A.rows(),
+        A.cols(),
+        A.desc(),
+        A.val(),
+        A.rowPtr(),
+        A.colInd(),
+        B.val(),
+        A.rows()));
 }
 #else
 template <typename T>

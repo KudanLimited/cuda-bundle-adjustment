@@ -39,18 +39,9 @@ size_t CudaGraphOptimisationImpl::nVertices(const int id)
     return vertexSets[id]->size();
 }
 
-void CudaGraphOptimisationImpl::setCameraPrams(const CameraParams& camera)
-{
-    if (camera_)
-    {
-        camera_ = nullptr;
-    }
-    camera_ = std::make_unique<CameraParams>(camera);
-}
-
 void CudaGraphOptimisationImpl::initialize()
 {
-    solver_->initialize(camera_.get(), edgeSets, vertexSets);
+    solver_->initialize(edgeSets, vertexSets);
     stats_.clear();
 }
 
@@ -81,7 +72,7 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
 
         if (iteration == 0)
         {
-            lambda = tau * solver_->maxDiagonal();
+            lambda = tau * solver_->maxDiagonal(streams_);
         }
 
         int q = 0;
@@ -90,28 +81,28 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
         {
             solver_->push();
 
-            solver_->setLambda(lambda);
+            solver_->setLambda(lambda, streams_);
 
-            const bool success = solver_->solve();
+            const bool success = solver_->solve(streams_);
 
-            solver_->update(vertexSets);
-            solver_->restoreDiagonal();
+            solver_->update(vertexSets, streams_);
+            solver_->restoreDiagonal(streams_);
 
             const double Fhat = solver_->computeErrors(edgeSets, vertexSets, streams_);
             const double scale = solver_->computeScale(lambda) + 1e-3;
-            rho = success ? (F - Fhat) / scale : -1;
+            rho = success ? (F - Fhat) / scale : -1.0;
 
             if (rho > 0)
             {
                 lambda *= clamp(attenuation(rho), 1.0 / 3, 2.0 / 3);
-                nu = 2;
+                nu = 2.0;
                 F = Fhat;
                 break;
             }
             else
             {
                 lambda *= nu;
-                nu *= 2;
+                nu *= 2.0;
                 solver_->pop();
             }
         }
@@ -134,15 +125,16 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
                 solver_->nedges());
         }
 
-        if (q == maxq || rho == 0 || !std::isfinite(lambda))
+        if (q == maxq || rho <= 0.0 || !std::isfinite(lambda))
         {
             break;
         }
     }
 
-    solver_->finalize(vertexSets);
+    // remove any outliers from the edgesets
+    solver_->updateEdges(edgeSets);
 
-    solver_->getTimeProfile(timeProfile_);
+    solver_->finalize(vertexSets);
 }
 
 void CudaGraphOptimisationImpl::clearEdgeSets() { edgeSets.clear(); }

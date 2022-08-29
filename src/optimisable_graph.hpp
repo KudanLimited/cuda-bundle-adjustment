@@ -81,17 +81,19 @@ void Vertex<T, Marginilised>::clearEdges() noexcept
 }
 
 // VertexSet functions
-template <typename T, typename EstimateType, typename DeviceType>
-void VertexSet<T, EstimateType, DeviceType>::mapEstimateData(Scalar* d_dataPtr)
+template <typename T, typename EstimateType>
+void VertexSet<T, EstimateType>::generateEstimateData()
 {
     int count = 0;
     std::vector<T*> fixedVertices;
+    std::vector<size_t> fixedIds;
+
     vertices.reserve(vertexMap.size());
     estimates.reserve(vertexMap.size());
+    estimateVertexIds.reserve(vertexMap.size());
 
-    for (const auto& vMap : vertexMap)
+    for (const auto& [id, vertex] : vertexMap)
     {
-        T* vertex = vMap.second;
         assert(vertex != nullptr);
         if (!vertex->isFixed())
         {
@@ -99,55 +101,73 @@ void VertexSet<T, EstimateType, DeviceType>::mapEstimateData(Scalar* d_dataPtr)
             vertices.push_back(vertex);
 
             EstimateType estimate = vertex->getEstimate();
-            estimates.push_back(DeviceType(estimate));
+            estimates.push_back(estimate);
+            estimateVertexIds.emplace_back(id);
         }
         else
         {
             fixedVertices.push_back(vertex);
+            fixedIds.emplace_back(id);
         }
     }
 
     activeSize = count;
 
-    for (auto vertex : fixedVertices)
+    for (int i = 0; i < fixedVertices.size(); ++i)
     {
+        T* vertex = fixedVertices[i];
         vertex->setIndex(count++);
         vertices.push_back(vertex);
 
         EstimateType estimate = vertex->getEstimate();
         estimates.push_back(DeviceType(estimate));
+        estimateVertexIds.emplace_back(fixedIds[i]);
     }
-
-    // upload to the device
-    d_estimate.map(estimates.size(), d_dataPtr);
-    d_estimate.uploadAsync(estimates.data());
 }
 
-template <typename T, typename EstimateType, typename DeviceType>
-void VertexSet<T, EstimateType, DeviceType>::finalise()
+template <typename T, typename EstimateType>
+void VertexSet<T, EstimateType>::mapEstimateData(Scalar* d_dataPtr, const cudaStream_t& stream)
+{
+    // upload to the device
+    d_estimate.map(estimates.size(), d_dataPtr);
+    d_estimate.uploadAsync(estimates.data(), stream);
+}
+
+template <typename T, typename EstimateType>
+void VertexSet<T, EstimateType>::finalise()
 {
     d_estimate.download(estimates.data());
 
-    for (size_t i = 0; i < vertices.size(); i++)
+    assert(estimates.size() == estimateVertexIds.size());
+    for (size_t i = 0; i < estimateVertexIds.size(); i++)
     {
-        estimates[i].copyTo(vertices[i]->getEstimate());
+#ifndef NDEBUG
+        if (vertexMap.find(estimateVertexIds[i]) == std::end(vertexMap))
+        {
+            assert(1);
+        }
+#endif
+        T* vertex = vertexMap[estimateVertexIds[i]];
+        vertex->setEstimate(estimates[i]);
     }
 }
 
-template <typename T, typename E, typename D>
-T* VertexSet<T, E, D>::getVertex(const int id) const
+template <typename T, typename E>
+T* VertexSet<T, E>::getVertex(const int id) const
 {
+#ifndef NDEBUG
     auto it = vertexMap.find(id);
     if (it == std::end(vertexMap))
     {
         printf("Warning: id: %d not found in vertex map.\n", id);
         return nullptr;
     }
+#endif
     return vertexMap.at(id);
 }
 
-template <typename T, typename E, typename D>
-bool VertexSet<T, E, D>::removeVertex(BaseVertex* v, BaseEdgeSet* edgeSet)
+template <typename T, typename E>
+bool VertexSet<T, E>::removeVertex(BaseVertex* v, BaseEdgeSet* edgeSet)
 {
     auto it = vertexMap.find(v->getId());
     if (it == std::end(vertexMap))
@@ -164,76 +184,77 @@ bool VertexSet<T, E, D>::removeVertex(BaseVertex* v, BaseEdgeSet* edgeSet)
     return true;
 }
 
-template <typename T, typename E, typename D>
-void VertexSet<T, E, D>::addVertex(T* vertex)
+template <typename T, typename E>
+void VertexSet<T, E>::addVertex(T* vertex)
 {
     vertexMap.emplace(vertex->getId(), vertex);
 }
 
-template <typename T, typename E, typename D>
-size_t VertexSet<T, E, D>::size() const noexcept
+template <typename T, typename E>
+size_t VertexSet<T, E>::size() const noexcept
 {
     return vertexMap.size();
 }
 
-template <typename T, typename E, typename D>
-bool VertexSet<T, E, D>::isMarginilised() const noexcept
+template <typename T, typename E>
+bool VertexSet<T, E>::isMarginilised() const noexcept
 {
     return marginilised;
 }
 
-template <typename T, typename E, typename D>
-size_t VertexSet<T, E, D>::estimateDataSize() const noexcept
+template <typename T, typename E>
+size_t VertexSet<T, E>::estimateDataSize() const noexcept
 {
     return estimates.size();
 }
 
-template <typename T, typename E, typename D>
-void* VertexSet<T, E, D>::getDeviceEstimateData() noexcept
+template <typename T, typename E>
+void* VertexSet<T, E>::getDeviceEstimateData() noexcept
 {
     return static_cast<void*>(d_estimate.data());
 }
 
-template <typename T, typename E, typename D>
-size_t VertexSet<T, E, D>::getDeviceEstimateSize() noexcept
+template <typename T, typename E>
+size_t VertexSet<T, E>::getDeviceEstimateSize() noexcept
 {
     return d_estimate.size();
 }
 
-template <typename T, typename E, typename D>
-std::vector<T*>& VertexSet<T, E, D>::get() noexcept
+template <typename T, typename E>
+std::vector<T*>& VertexSet<T, E>::get() noexcept
 {
     return vertices;
 }
 
-template <typename T, typename E, typename D>
-GpuVec<D>& VertexSet<T, E, D>::getDeviceEstimates() noexcept
+template <typename T, typename E>
+GpuVec<E>& VertexSet<T, E>::getDeviceEstimates() noexcept
 {
     return d_estimate;
 }
 
-template <typename T, typename E, typename D>
-std::vector<D>& VertexSet<T, E, D>::getEstimates() noexcept
+template <typename T, typename E>
+async_vector<E>& VertexSet<T, E>::getEstimates() noexcept
 {
     return estimates;
 }
 
-template <typename T, typename E, typename D>
-int VertexSet<T, E, D>::getActiveSize() const noexcept
+template <typename T, typename E>
+int VertexSet<T, E>::getActiveSize() const noexcept
 {
     return activeSize;
 }
 
-template <typename T, typename E, typename D>
-void VertexSet<T, E, D>::clearEstimates() noexcept
+template <typename T, typename E>
+void VertexSet<T, E>::clearEstimates() noexcept
 {
     estimates.clear();
+    estimateVertexIds.clear();
     vertices.clear();
     activeSize = 0;
 }
 
-template <typename T, typename E, typename D>
-void VertexSet<T, E, D>::clearVertices() noexcept
+template <typename T, typename E>
+void VertexSet<T, E>::clearVertices() noexcept
 {
     vertexMap.clear();
 }
@@ -281,9 +302,21 @@ Scalar Edge<DIM, E, VertexTypes...>::getInformation() noexcept
     return info_;
 }
 
+template <int DIM, typename E, typename... VertexTypes>
+void Edge<DIM, E, VertexTypes...>::setCamera(const Camera& camera) noexcept
+{
+    camera_ = camera;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+Camera& Edge<DIM, E, VertexTypes...>::getCamera() noexcept
+{
+    return camera_;
+}
+
 // EdgeSet functions
-template <int DIM, typename E, typename F, typename... VertexTypes>
-void EdgeSet<DIM, E, F, VertexTypes...>::addEdge(BaseEdge* edge)
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::addEdge(BaseEdge* edge)
 {
     for (int i = 0; i < VertexSize; ++i)
     {
@@ -292,8 +325,8 @@ void EdgeSet<DIM, E, F, VertexTypes...>::addEdge(BaseEdge* edge)
     edges.insert(edge);
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-void EdgeSet<DIM, E, F, VertexTypes...>::removeEdge(BaseEdge* edge)
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::removeEdge(BaseEdge* edge)
 {
     for (int i = 0; i < VertexSize; ++i)
     {
@@ -309,220 +342,275 @@ void EdgeSet<DIM, E, F, VertexTypes...>::removeEdge(BaseEdge* edge)
     }
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-size_t EdgeSet<DIM, E, F, VertexTypes...>::nedges() const noexcept
+template <int DIM, typename E, typename... VertexTypes>
+size_t EdgeSet<DIM, E, VertexTypes...>::nedges() const noexcept
 {
     return edges.size();
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-const EdgeContainer& EdgeSet<DIM, E, F, VertexTypes...>::get() noexcept
+template <int DIM, typename E, typename... VertexTypes>
+size_t EdgeSet<DIM, E, VertexTypes...>::nActiveEdges() const noexcept
+{
+    return activeEdgeSize_;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+const EdgeContainer& EdgeSet<DIM, E, VertexTypes...>::get() noexcept
 {
     return edges;
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-void* EdgeSet<DIM, E, F, VertexTypes...>::getHessianBlockPos() noexcept
-{
-    return hessianBlockPos->data();
-}
-
-template <int DIM, typename E, typename F, typename... VertexTypes>
-size_t EdgeSet<DIM, E, F, VertexTypes...>::getHessianBlockPosSize() const noexcept
-{
-    return hessianBlockPos->size();
-}
-
-template <int DIM, typename E, typename F, typename... VertexTypes>
-const int EdgeSet<DIM, E, F, VertexTypes...>::dim() const noexcept
+template <int DIM, typename E, typename... VertexTypes>
+const int EdgeSet<DIM, E, VertexTypes...>::dim() const noexcept
 {
     return DIM;
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-void EdgeSet<DIM, E, F, VertexTypes...>::setRobustKernel(BaseRobustKernel* kernel) noexcept
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::setRobustKernel(
+    const RobustKernelType type, Scalar delta) noexcept
 {
-    this->kernel = kernel;
+    this->kernel.type = type;
+    this->kernel.delta = delta;
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-BaseRobustKernel* EdgeSet<DIM, E, F, VertexTypes...>::robustKernel() noexcept
+template <int DIM, typename E, typename... VertexTypes>
+RobustKernel& EdgeSet<DIM, E, VertexTypes...>::robustKernel() noexcept
 {
     return kernel;
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-void EdgeSet<DIM, E, F, VertexTypes...>::setOutlierThreshold(const Scalar errorThreshold) noexcept
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::setOutlierThreshold(const Scalar errorThreshold) noexcept
 {
     this->outlierThreshold = errorThreshold;
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-std::vector<int>& EdgeSet<DIM, E, F, VertexTypes...>::outliers()
+template <int DIM, typename E, typename... VertexTypes>
+Scalar EdgeSet<DIM, E, VertexTypes...>::getOutlierThreshold() const noexcept
 {
-    assert(
-        outlierThreshold > 0.0 &&
-        "No error threshold set for this edgeSet, thus no outliers will have been calcuated "
-        "during graph optimisation.");
-    edgeOutliers.resize(edges.size());
-    d_outliers.download(edgeOutliers.data());
-    return edgeOutliers;
+    return outlierThreshold;
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-void EdgeSet<DIM, E, F, VertexTypes...>::clearEdges() noexcept
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::clearEdges() noexcept
 {
     edges.clear();
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-void EdgeSet<DIM, E, F, VertexTypes...>::setInformation(const Information info) noexcept
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::setInformation(const Information info) noexcept
 {
     info_ = info;
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-Scalar EdgeSet<DIM, E, F, VertexTypes...>::getInformation() noexcept
+template <int DIM, typename E, typename... VertexTypes>
+Scalar EdgeSet<DIM, E, VertexTypes...>::getInformation() noexcept
 {
     return info_;
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-void EdgeSet<DIM, E, F, VertexTypes...>::init(
-    Arena& hBlockPosArena,
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::setCamera(const Camera& camera) noexcept
+{
+    camera_ = camera;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+Camera& EdgeSet<DIM, E, VertexTypes...>::getCamera() noexcept
+{
+    return camera_;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+const Vec5d EdgeSet<DIM, E, VertexTypes...>::cameraToVec(const Camera& cam) noexcept
+{
+    Vec5d output;
+    output[0] = ScalarCast(cam.fx);
+    output[1] = ScalarCast(cam.fy);
+    output[2] = ScalarCast(cam.cx);
+    output[3] = ScalarCast(cam.cy);
+    output[4] = ScalarCast(cam.bf);
+    return output;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::init(
+    std::vector<HplBlockPos>& hBlockPosArena,
     const int edgeIdOffset,
     cudaStream_t stream,
     bool doSchur,
     const GraphOptimisationOptions& options)
 {
     // sanity checks for options
-    if (options.perEdgeInformation == true)
+    if (options.perEdgeInformation)
     {
         // the edge set weight should not be set if on using the per edge option
         assert(info_ == 0.0);
     }
 
-    size_t edgeSize = edges.size();
+    // calculate the number of active edges (either vertex is not fixed) 
+    // NOTE: The assumption here is that there is either one vertex and this is
+    // a pose type or there are two vertices and they are pose and landmark (in that order)
+    activeEdgeSize_ = 0;
+    for (BaseEdge* edge : edges)
+    {
+        if (VertexSize == 1)
+        {
+            if (!edge->getVertex(0)->isFixed())
+            {
+                ++activeEdgeSize_;
+            }
+        }
+        else
+        {
+            if (!edge->getVertex(0)->isFixed() || !edge->getVertex(1)->isFixed())
+            {
+                ++activeEdgeSize_;
+            }
+        }
+    }
+
     int edgeId = edgeIdOffset;
 
-    totalBufferSize_ =
-        sizeof(MeasurementType) * edgeSize + sizeof(VIndex) * edgeSize + sizeof(uint8_t) * edgeSize;
+    const size_t omegaSize = (options.perEdgeInformation) ? activeEdgeSize_ : 1;
+    const size_t cameraSize = (options.perEdgeCamera) ? activeEdgeSize_ : 2;
 
-    if (options.perEdgeInformation)
-    {
-        totalBufferSize_ += sizeof(Scalar) * edgeSize;
-    }
-    else
-    {
-        totalBufferSize_ += sizeof(Scalar);
-    }
+    totalBufferSize_ = sizeof(MeasurementType) * activeEdgeSize_ +
+        sizeof(VIndex) * activeEdgeSize_ + sizeof(uint8_t) * activeEdgeSize_ +
+        omegaSize * sizeof(Scalar) + cameraSize * (sizeof(Scalar) * 5);
 
     // allocate more buffer space than needed to reduce the need
     // for resizing.
     arena.resize(totalBufferSize_ * 2);
-    measurements = arena.allocate<MeasurementType>(edgeSize);
-    edge2PL = arena.allocate<VIndex>(edgeSize);
-    edgeFlags = arena.allocate<uint8_t>(edgeSize);
+    measurements = arena.allocate<MeasurementType>(activeEdgeSize_);
+    edge2PL = arena.allocate<VIndex>(activeEdgeSize_);
+    edgeFlags = arena.allocate<uint8_t>(activeEdgeSize_);
+    omegas = arena.allocate<Scalar>(omegaSize);
+    cameras = arena.allocate<Vec5d>(cameraSize);
 
-    if (options.perEdgeInformation)
+    if (!options.perEdgeInformation)
     {
-        omega = arena.allocate<Scalar>(edgeSize);
+        omegas->push_back(ScalarCast(info_));
     }
-
-    // all heassian block positions are also
-    if (doSchur)
+    if (!options.perEdgeCamera)
     {
-        hessianBlockPos = hBlockPosArena.allocate<HplBlockPos>(edgeSize);
+        cameras->push_back(cameraToVec(camera_));
     }
 
     for (BaseEdge* edge : edges)
     {
+        bool isActive = false;
         VIndex vec;
-        for (int i = 0; i < VertexSize; ++i)
-        {
-            BaseVertex* vertex = edge->getVertex(i);
-            // non-marginilised (pose) indices are first
-            if (!vertex->isMarginilised())
-            {
-                vec[0] = vertex->getIndex();
-                assert(vec[0] != -1);
-            }
-            else
-            {
-                vec[1] = vertex->getIndex();
-                assert(vec[1] != -1);
-            }
-        }
-        edge2PL->push_back(vec);
-
-        if (doSchur && !edge->allVerticesFixed())
-        {
-            hessianBlockPos->push_back({vec[0], vec[1], edgeId});
-        }
-
-        if (options.perEdgeInformation)
-        {
-            omega->push_back(ScalarCast(edge->getInformation()));
-        }
-
-        MeasurementType measurement = *(static_cast<MeasurementType*>(edge->getMeasurement()));
-        measurements->push_back(measurement);
-
         if (VertexSize == 1)
         {
-            edgeFlags->push_back(BlockSolver::makeEdgeFlag(edge->getVertex(0)->isFixed(), false));
+            if (!edge->getVertex(0)->isFixed())
+            {
+                vec[0] = edge->getVertex(0)->getIndex();
+                edgeFlags->push_back(
+                    BlockSolver::makeEdgeFlag(edge->getVertex(0)->isFixed(), false));
+                isActive = true;
+            }
         }
         else
         {
-            edgeFlags->push_back(BlockSolver::makeEdgeFlag(
-                edge->getVertex(0)->isFixed(), edge->getVertex(1)->isFixed()));
+            if (!edge->getVertex(0)->isFixed() || !edge->getVertex(1)->isFixed())
+            {
+                vec[0] = edge->getVertex(0)->getIndex();
+                vec[1] = edge->getVertex(1)->getIndex();
+                edgeFlags->push_back(BlockSolver::makeEdgeFlag(
+                    edge->getVertex(0)->isFixed(), edge->getVertex(1)->isFixed()));
+                isActive = true;
+            }
+            if (doSchur && !edge->getVertex(0)->isFixed() && !edge->getVertex(1)->isFixed())
+            {
+                hBlockPosArena.push_back({vec[0], vec[1], edgeId});
+            }
+            
         }
 
-        ++edgeId;
+        if (isActive)
+        {
+            measurements->push_back(*(static_cast<MeasurementType*>(edge->getMeasurement())));
+            edge2PL->push_back(vec);
+
+            if (options.perEdgeInformation)
+            {
+                omegas->push_back(ScalarCast(edge->getInformation()));
+            }
+            if (options.perEdgeCamera)
+            {
+                cameras->push_back(cameraToVec(edge->getCamera()));
+            }
+            ++edgeId;
+        }
     }
+
+    kernel.d_delta.assign(1, &kernel.delta);    
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-void EdgeSet<DIM, E, F, VertexTypes...>::mapDevice(
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     int* edge2HData, cudaStream_t stream, const GraphOptimisationOptions& options)
 {
-    size_t edgeSize = edges.size();
-
     // buffers filled by the gpu kernels.
-    d_errors.resize(edgeSize);
-    d_Xcs.resize(edgeSize);
+    d_errors.resize(activeEdgeSize_);
+    d_Xcs.resize(activeEdgeSize_);
 
+    d_outlierThreshold.assign(1, &outlierThreshold);
     if (outlierThreshold > 0.0)
     {
-        d_outlierThreshold.assign(1, &outlierThreshold);
-        d_outliers.resize(edgeSize);
+        d_outliers.resize(activeEdgeSize_, true);
     }
     if (edge2HData)
     {
-        d_edge2Hpl.map(edgeSize, edge2HData);
+        d_edge2Hpl.map(activeEdgeSize_, edge2HData);
     }
 
-    // The main mega buffer which contains all of the data used
+    // The main "mega" buffer which contains all of the data used
     // in optimising the graph - transferring one large buffer async
     // is far more optimal than transferring multiple smaller buffers
     d_dataBuffer.assignAsync(totalBufferSize_, arena.data(), stream);
 
-    d_edgeFlags.offset(d_dataBuffer, edgeSize, edgeFlags->bufferOffset());
-    d_edge2PL.offset(d_dataBuffer, edgeSize, edge2PL->bufferOffset());
-    d_measurements.offset(d_dataBuffer, edgeSize, measurements->bufferOffset());
-    if (options.perEdgeInformation)
-    {
-        d_omega.offset(d_dataBuffer, edgeSize, omega->bufferOffset());
-    }
-    else
-    {
-        d_omega.assignAsync(1, &info_, stream);
-    }
+    d_edgeFlags.offset(d_dataBuffer, edgeFlags->size(), edgeFlags->bufferOffset());
+    d_edge2PL.offset(d_dataBuffer, edge2PL->size(), edge2PL->bufferOffset());
+    d_measurements.offset(d_dataBuffer, measurements->size(), measurements->bufferOffset());
+    d_omegas.offset(d_dataBuffer, omegas->size(), omegas->bufferOffset());
+    d_cameras.offset(d_dataBuffer, cameras->size(), cameras->bufferOffset());
 }
 
-template <int DIM, typename E, typename F, typename... VertexTypes>
-void EdgeSet<DIM, E, F, VertexTypes...>::clearDevice() noexcept
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::updateEdges() noexcept
+{
+    std::vector<int> edgeOutliers;
+    edgeOutliers.reserve(activeEdgeSize_);
+    std::vector<BaseEdge*> edgesToRemove;
+
+    if (outlierThreshold > 0.0)
+    {
+        edgeOutliers.resize(activeEdgeSize_);
+        d_outliers.download(edgeOutliers.data());
+        
+        size_t idx = 0;
+        assert(edgeOutliers.size() == edges.size());
+        for (BaseEdge* edge : edges)
+        {
+            if (edgeOutliers[idx++])
+            {
+                edgesToRemove.emplace_back(edge);
+            }
+        }
+    }
+
+    // delete any edge outliers
+    for (BaseEdge* edge : edgesToRemove)
+    {
+        removeEdge(edge);
+    }
+}
+    
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::clearDevice() noexcept
 {
     arena.clear();
-    edgeOutliers.clear();
 }

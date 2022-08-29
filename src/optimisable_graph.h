@@ -1,15 +1,14 @@
 
-#ifndef __OPTIMISABLE_GRAPH_H__
-#define __OPTIMISABLE_GRAPH_H__
+#pragma once
 
 #include "arena.h"
 #include "async_vector.h"
 #include "block_solver.h"
+#include "camera.h"
 #include "cuda/cuda_block_solver.h"
 #include "cuda_graph_optimisation.h"
 #include "device_buffer.h"
 #include "device_matrix.h"
-#include "maths.h"
 #include "sparse_block_matrix.h"
 
 #include <Eigen/Core>
@@ -151,8 +150,8 @@ protected:
     EdgeContainer edges;
 };
 
-using PoseVertex = Vertex<maths::Se3D, false>;
-using LandmarkVertex = Vertex<maths::Vec3d, true>;
+using PoseVertex = Vertex<Se3D, false>;
+using LandmarkVertex = Vertex<Vec3d, true>;
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Vertex set
@@ -221,13 +220,13 @@ public:
  * @tparam E The type for the estimate (host)
  * @tparam D The type for the device estimate. This should correlate with type @see E
  */
-template <typename T, typename E, typename D>
+template <typename T, typename E>
 class VertexSet : public BaseVertexSet
 {
 public:
     using VertexType = T;
     using EstimateType = E;
-    using DeviceType = D;
+    using DeviceType = EstimateType;
     using DeviceVecType = GpuVec<DeviceType>;
 
     // static_assert(EstimateType == T::EstimateType);
@@ -263,10 +262,15 @@ public:
     // device functions
     // non-virtual functions
     /**
+     * @brief Generate the estimate data.
+     */
+    void generateEstimateData();
+
+    /**
      * @brief Maps the specified data onto the device allocated space
      * @param d_dataPtr A pointer to the data that will be uploaded
      */
-    void mapEstimateData(Scalar* d_dataPtr);
+    void mapEstimateData(Scalar* d_dataPtr, const cudaStream_t& stream = 0);
 
     /**
      * @brief Copy the estimate from the device to the host estimate container.
@@ -296,7 +300,7 @@ public:
      * @brief Get the estimates associated with this vertex set (host)
      * @return A vector of estimates
      */
-    std::vector<DeviceType>& getEstimates() noexcept;
+    async_vector<DeviceType>& getEstimates() noexcept;
 
     // virtual functions
     size_t estimateDataSize() const noexcept override;
@@ -312,6 +316,10 @@ private:
     /// cpu-gpu estimate data
     async_vector<DeviceType> estimates;
 
+    /// used to sync the device estimates with the vertex ids when
+    /// updating pose and landmark estimates
+    std::vector<size_t> estimateVertexIds;
+
     /// the vertices associated with this set
     std::vector<VertexType*> vertices;
 
@@ -319,8 +327,8 @@ private:
     int activeSize = 0;
 };
 
-using PoseVertexSet = VertexSet<PoseVertex, maths::Se3D, Se3D>;
-using LandmarkVertexSet = VertexSet<LandmarkVertex, maths::Vec3d, Vec3d>;
+using PoseVertexSet = VertexSet<PoseVertex, Se3D>;
+using LandmarkVertexSet = VertexSet<LandmarkVertex, Vec3d>;
 
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -376,6 +384,18 @@ public:
      * @return The weight as type @see Information
      */
     virtual Information getInformation() noexcept = 0;
+
+    /**
+     * @brief Set the camera parameters for this edge.
+     * @param camera The camera parameters to set.
+     */
+    virtual void setCamera(const Camera& camera) noexcept = 0;
+
+    /**
+     * @brief Get the camera parameters for this edge.
+     * @return The camera parameters used by this edge.
+     */
+    virtual Camera& getCamera() noexcept = 0;
 };
 
 /**
@@ -424,6 +444,8 @@ public:
     int dim() const noexcept override;
     void setInformation(const Information info) noexcept override;
     Information getInformation() noexcept override;
+    void setCamera(const Camera& camera) noexcept override;
+    Camera& getCamera() noexcept override;
 
     // non-virtual functions
     template <std::size_t... Ints>
@@ -443,7 +465,9 @@ protected:
     /// The measurement for the edge
     Measurement measurement;
     /// information matrix (represented by a scalar for performance).
-    Information info_; //!<
+    Information info_;
+    /// Camera paramters for this edge
+    Camera camera_;
     /// The vertex types for the edge
     BaseVertex* vertices[VertexSize];
 };
@@ -471,10 +495,17 @@ public:
     virtual void removeEdge(BaseEdge* edge) = 0;
 
     /**
-     * @brief The number of edges associated with this set.
-     * @return The edge count.
+     * @brief The total number of active edges associated with this set.
+     * @return The total edge count.
      */
     virtual size_t nedges() const noexcept = 0;
+
+    /**
+     * @brief The number of edges associated with this set.
+     * @return The active edge count.
+     */
+    virtual size_t nActiveEdges() const noexcept = 0;
+
 
     /**
      * @brief Get a container of edges associated with this set.
@@ -490,18 +521,6 @@ public:
     virtual const int dim() const noexcept = 0;
 
     /**
-     * @brief Get the Hessian Block position data created by the @see init function.
-     * @return A pointer to the hessian block position data.
-     */
-    virtual void* getHessianBlockPos() noexcept = 0;
-
-    /**
-     * @brief The number of elements in the hessian block position data field.
-     * @return The block position count.
-     */
-    virtual size_t getHessianBlockPosSize() const noexcept = 0;
-
-    /**
      * @brief Initialise the edge vertex set.
      * @param hBlockPosArena If using the schur complement, this defines the memory allocation
      * poolfor the block positions.
@@ -511,7 +530,7 @@ public:
      * @param options A @see GraphOptimisationOptions object
      */
     virtual void init(
-        Arena& hBlockPosArena,
+        std::vector<HplBlockPos>& hBlockPosArena,
         const int edgeIdOffset,
         cudaStream_t stream,
         bool doSchur,
@@ -537,36 +556,57 @@ public:
      * @brief Clear the edges from the set.
      */
     virtual void clearEdges() noexcept = 0;
-
+    
     /**
-     * @brief Return outliers that are calculated on the device. This is only relevant when @see
-     * outlierThreshold is greater than 0.0
-     * @return A vector of outliers.
-     */
-    virtual std::vector<int>& outliers() = 0;
+    * @brief If the outlier threshold is greater than zero, then any edge outliers determined by the 
+    * @p computeErrors kernel, will be removed from the edge container.
+    */
+    virtual void updateEdges() noexcept = 0;
 
     /**
      * @brief Set the Robust Kernel associated with this set (applied to all edges)
      * @param kernel A initialised Robust Kernel class @see BaseRobustKernel
      */
-    virtual void setRobustKernel(BaseRobustKernel* kernel) noexcept = 0;
+    virtual void setRobustKernel(const RobustKernelType type, Scalar delta) noexcept = 0;
 
     /**
      * @brief Get the Robust Kernel associated with this set.
      * @return A pointer to the RobustKernel class associated with this set. If not set, will be
      * nullptr.
      */
-    virtual BaseRobustKernel* robustKernel() noexcept = 0;
+    virtual RobustKernel& robustKernel() noexcept = 0;
 
     /**
      * @brief Sets the information for this edge set.
+     * Note: option @p perEdgeInformation must be false when using this function
      */
     virtual void setInformation(const Information info) noexcept = 0;
 
     /**
+     * @brief Set the camera paramters for this set.
+     * Note: option @p perEdgeCamera must be false when using this function
+     * @param camera A camera struct specifiying the camera paramters to apply.
+     */
+    virtual void setCamera(const Camera& camera) noexcept = 0;
+
+    /**
+     * @brief Get the camera paramters for this set.
+     * Note: option @p perEdgeCamera must be false when using this function
+     * @return The camera object for this set.
+     */
+    virtual Camera& getCamera() noexcept = 0;
+
+    /**
      * @brief Returns the global information for this edge set.
+     * Note: option @p perEdgeInformation must be false when using this function
      */
     virtual Information getInformation() noexcept = 0;
+
+    /**
+    * @brief Return the outlier threshold used to determine edge outliers.
+    * @return The outlier threshold - if zero outlier logic not used.
+    */
+    virtual Scalar getOutlierThreshold() const noexcept = 0;
 
     // device side virtual functions
     /**
@@ -618,12 +658,12 @@ public:
  * into one.
  * @tparam VertexTypes A varadic template of vertex types associated with this edge.
  */
-template <int DIM, typename E, typename F, typename... VertexTypes>
+template <int DIM, typename E, typename... VertexTypes>
 class EdgeSet : public BaseEdgeSet
 {
 public:
     using MeasurementType = E;
-    using GpuMeasurementType = F;
+    using GpuMeasurementType = MeasurementType;
 
     static constexpr auto VertexSize = sizeof...(VertexTypes);
 
@@ -633,23 +673,31 @@ public:
     using VIndex = std::array<int, 2>;
 
     // host side
-    EdgeSet() : kernel(nullptr), outlierThreshold(0.0), info_(0.0), totalBufferSize_(0) {}
+    EdgeSet()
+        : activeEdgeSize_(0),
+          outlierThreshold(0.0),
+          info_(0.0),
+          totalBufferSize_(0)
+    {
+    }
     virtual ~EdgeSet() {}
 
     // vitual functions
     void addEdge(BaseEdge* edge) override;
     void removeEdge(BaseEdge* edge) override;
     size_t nedges() const noexcept override;
+    size_t nActiveEdges() const noexcept override;
+    void updateEdges() noexcept override;
     const EdgeContainer& get() noexcept;
-    void* getHessianBlockPos() noexcept override;
-    size_t getHessianBlockPosSize() const noexcept override;
     const int dim() const noexcept override;
-    void setRobustKernel(BaseRobustKernel* kernel) noexcept override;
-    BaseRobustKernel* robustKernel() noexcept override;
-    std::vector<int>& outliers() override;
+    void setRobustKernel(const RobustKernelType type, Scalar delta) noexcept override;
+    RobustKernel& robustKernel() noexcept override;
     void clearEdges() noexcept override;
     void setInformation(const Information info) noexcept override;
     Information getInformation() noexcept override;
+    void setCamera(const Camera& camera) noexcept override;
+    Camera& getCamera() noexcept override;
+    Scalar getOutlierThreshold() const noexcept override;
 
     // non-virtual functions
     /**
@@ -658,13 +706,32 @@ public:
      */
     void setOutlierThreshold(const Scalar errorThreshold) noexcept;
 
+private:
+    /**
+     * @brief Converts a camera object to a vector for handling on the device.
+     *
+     * @param cam Camera object to convert to vector
+     * @return A 5d vector containing the camera paramters.
+     */
+    const Vec5d cameraToVec(const Camera& cam) noexcept;
+
 protected:
+    /// The edges associated with this set.
     EdgeContainer edges;
-    BaseRobustKernel* kernel;
+    /// The number of active edges (has a non-fixed vertex)
+    size_t activeEdgeSize_;
+    /// The robust kernal associated with this edge set. Defaults to None.
+    RobustKernel kernel;
+    /// The threshold in which an error is considered a outlier
     Scalar outlierThreshold;
-    std::vector<int> edgeOutliers;
+    /// The toal buffer size for the arena
     size_t totalBufferSize_;
+    /// The omega value applied across all edges. This is only used if option @p perEdgeInformation
+    /// is false.
     Information info_;
+    /// The camera params which which will be applied to all edges in this set. This is only used if
+    /// option @p perEdgeCamera is false.
+    Camera camera_;
 
 public:
     // device side
@@ -672,7 +739,7 @@ public:
     using MeasurementVec = GpuVec<GpuMeasurementType>;
 
     void init(
-        Arena& hBlockPosArena,
+        std::vector<HplBlockPos>& hBlockPosArena,
         const int edgeIdOffset,
         cudaStream_t stream,
         bool doSchur,
@@ -687,16 +754,17 @@ protected:
     /// A memory pool for allocating a chunk of memory for all edge set data. Uses pinned memory to
     /// allow for async mem copies.
     Arena arena;
-    std::unique_ptr<ArenaPool<Scalar>> omega;
+    std::unique_ptr<ArenaPool<Scalar>> omegas;
     std::unique_ptr<ArenaPool<VIndex>> edge2PL;
     std::unique_ptr<ArenaPool<uint8_t>> edgeFlags;
     std::unique_ptr<ArenaPool<MeasurementType>> measurements;
-    std::unique_ptr<ArenaPool<HplBlockPos>> hessianBlockPos;
+    std::unique_ptr<ArenaPool<Vec5d>> cameras;
 
     // device
     GpuVec<uint8_t> d_dataBuffer;
     GpuVec3d d_Xcs;
-    GpuVec<Scalar> d_omega;
+    GpuVec<Scalar> d_omegas;
+    GpuVec5d d_cameras;
     MeasurementVec d_measurements;
     ErrorVec d_errors;
     GpuVec2i d_edge2PL;
@@ -710,5 +778,3 @@ protected:
 #include "optimisable_graph.hpp"
 
 } // namespace cugo
-
-#endif // __OPTIMISABLE_GRAPH_H__

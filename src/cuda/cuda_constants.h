@@ -1,5 +1,4 @@
-#ifndef __CUDA_CONSTANTS_H__
-#define __CUDA_CONSTANTS_H__
+#pragma once
 
 #include "device_matrix.h"
 
@@ -20,11 +19,10 @@ using Lx1BlockPtr = BlockPtr<Scalar, LDIM, 1>;
 ////////////////////////////////////////////////////////////////////////////////////
 // Constants
 ////////////////////////////////////////////////////////////////////////////////////
-constexpr int BLOCK_ACTIVE_ERRORS = 256;
+constexpr int BLOCK_ACTIVE_ERRORS = 512;
 constexpr int BLOCK_MAX_DIAGONAL = 512;
 constexpr int BLOCK_COMPUTE_SCALE = 512;
-constexpr int BLOCK_QUADRATIC_FORM = 256;
+constexpr int BLOCK_QUADRATIC_FORM = 512;
 
 } // namespace gpu
 } // namespace cugo
-#endif //__CUDA_CONSTANTS_H__

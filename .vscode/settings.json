@@ -97,5 +97,6 @@
     },
     "[c]": {
         "editor.formatOnType": false
-    }
+    },
+    "cmake.configureOnOpen": false
 }

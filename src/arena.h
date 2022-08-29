@@ -38,9 +38,7 @@ public:
     void push_back(const T& data) noexcept
     {
         assert(size_ < capacity_);
-        T* data_ptr = data_ + size_;
-        memcpy(data_ptr, &data, sizeof(T));
-        ++size_;
+        data_[size_++] = data;
     }
 
     /**
@@ -51,9 +49,7 @@ public:
     void push_back(const T&& data) noexcept
     {
         assert(size_ < capacity_);
-        T* data_ptr = data_ + size_;
-        memcpy(data_ptr, &data, sizeof(T));
-        ++size_;
+        data_[size_++] = std::move(data);
     }
 
     /**
@@ -127,7 +123,7 @@ public:
      * @return A @p ArenaPtr that manages the chunk.
      */
     template <typename T>
-    std::unique_ptr<ArenaPool<T>> allocate(size_t size) noexcept
+    std::unique_ptr<ArenaPool<T>> allocate(size_t size) 
     {
         std::size_t totalSize = size * sizeof(T);
         // TODO: readjust the arena size if the capacity is reached - this will also

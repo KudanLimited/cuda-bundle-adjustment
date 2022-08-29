@@ -14,10 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef __SPARSE_BLOCK_MATRIX_H__
-#define __SPARSE_BLOCK_MATRIX_H__
+#pragma once
 
 #include "constants.h"
+#include "async_vector.h"
 
 #include <Eigen/Core>
 #include <vector>
@@ -35,8 +35,16 @@ public:
     static const int BLOCK_COLS = _BLOCK_COLS;
     static const int BLOCK_AREA = BLOCK_ROWS * BLOCK_COLS;
 
+    virtual void clear() 
+    { 
+        innerIndices_.clear();
+        outerIndices_.clear();
+        nblocks_ = 0;
+    }
+
     void resize(int brows, int bcols)
     {
+        clear();
         brows_ = brows;
         bcols_ = bcols;
         outerSize_ = ORDER == ROW_MAJOR ? brows : bcols;
@@ -62,7 +70,7 @@ public:
     int cols() const { return bcols_ * BLOCK_COLS; }
 
 protected:
-    Eigen::VectorXi outerIndices_, innerIndices_;
+    async_vector<int> outerIndices_, innerIndices_;
     int brows_, bcols_, nblocks_, outerSize_, innerSize_;
 };
 
@@ -91,14 +99,25 @@ public:
     int nnzSymm() const { return (2 * nblocks_ - brows_) * BLOCK_AREA; }
     int nmulBlocks() const { return nmultiplies_; }
 
+    virtual void clear() override
+    {
+        innerIndices_.clear();
+        outerIndices_.clear();
+        rowPtr_.clear();
+        colInd_.clear();
+        nnzPerRow_.clear();
+        BSR2CSR_.clear();
+        nmultiplies_ = 0;
+        nblocks_ = 0;
+    }
+
+
 private:
     int nmultiplies_;
-    Eigen::VectorXi rowPtr_, colInd_, nnzPerRow_, BSR2CSR_;
+    async_vector<int> rowPtr_, colInd_, nnzPerRow_, BSR2CSR_;
 };
 
 using HschurSparseBlockMatrix = PoseSparseBlockMatrix;
 using HppSparseBlockMatrix = PoseSparseBlockMatrix;
 
 } // namespace cugo
-
-#endif // !__SPARSE_BLOCK_MATRIX_H__

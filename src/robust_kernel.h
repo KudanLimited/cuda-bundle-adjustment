@@ -1,37 +1,29 @@
 #pragma once
 
-#include "macro.h"
-#include "maths.h"
 #include "scalar.h"
+#include "device_matrix.h"
 
 namespace cugo
 {
 
-class BaseRobustKernel
+enum class RobustKernelType
 {
-public:
-    BaseRobustKernel(const Scalar delta) : delta_(delta) {};
-    BaseRobustKernel() = default;
-
-    virtual ~BaseRobustKernel() {};
-
-    void setDelta(const Scalar delta) { delta_ = delta; }
-
-    virtual void robustify(const Scalar chi, maths::Vec3<Scalar>& rhoOut) = 0;
-
-protected:
-    Scalar delta_;
+    None,
+    Cauchy,
+    Turkey
 };
 
-class CUGO_API RobustKernelCauchy : public BaseRobustKernel
+/**
+ * @brief Robust kernel paramters.
+ */
+struct RobustKernel
 {
-public:
-    RobustKernelCauchy(const Scalar delta) : BaseRobustKernel(delta) {}
-    RobustKernelCauchy() = default;
+    RobustKernel() : type(RobustKernelType::None), delta(1.0) {}
+    RobustKernel(const RobustKernelType t, Scalar d) : type(t), delta(d) {}
 
-    ~RobustKernelCauchy() {}
-
-    void robustify(const Scalar chi, maths::Vec3<Scalar>& rhoOut) override;
+    RobustKernelType type;
+    Scalar delta;
+    GpuVec<Scalar> d_delta;
 };
 
 } // namespace cugo

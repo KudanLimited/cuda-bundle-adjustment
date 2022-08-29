@@ -28,21 +28,73 @@ public:
     void upload(const T* values = nullptr, const int* rowPtr = nullptr, const int* colInd = nullptr)
     {
         if (values)
+        {
             values_.upload(values);
+        }
         if (rowPtr)
+        {
             rowPtr_.upload(rowPtr);
+        }
         if (colInd)
+        {
             colInd_.upload(colInd);
+        }
+    }
+
+    void uploadAsync(
+        const T* values = nullptr,
+        const int* rowPtr = nullptr,
+        const int* colInd = nullptr,
+        const cudaStream_t& stream = 0)
+    {
+        if (values)
+        {
+            values_.uploadASync(values, stream);
+        }
+        if (rowPtr)
+        {
+            rowPtr_.uploadASync(rowPtr, stream);
+        }
+        if (colInd)
+        {
+            colInd_.uploadASync(colInd, stream);
+        }
     }
 
     void download(T* values = nullptr, int* rowPtr = nullptr, int* colInd = nullptr) const
     {
         if (values)
+        {
             values_.download(values);
+        }
         if (rowPtr)
+        {
             rowPtr_.download(rowPtr);
+        }
         if (colInd)
+        {
             colInd_.download(colInd);
+        }
+    }
+
+    void downloadASync(
+        T* values = nullptr,
+        int* rowPtr = nullptr,
+        int* colInd = nullptr,
+        const cudaStream_t& stream = 0) const
+    {
+        if (values)
+        {
+            values_.downloadASync(values, stream);
+        }
+        if (rowPtr)
+        {
+            rowPtr_.downloadASync(rowPtr, stream);
+        }
+        if (colInd)
+        {
+            colInd_.downloadASync(colInd, stream);
+        }
     }
 
     T* val() { return values_.data(); }

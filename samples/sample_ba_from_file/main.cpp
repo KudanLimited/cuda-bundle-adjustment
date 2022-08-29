@@ -32,7 +32,6 @@ cugo::LandmarkVertexSet* landmarkVertexSet = nullptr;
 cugo::MonoEdgeSet* monoEdgeSet = nullptr;
 cugo::StereoEdgeSet* stereoEdgeSet = nullptr;
 cugo::PlaneEdgeSet* planeEdgeSet = nullptr;
-std::unique_ptr<cugo::RobustKernelCauchy> kernel;
 
 int main(int argc, char** argv)
 {
@@ -44,70 +43,32 @@ int main(int argc, char** argv)
 
     // set robust kernel
     constexpr float fivePercent3DofSqrt = 2.7955321f;
-    kernel = std::make_unique<cugo::RobustKernelCauchy>();
-    kernel->setDelta(fivePercent3DofSqrt);
-
+ 
     poseVertexSet = new cugo::PoseVertexSet(false);
     landmarkVertexSet = new cugo::LandmarkVertexSet(true);
 
     planeEdgeSet = new cugo::PlaneEdgeSet();
 
     monoEdgeSet = new cugo::MonoEdgeSet();
-    monoEdgeSet->setRobustKernel(kernel.get());
+    //monoEdgeSet->setRobustKernel(cugo::RobustKernelType::Cauchy, fivePercent3DofSqrt);
 
     stereoEdgeSet = new cugo::StereoEdgeSet();
-    stereoEdgeSet->setRobustKernel(kernel.get());
+    //stereoEdgeSet->setRobustKernel(cugo::RobustKernelType::Cauchy, fivePercent3DofSqrt);
 
     std::cout << "Reading Graph... " << std::flush;
 
     auto optimizer = readGraph(argv[1]);
 
-    std::cout << "Done." << std::endl << std::endl;
-
-    std::cout << "=== Graph size : " << std::endl;
-    std::cout << "num poses      : " << optimizer->nVertices(0) << std::endl;
-    std::cout << "num landmarks  : " << optimizer->nVertices(1) << std::endl;
-
-    auto& edgeSets = optimizer->getEdgeSets();
-    for (const auto* edgeSet : edgeSets)
-    {
-        std::cout << "num edges      : " << edgeSet->nedges() << std::endl << std::endl;
-    }
-
-    std::cout << "Running BA... " << std::flush;
-
-    const auto t0 = std::chrono::steady_clock::now();
-
-    optimizer->initialize();
-    optimizer->optimize(10);
-
-    const auto t1 = std::chrono::steady_clock::now();
-
-    std::cout << "Done." << std::endl << std::endl;
-
-    const auto duration01 =
-        std::chrono::duration_cast<std::chrono::duration<double>>(t1 - t0).count();
-
-    std::cout << "=== Processing time : " << std::endl;
-    std::printf("BA total : %.2f[sec]\n\n", duration01);
-
-    for (const auto& [name, value] : optimizer->timeProfile())
-        std::printf("%-30s : %8.1f[msec]\n", name.c_str(), 1e3 * value);
-    std::cout << std::endl;
-
-    std::cout << "=== Objective function value : " << std::endl;
-    auto batch = optimizer->batchStatistics();
-    auto stats = batch.get();
-    for (const auto& stat : stats)
-        std::printf("iter: %2d, chi2: %.1f\n", stat.iteration + 1, stat.chi2);
-
-    return 0;
+    delete poseVertexSet;
+    delete landmarkVertexSet;
+    delete planeEdgeSet;
+    delete monoEdgeSet;
 }
 
 template <typename T, int N>
-static inline cugo::maths::Vec<T, N> getArray(const cv::FileNode& node)
+static inline cugo::Vec<T, N> getArray(const cv::FileNode& node)
 {
-    cugo::maths::Vec<T, N> arr = {};
+    cugo::Vec<T, N> arr = {};
     int pos = 0;
     for (const auto& v : node)
     {
@@ -123,17 +84,20 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
     cv::FileStorage fs(filename, cv::FileStorage::READ);
     CV_Assert(fs.isOpened());
 
-    auto optimizer = cugo::CudaGraphOptimisation::create();
+    cugo::GraphOptimisationOptions options;
+    options.perEdgeInformation = true;
+    options.perEdgeCamera = false;
+    auto optimizer = std::make_unique<cugo::CudaGraphOptimisationImpl>(options);
 
     // read pose vertices
     for (const auto& node : fs["pose_vertices"])
     {
         const int id = node["id"];
         const int fixed = node["fixed"];
-        const auto q = Eigen::Quaterniond(getArray<double, 4>(node["q"]));
-        const auto t = getArray<double, 3>(node["t"]);
+        cugo::QuatD q = cugo::Quat(getArray<double, 4>(node["q"]));
+        cugo::Vec3d t = getArray<double, 3>(node["t"]);
 
-        cugo::PoseVertex* poseVertex = new cugo::PoseVertex(id, cugo::maths::Se3D(q, t), fixed);
+        cugo::PoseVertex* poseVertex = new cugo::PoseVertex(id, cugo::Se3D(q, t), fixed);
         poseVertexSet->addVertex(poseVertex);
     }
     optimizer->addVertexSet(poseVertexSet);
@@ -191,20 +155,50 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
     }
 
     // read camera parameters
-    cugo::CameraParams camera;
+    cugo::Camera camera;
     camera.fx = fs["fx"];
     camera.fy = fs["fy"];
     camera.cx = fs["cx"];
     camera.cy = fs["cy"];
     camera.bf = fs["bf"];
 
+    stereoEdgeSet->setCamera(camera);
+    monoEdgeSet->setCamera(camera);
     optimizer->addEdgeSet<cugo::MonoEdgeSet>(monoEdgeSet);
     optimizer->addEdgeSet<cugo::StereoEdgeSet>(stereoEdgeSet);
-    optimizer->setCameraPrams(camera);
 
     // "warm-up" to avoid overhead
     optimizer->initialize();
     optimizer->optimize(1);
+
+    std::cout << "Done." << std::endl << std::endl;
+
+    std::cout << "=== Graph size : " << std::endl;
+    std::cout << "num poses      : " << optimizer->nVertices(0) << std::endl;
+    std::cout << "num landmarks  : " << optimizer->nVertices(1) << std::endl;
+
+    auto& edgeSets = optimizer->getEdgeSets();
+    for (const auto* edgeSet : edgeSets)
+    {
+        std::cout << "num edges      : " << edgeSet->nedges() << std::endl << std::endl;
+    }
+
+    std::cout << "Running BA... " << std::flush;
+
+    const auto t0 = std::chrono::steady_clock::now();
+
+    optimizer->initialize();
+    optimizer->optimize(10);
+
+    const auto t1 = std::chrono::steady_clock::now();
+
+    std::cout << "Done." << std::endl << std::endl;
+
+    std::cout << "=== Objective function value : " << std::endl;
+    auto batch = optimizer->batchStatistics();
+    auto stats = batch.get();
+    for (const auto& stat : stats)
+        std::printf("iter: %2d, chi2: %.1f\n", stat.iteration + 1, stat.chi2);
 
     return optimizer;
 }
