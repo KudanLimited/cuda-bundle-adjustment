@@ -11,6 +11,7 @@
 #include <cuda_runtime.h>
 
 #include <type_traits>
+#include <vector>
 
 namespace cugo
 {

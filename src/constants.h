@@ -14,8 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef __CONSTANTS_H__
-#define __CONSTANTS_H__
+#pragma once
 
 namespace cugo
 {
@@ -35,5 +34,3 @@ enum EdgeFlag
 };
 
 } // namespace cugo
-
-#endif // !__CONSTANTS_H__

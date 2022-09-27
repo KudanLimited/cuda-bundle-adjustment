@@ -16,12 +16,10 @@ namespace cugo
 // forward declerations
 class BaseEdge;
 class BaseEdgeSet;
-struct CameraParams;
 
 /**
  * @brief The block solver for the optimisation problem.
  */
-
 class BlockSolver
 {
 public:
@@ -39,26 +37,24 @@ public:
         PROF_ITEM_NUM
     };
 
-    static constexpr int HBLOCKPOS_ARENA_SIZE = 10000;
+    static constexpr int HBLOCKPOS_ARENA_SIZE = 100000000;
+    static constexpr int POSE_VERTEX_RESERVE_SIZE = 20000;
+    static constexpr int LANDMARK_VERTEX_RESERVE_SIZE = 20000;
 
     BlockSolver() = delete;
-    BlockSolver(GraphOptimisationOptions& options) : options(options), doSchur(false), nedges_(0) {}
+    BlockSolver(GraphOptimisationOptions& options) : options(options), doSchur_(false), nedges_(0) {}
 
     /**
      * @brief Initialise the block solver. This will clear the old estimate values (if an
      * optimisation has already been carried out.)
-     * @param camera A pointer to a @see CameraParams struct detailing the camera calibration
-     * details
      * @param edgeSets Edge sets associated with the graph optimisation.
      * @param vertexSets Vertex sets associated with the graph optimisation.
      */
-    void
-    initialize(CameraParams* camera, const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
+    void initialize(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
 
     /**
      * @brief BUilds the graph structure based on the vertices and connecting edges.
      * @param edgeSets Edge sets associated with the graph optimisation.
-     * @param vertexSets Vertex sets associated with the graph optimisation.
      * @param streams A vector of CUDA streams
      */
     void buildStructure(
@@ -93,27 +89,33 @@ public:
      * @brief Compute the maximum value on the hessain matrix as computed by @see buildSystem
      * @return The maximum value on the diagonal of the H matrix.
      */
-    double maxDiagonal();
+    double maxDiagonal(std::array<cudaStream_t, 3>& streams);
 
     /**
      * @brief Set the lambda value on the H matrix diagonal.
      * @param lambda The lambda value to set.
      */
-    void setLambda(double lambda);
+    void setLambda(double lambda, std::array<cudaStream_t, 3>& streams);
 
     /**
      * @brief Restore the H matrix diagonal back to the values before the @see setLambda call.
      *
      */
-    void restoreDiagonal();
+    void restoreDiagonal(std::array<cudaStream_t, 3>& streams);
 
     /**
      * @brief Solve the linear equation Ax = b
      * @return If the equation is successful, returns true.
      */
-    bool solve();
+    bool solve(std::array<cudaStream_t, 3>& streams);
 
-    void update(const VertexSetVec& vertexSets);
+    void update(const VertexSetVec& vertexSets, std::array<cudaStream_t, 3>& streams);
+
+    /**
+    * @brief Remove outliers from the edgeSet if the outlier threshold is set.
+    * @param edgeSets The edgesets to update.
+    */
+    void updateEdges(const EdgeSetVec& edgeSets);
 
     double computeScale(double lambda);
 
@@ -126,6 +128,11 @@ public:
      * @brief Retrieve the H matrix from the backup buffer and use as current matrix
      */
     void pop();
+
+    /** 
+     * @brief Clears all of the structures and variables set by the initialisation. 
+    **/
+    void clear() noexcept;
 
     /**
      * @brief Copy the new estimates into the host container.
@@ -146,8 +153,8 @@ public:
     int nedges() const { return nedges_; }
 
     /**
-     * @brief Create a bit-flag that is used on the device to determine if pose or landmark vertex
-     * types are fixed.
+     * @brief Create a bit-flag that is used on the device to determine if pose or landmark vertices
+     * are fixed.
      * @param fixedP States if the pose veretex is fixed.
      * @param fixedL States if the landmark veretex is fixed.
      * @return uint8_t The generated edge fixed bit flag
@@ -156,9 +163,13 @@ public:
     {
         uint8_t flag = 0;
         if (fixedP)
+        {
             flag |= EDGE_FLAG_FIXED_P;
+        }
         if (fixedL)
+        {
             flag |= EDGE_FLAG_FIXED_L;
+        }
         return flag;
     }
 
@@ -166,22 +177,23 @@ private:
     // a reference to the options used by the graph optimiser
     GraphOptimisationOptions& options;
 
-    bool doSchur;
-
+    bool doSchur_;
     int nedges_;
 
-    // host buffers
-    // graph components
-    std::vector<BaseEdge*> baseEdges_;
+    std::vector<BaseVertex*> verticesP_;
+    std::vector<BaseVertex*> verticesL_;
 
-    Arena hBlockPosArena;
+    std::vector<HplBlockPos> HplblockPos_;
+
+    // active sizes only for pose and landmark
+    size_t numP_ = 0;
+    size_t numL_ = 0;
 
     // block matrices
     HplSparseBlockMatrix Hpl_;
     HppSparseBlockMatrix Hpp_;
     HschurSparseBlockMatrix Hsc_;
     std::unique_ptr<LinearSolver> linearSolver_;
-    std::vector<HplBlockPos> HplBlockPos_;
 
     // device buffers
     // solution vectors

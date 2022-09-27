@@ -46,38 +46,6 @@ using UniquePtr = std::unique_ptr<T>;
 using EdgeSetVec = std::vector<BaseEdgeSet*>;
 using VertexSetVec = std::vector<BaseVertexSet*>;
 
-/** @brief Camera parameters struct.
- */
-struct CUGO_API CameraParams
-{
-    /// focal length x (pixel)
-    double fx;
-    /// focal length y (pixel)
-    double fy;
-    /// principal point x (pixel)
-    double cx;
-    /// principal point y (pixel)
-    double cy;
-    /// stereo baseline * fx
-    double bf;
-
-    CameraParams() : fx(0.0), fy(0.0), cx(0.0), cy(0.0), bf(0.0) {}
-
-    CameraParams(double fx, double fy, double cx, double cy, double bf)
-        : fx(fx), fy(fy), cx(cx), cy(cy), bf(bf)
-    {
-    }
-
-    CameraParams(float fx, float fy, float cx, float cy, float bf)
-        : fx(static_cast<double>(fx)),
-          fy(static_cast<double>(fy)),
-          cx(static_cast<double>(cx)),
-          cy(static_cast<double>(cy)),
-          bf(static_cast<double>(bf))
-    {
-    }
-};
-
 /** @brief information about optimization.
  */
 struct CUGO_API BatchInfo
@@ -122,7 +90,7 @@ public:
     /** @brief Adds statistical information to the container.
      * @param batchInfo The stastical information to add.
      */
-    void addStat(const BatchInfo& batchInfo) { stats.push_back(std::move(batchInfo)); }
+    void addStat(const BatchInfo& batchInfo) { stats.push_back(batchInfo); }
 
     /** @brief Returns a vector containing all stats information for the optimisation so far.
      * @return Returns a vector contains stats info.
@@ -198,11 +166,6 @@ public:
      */
     virtual EdgeSetVec& getEdgeSets() = 0;
 
-    /** @brief Sets the camera calibration settings to use for all edges.
-     * @param camera An initialised camera class. See @see CameraParams
-     */
-    virtual void setCameraPrams(const CameraParams& camera) = 0;
-
     /**
      * @brief The number of vertices addded to a specified vertex set
      * @param The id of the vertex set
@@ -268,7 +231,6 @@ public:
 
     EdgeSetVec& getEdgeSets() override;
 
-    void setCameraPrams(const CameraParams& camera) override;
     void initialize() override;
     void optimize(int niterations) override;
     BatchStatistics& batchStatistics() override;
@@ -306,9 +268,6 @@ private:
 
     /// the block solver used for solving the graph
     std::unique_ptr<BlockSolver> solver_;
-
-    /// The camera parameters that will be used for all edges
-    std::unique_ptr<CameraParams> camera_;
 
     BatchStatistics stats_;
     TimeProfile timeProfile_;

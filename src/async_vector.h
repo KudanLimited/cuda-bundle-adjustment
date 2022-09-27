@@ -2,6 +2,8 @@
 
 #include "macro.h"
 
+#include <cuda_runtime.h>
+
 #include <cassert>
 
 namespace cugo
@@ -12,11 +14,11 @@ namespace cugo
  * @tparam T The data type that will be stored in the vector.
  */
 template <typename T>
-class async_vector
+class CUGO_API async_vector
 {
 public:
-    async_vector() : data_(nullptr), size_(0), capacity_(0), curr_data_(nullptr) {}
-    async_vector(size_t size) : size_(size) { allocate(size); }
+    async_vector() : data_(nullptr), size_(0), capacity_(0) {}
+    async_vector(size_t size) : size_(0) { allocate(size); }
 
     ~async_vector()
     {
@@ -35,10 +37,21 @@ public:
     {
         // only resize if we the new size is greater than the
         // already existing size
-        if (!data_ || size > capacity_)
+        if (!data_ || size >= capacity_)
         {
             allocate(size);
         }
+        size_ = 0;
+    }
+
+    /**
+     * @brief Similiar to @p reserve, but also the size of elements is set.
+     * @param size The number of elements to resize the container to.
+     */
+    void resize(size_t size) noexcept
+    {
+        reserve(size);
+        size_ = size;
     }
 
     /**
@@ -47,11 +60,9 @@ public:
      */
     void push_back(const T& data) noexcept
     {
-        assert(data_);
         assert(capacity_ > 0);
-        memcpy(curr_data_, &data, sizeof(T));
-        ++curr_data_;
-        ++size_;
+        assert(size < capacity_);
+        data_[size_++] = data;
     }
 
     /**
@@ -60,11 +71,9 @@ public:
      */
     void push_back(const T&& data) noexcept
     {
-        assert(data_);
         assert(capacity_ > 0);
-        memcpy(curr_data_, &data, sizeof(T));
-        ++curr_data_;
-        ++size_;
+        assert(size < capacity_);
+        data_[size_++] = std::move(data);
     }
 
     /**
@@ -72,11 +81,7 @@ public:
      * of the allocated memory space.
      *
      */
-    void clear() noexcept
-    {
-        curr_data_ = data_;
-        size_ = 0;
-    }
+    void clear() noexcept { size_ = 0; }
 
     /**
      * @brief Get the pointer to the allocated pinned memory space.
@@ -87,17 +92,53 @@ public:
 
     T& operator[](int index) noexcept
     {
-        assert(index < capacity_);
+        assert(index < size_);
         return data_[index];
     }
 
     T& operator[](int index) const noexcept
     {
-        assert(index < capacity_);
+        assert(index < size_);
         return data_[index];
     }
 
     size_t size() const noexcept { return size_; }
+
+    void zero() noexcept
+    {
+        if (data_ && capacity_ > 0)
+        {
+            memset(data_, 0, sizeof(T) * capacity_);
+        }
+    }
+
+    async_vector<T>& operator=(const async_vector<T>& rhs) noexcept
+    {
+        destroy();
+        if (this != &rhs)
+        {
+            size_ = rhs.size_;
+            capacity_ = rhs.capacity_;
+            CUDA_CHECK(cudaHostAlloc(&data_, sizeof(T) * capacity_, cudaHostAllocMapped));
+            memcpy(data_, rhs.data_, sizeof(T) * size_);
+        }
+        return *this;
+    }
+
+    // iterators
+    using value_type = T;
+    using reference = T&;
+    using const_reference = const T&;
+    using iterator = T*;
+    using const_iterator = const T*;
+    using size_type = size_t;
+
+    iterator begin() { return data_; }
+    const_iterator begin() const { return data_; }
+    iterator end() { return data_ + size_; }
+    const_iterator end() const { return data_ + size_; }
+    const_iterator cbegin() const { return data_; }
+    const_iterator cend() const { return data_ + size_; }
 
 private:
     /**
@@ -111,9 +152,9 @@ private:
         {
             CUDA_CHECK(cudaFreeHost(data_));
             size_ = 0;
+            data_ = nullptr;
         }
         CUDA_CHECK(cudaHostAlloc(&data_, sizeof(T) * size, cudaHostAllocMapped));
-        curr_data_ = data_;
         capacity_ = size;
     }
 
@@ -122,18 +163,19 @@ private:
      */
     void destroy() noexcept
     {
-        CUDA_CHECK(cudaFreeHost(data_));
-        data_ = nullptr;
-        curr_data_ = nullptr;
-        capacity_ = 0;
-        size_ = 0;
+        if (data_)
+        {
+            CUDA_CHECK(cudaFreeHost(data_));
+            data_ = nullptr;
+            capacity_ = 0;
+            size_ = 0;
+        }
     }
 
 private:
     T* data_;
     size_t size_;
     size_t capacity_;
-    T* curr_data_;
 };
 
 } // namespace cugo

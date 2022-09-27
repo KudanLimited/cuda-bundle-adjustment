@@ -1,5 +1,4 @@
-#ifndef __ICP_TYPES_H__
-#define __ICP_TYPES_H__
+#pragma once
 
 #include "cuda/cuda_block_solver.h"
 #include "fixed_vector.h"
@@ -17,7 +16,7 @@
 namespace cugo
 {
 class CUGO_API LineEdgeSet
-    : public EdgeSet<1, PointToLineMatch<double>, PointToLineMatch<double>, PoseVertex>
+    : public EdgeSet<1, PointToLineMatch<double>, PoseVertex>
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -29,7 +28,7 @@ public:
     {
         GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getDeviceEstimates();
         return gpu::computeActiveErrors_Line(
-            estimates, d_measurements, d_omega, d_edge2PL, d_errors, d_Xcs, chi);
+            estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi);
     }
 
     void constructQuadraticForm(
@@ -47,7 +46,7 @@ public:
             se3_data,
             d_errors,
             d_measurements,
-            d_omega,
+            d_omegas,
             d_edge2PL,
             d_edge2Hpl,
             d_edgeFlags,
@@ -57,13 +56,11 @@ public:
             bl,
             Hpl);
     }
-
-private:
 };
 
 
 class CUGO_API PlaneEdgeSet
-    : public EdgeSet<1, PointToPlaneMatch<double>, PointToPlaneMatch<double>, PoseVertex>
+    : public EdgeSet<1, PointToPlaneMatch<double>, PoseVertex>
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -75,7 +72,7 @@ public:
     {
         GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getDeviceEstimates();
         return gpu::computeActiveErrors_Plane(
-            estimates, d_measurements, d_omega, d_edge2PL, d_errors, d_Xcs, chi, stream);
+            estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi, stream);
     }
 
     void constructQuadraticForm(
@@ -93,7 +90,7 @@ public:
             se3_data,
             d_errors,
             d_measurements,
-            d_omega,
+            d_omegas,
             d_edge2PL,
             d_edge2Hpl,
             d_edgeFlags,
@@ -104,8 +101,6 @@ public:
             Hpl,
             stream);
     }
-
-private:
 };
 
 
@@ -127,5 +122,3 @@ public:
 };
 
 } // namespace cugo
-
-#endif // !__ICP_TYPES_H__

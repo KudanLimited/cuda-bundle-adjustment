@@ -7,7 +7,7 @@ set(CUGO_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 find_package(Eigen3 REQUIRED)
 
 if (DEBUG_CUGO)
-	set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-g -G -lineinfo")
+	set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-g -G")
 else()
 	set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-lineinfo")
 endif()
@@ -25,7 +25,7 @@ endif()
 
 find_package(CUDAToolkit REQUIRED)
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set(CMAKE_CUDA_ARCHITECTURES 61 75)
+  set(CMAKE_CUDA_ARCHITECTURES 75)
 endif()
 
 message(STATUS "CUDA Found: ${CUDAToolkit_FOUND}")
@@ -51,7 +51,7 @@ message("Compiler options:        ${CUDA_COMPILE_FLAGS}")
 message("CUDA toolkit build type: ${CUDA_TOOLKIT_LIB_TYPE}")
 message("CUDA compiler flags:     ${CMAKE_CUDA_FLAGS}\n")
 
-file(GLOB_RECURSE srcs ./*.cpp ./*.h ./*.cu ${CUGO_INCLUDE_DIR}/*.h)
+file(GLOB_RECURSE srcs ./*.cpp ./*.h ./*.hpp ./*.cu ${CUGO_INCLUDE_DIR}/*.h)
 
 if (BUILD_CUGO_SHARED) 
 	message("Building CUGO as shared library....")

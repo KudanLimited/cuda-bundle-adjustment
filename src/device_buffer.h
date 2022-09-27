@@ -79,10 +79,15 @@ public:
      * the device memory is allocated. if a buffer has already been allocated, a resize
      * will only occur if the previous size is smaller than the newly required size.
      * @param size The size to resize the buffer to.
+     * @param clear If true, sets the allocated memory to zeros.
      */
-    void resize(size_t size)
+    void resize(size_t size, bool clear = false)
     {
         allocate(size);
+        if (clear)
+        {
+            cudaMemset(data_, 0, sizeof(T) * size_);
+        }
         size_ = size;
     }
 

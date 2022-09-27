@@ -69,21 +69,49 @@ public:
     void upload(const T* values, const int* outerIndices, const int* innerIndices)
     {
         if (values)
+        {
             values_.upload(values);
+        }
         if (outerIndices)
+        {
             outerIndices_.upload(outerIndices);
+        }
         if (innerIndices)
+        {
             innerIndices_.upload(innerIndices);
+        }
+    }
+
+    void uploadAsync(const T* values, const int* outerIndices, const int* innerIndices, const cudaStream_t stream = 0)
+    {
+        if (values)
+        {
+            values_.uploadAsync(values, stream);
+        }
+        if (outerIndices)
+        {
+            outerIndices_.uploadAsync(outerIndices, stream);
+        }
+        if (innerIndices)
+        {
+            innerIndices_.uploadAsync(innerIndices, stream);
+        }
     }
 
     void download(T* values, int* outerIndices, int* innerIndices) const
     {
         if (values)
+        {
             values_.download(values);
+        }
         if (outerIndices)
+        {
             outerIndices_.download(outerIndices);
+        }
         if (innerIndices)
+        {
             innerIndices_.download(innerIndices);
+        }
     }
 
     void fillZero() { values_.fillZero(); }
@@ -157,6 +185,7 @@ using GpuVec1d = GpuVec<Scalar>;
 using GpuVec2d = GpuVec<Vec2d>;
 using GpuVec3d = GpuVec<Vec3d>;
 using GpuVec4d = GpuVec<Vec4d>;
+using GpuVec5d = GpuVec<Vec5d>;
 using GpuVec6d = GpuVec<Vec6d>;
 
 using GpuVec1i = GpuVec<int>;
