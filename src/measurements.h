@@ -2,6 +2,8 @@
 
 #include "fixed_vector.h"
 
+#include <cmath>
+
 namespace cugo
 {
 /**
