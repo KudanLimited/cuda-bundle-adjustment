@@ -49,15 +49,15 @@ public:
     {
         if (values)
         {
-            values_.uploadASync(values, stream);
+            values_.uploadAsync(values, stream);
         }
         if (rowPtr)
         {
-            rowPtr_.uploadASync(rowPtr, stream);
+            rowPtr_.uploadAsync(rowPtr, stream);
         }
         if (colInd)
         {
-            colInd_.uploadASync(colInd, stream);
+            colInd_.uploadAsync(colInd, stream);
         }
     }
 
@@ -85,15 +85,15 @@ public:
     {
         if (values)
         {
-            values_.downloadASync(values, stream);
+            values_.downloadAsync(values, stream);
         }
         if (rowPtr)
         {
-            rowPtr_.downloadASync(rowPtr, stream);
+            rowPtr_.downloadAsync(rowPtr, stream);
         }
         if (colInd)
         {
-            colInd_.downloadASync(colInd, stream);
+            colInd_.downloadAsync(colInd, stream);
         }
     }
 
