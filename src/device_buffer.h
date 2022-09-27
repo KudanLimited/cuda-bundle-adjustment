@@ -213,7 +213,7 @@ public:
      * thread is not blocked.
      * @param h_data A pointer to memory where the data will be downloaded to.
      */
-    void downloadAsync(T* h_data, int stream = 0) const
+    void downloadAsync(T* h_data, const cudaStream_t stream = 0) const
     {
         CUDA_CHECK(
             cudaMemcpyAsync(h_data, data_, sizeof(T) * size_, cudaMemcpyDeviceToHost, stream));
