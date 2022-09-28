@@ -121,7 +121,7 @@ void BlockSolver::buildStructure(
    
         // build Hpl block matrix structure
         d_HplBlockPos_.assign(nVertexBlockPos, HplblockPos_.data());
-        gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_, streams[1]);
+        gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_);
 
         // build host Hschur sparse block matrix structure
         Hsc_.resize(numP_, numP_);
@@ -133,17 +133,17 @@ void BlockSolver::buildStructure(
         d_Hsc_.resizeNonZeros(Hsc_.nblocks());
         // TODO: use async upload - need to converted Eigen::VectorXi to a pinned memory address
         // version
-        d_Hsc_.uploadAsync(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices(), streams[0]);
+        d_Hsc_.uploadAsync(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
 
         // initialise the device landmark Hessian matrix - 
         // this is filled by the computation of the quadratic form
         d_Hll_.resize(numL_);
        
         d_HscCSR_.resize(Hsc_.nnzSymm());
-        d_BSR2CSR_.assignAsync(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR(), streams[2]);
+        d_BSR2CSR_.assignAsync(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
 
         d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
-        gpu::findHschureMulBlockIndices(d_Hpl_, d_Hsc_, d_HscMulBlockIds_, streams[1]);
+        gpu::findHschureMulBlockIndices(d_Hpl_, d_Hsc_, d_HscMulBlockIds_);
 
         d_bsc_.resize(numP_);
         d_Hpl_invHll_.resize(nVertexBlockPos);
@@ -306,8 +306,8 @@ bool BlockSolver::solve(std::array<cudaStream_t, 3>& streams)
     // Schur complement
     // bSc = -bp + Hpl*Hll^-1*bl
     // HSc = Hpp - Hpl*Hll^-1*HplT
-    gpu::computeBschure(d_bp_, d_Hpl_, d_Hll_, d_bl_, d_bsc_, d_invHll_, d_Hpl_invHll_, streams[1]);
-    gpu::computeHschure(d_Hpp_, d_Hpl_invHll_, d_Hpl_, d_HscMulBlockIds_, d_Hsc_, streams[1]);
+    gpu::computeBschure(d_bp_, d_Hpl_, d_Hll_, d_bl_, d_bsc_, d_invHll_, d_Hpl_invHll_);
+    gpu::computeHschure(d_Hpp_, d_Hpl_invHll_, d_Hpl_, d_HscMulBlockIds_, d_Hsc_);
 
     // Solve linear equation about Δxp
     // HSc*Δxp = bp
