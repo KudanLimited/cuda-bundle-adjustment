@@ -53,13 +53,10 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
     double nu = 2.0;
     double lambda = 0.0;
     double F = 0.0;
-    double cumTime = 0.0;
 
     // Levenberg-Marquardt iteration
     for (int iteration = 0; iteration < niterations; iteration++)
     {
-        auto t0 = get_time_point();
-
         if (iteration == 0)
         {
             solver_->buildStructure(edgeSets, vertexSets, streams_);
@@ -110,15 +107,10 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
         stats_.addStat({iteration, F});
         if (verbose)
         {
-            auto t1 = get_time_point();
-            auto dt = get_duration(t0, t1);
-            cumTime += dt;
             printf(
-                "iteration= %i; time = %.5f [sec];  cum time= %.5f  chi2= %f;  lambda= %f   rho= "
-                "%f	nedges= %i\n",
+                "iteration= %i;   chi2= %f;   lambda= %f   rho= "
+                "%f	   nedges= %i\n",
                 iteration,
-                dt,
-                cumTime,
                 F,
                 lambda,
                 rho,

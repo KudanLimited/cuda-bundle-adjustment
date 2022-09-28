@@ -5,6 +5,7 @@
 #include "cuda_linear_solver.h"
 #include "device_buffer.h"
 #include "device_matrix.h"
+#include "fixed_vector.h"
 #include "graph_optimisation_options.h"
 #include "sparse_block_matrix.h"
 
@@ -183,26 +184,26 @@ private:
     std::vector<BaseVertex*> verticesP_;
     std::vector<BaseVertex*> verticesL_;
 
-    std::vector<HplBlockPos> HplblockPos_;
+    async_vector<HplBlockPos> HplblockPos_;
 
-    // active sizes only for pose and landmark
+    /// active sizes only for pose and landmark
     size_t numP_ = 0;
     size_t numL_ = 0;
 
-    // block matrices
+    /// block matrices
     HplSparseBlockMatrix Hpl_;
     HppSparseBlockMatrix Hpp_;
     HschurSparseBlockMatrix Hsc_;
     std::unique_ptr<LinearSolver> linearSolver_;
 
     // device buffers
-    // solution vectors
+    /// solution vectors
     GpuVec1d d_solution_, d_solutionBackup_;
 
-    // edge information
+    /// edge information
     GpuVec1i d_edge2Hpl_;
 
-    // solution increments Δx = [Δxp Δxl]
+    /// solution increments Δx = [Δxp Δxl]
     GpuVec1d d_x_;
     GpuPx1BlockVec d_xp_;
     GpuLx1BlockVec d_xl_;
@@ -229,14 +230,17 @@ private:
     GpuPxLBlockVec d_Hpl_invHll_;
     GpuVec3i d_HscMulBlockIds_;
 
-    // conversion matrix storage format BSR to CSR
+    /// conversion matrix storage format BSR to CSR
     GpuVec1d d_HscCSR_;
     GpuVec1d d_HppCSR_;
     GpuVec1i d_BSR2CSR_;
 
-    // temporary buffer
+    /// temporary buffer
     DeviceBuffer<Scalar> d_chi_;
     GpuVec1i d_nnzPerCol_;
+
+    ///  host side allocated space for chi value download from device
+    hAsyncScalarVec h_chi_;
 
     std::vector<double> profItems_;
 };
