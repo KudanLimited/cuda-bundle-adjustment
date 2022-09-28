@@ -27,6 +27,7 @@ namespace cugo
 {
 namespace gpu
 {
+
 template <int N>
 using Vecxd = Vec<Scalar, N>;
 
@@ -131,7 +132,7 @@ void CUGO_API constructQuadraticForm_(
     const cudaStream_t stream = 0);
 
 template <int M>
-Scalar CUGO_API computeActiveErrors_(
+void CUGO_API computeActiveErrors_(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<M>& measurements,
@@ -144,9 +145,10 @@ Scalar CUGO_API computeActiveErrors_(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     const cudaStream_t stream = 0);
 
-Scalar CUGO_API computeActiveErrors_DepthBa(
+void CUGO_API computeActiveErrors_DepthBa(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVec3d& measurements,
@@ -159,18 +161,20 @@ Scalar CUGO_API computeActiveErrors_DepthBa(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     cudaStream_t stream = 0);
 
-Scalar CUGO_API computeActiveErrors_Line(
+void CUGO_API computeActiveErrors_Line(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToLineMatch<double>>& measurements,
     const GpuVec1d& omegas,
     const GpuVec2i& edge2PL,
     GpuVec1d& errors,
     GpuVec3d& Xcs,
-    Scalar* chi);
+    Scalar* chi,
+    hAsyncScalarVec& h_chi);
 
-Scalar CUGO_API computeActiveErrors_Plane(
+void CUGO_API computeActiveErrors_Plane(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToPlaneMatch<double>>& measurements,
     const GpuVec1d& omegas,
@@ -178,6 +182,7 @@ Scalar CUGO_API computeActiveErrors_Plane(
     GpuVec1d& errors,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     cudaStream_t stream = 0);
 
 void CUGO_API constructQuadraticForm_Line(
@@ -208,6 +213,7 @@ void CUGO_API constructQuadraticForm_Plane(
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
     cudaStream_t stream = 0);
+
 
 } // namespace gpu
 

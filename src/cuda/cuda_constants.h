@@ -25,12 +25,12 @@ constexpr int BLOCK_COMPUTE_SCALE = 512;
 constexpr int BLOCK_QUADRATIC_FORM = 512;
 constexpr int ADD_LAMBDA_BLOCK_SIZE = 512;
 constexpr int RESTORE_DIAGONAL_BLOCK_SIZE = 1024;
-constexpr int COMPUTE_BSCHURE_BLOCK_SIZE = 512;
+constexpr int COMPUTE_BSCHURE_BLOCK_SIZE = 256;
 constexpr int COMPUTE_HSCHURE_BLOCK_SIZE = 256;
 constexpr int TWIST_CSR_BLOCK_SIZE = 512;
 constexpr int SCHUR_COMP_POST_BLOCK_SIZE = 1024;
-constexpr int UPDATE_POSES_BLOCK_SIZE = 512;
-constexpr int UPDATE_LANDMARKS_BLOCK_SIZE = 512;
+constexpr int UPDATE_POSES_BLOCK_SIZE = 256;
+constexpr int UPDATE_LANDMARKS_BLOCK_SIZE = 1024;
 
 } // namespace gpu
 } // namespace cugo

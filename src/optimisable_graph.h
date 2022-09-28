@@ -530,7 +530,7 @@ public:
      * @param options A @see GraphOptimisationOptions object
      */
     virtual void init(
-        std::vector<HplBlockPos>& hBlockPosArena,
+        async_vector<HplBlockPos>& hBlockPosArena,
         const int edgeIdOffset,
         cudaStream_t stream,
         bool doSchur,
@@ -644,18 +644,16 @@ public:
      * @param stream A CUDA stream object
      * @return Scalar The calculated chi2 value
      */
-    virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream)
+    virtual void computeError(const VertexSetVec& vertexSets, Scalar* chi, hAsyncScalarVec& h_chi, cudaStream_t stream)
     {
-        return 0;
+        return;
     }
 };
 
 /**
  * @brief Group together a set of edges of the same type.
  * @tparam DIM dimension of the measurement vector.
- * @tparam E The measurement type for this edge (host)
- * @tparam F The measurement type for this edge (device). TODO: Merge the E and F template paramters
- * into one.
+ * @tparam E The measurement type for this edge 
  * @tparam VertexTypes A varadic template of vertex types associated with this edge.
  */
 template <int DIM, typename E, typename... VertexTypes>
@@ -739,7 +737,7 @@ public:
     using MeasurementVec = GpuVec<GpuMeasurementType>;
 
     void init(
-        std::vector<HplBlockPos>& hBlockPosArena,
+        async_vector<HplBlockPos>& hBlockPosArena,
         const int edgeIdOffset,
         cudaStream_t stream,
         bool doSchur,

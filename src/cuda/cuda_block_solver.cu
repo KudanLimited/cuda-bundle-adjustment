@@ -1452,6 +1452,7 @@ void buildHplStructure(
     int* colPtr = Hpl.outerIndices();
     int* rowInd = Hpl.innerIndices();
 
+    cudaStreamSynchronize(stream);
     auto ptrBlockPos = thrust::device_pointer_cast(blockpos.data());
     thrust::sort(ptrBlockPos, ptrBlockPos + nblocks, LessColId());
 
@@ -1488,7 +1489,7 @@ void findHschureMulBlockIndices(
 }
 
 template <int M>
-Scalar computeActiveErrors_(
+void computeActiveErrors_(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<M>& measurements,
@@ -1501,12 +1502,13 @@ Scalar computeActiveErrors_(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     const cudaStream_t stream)
 {
 }
 
 template <>
-Scalar computeActiveErrors_<2>(
+void computeActiveErrors_<2>(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<2>& measurements,
@@ -1519,6 +1521,7 @@ Scalar computeActiveErrors_<2>(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     const cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
@@ -1556,18 +1559,14 @@ Scalar computeActiveErrors_<2>(
         Xcs,
         chi);
     CUDA_CHECK(cudaGetLastError());
+    h_chi.download(chi, stream);
     deleteRkFunction<<<1, 1>>>(d_function);
-
     cudaStreamSynchronize(stream);
-
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-    return h_chi;
+    
 }
 
 template <>
-Scalar computeActiveErrors_<3>(
+void computeActiveErrors_<3>(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<3>& measurements,
@@ -1580,6 +1579,7 @@ Scalar computeActiveErrors_<3>(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     const cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
@@ -1617,15 +1617,9 @@ Scalar computeActiveErrors_<3>(
         Xcs,
         chi);
     CUDA_CHECK(cudaGetLastError());
-
+    h_chi.download(chi, stream);
     deleteRkFunction<<<1, 1>>>(d_function);
-
     cudaStreamSynchronize(stream);
-
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-    return h_chi;
 }
 
 template <int M>
@@ -1749,15 +1743,13 @@ void constructQuadraticForm_<3>(
         Hpl);
     CUDA_CHECK(cudaGetLastError());
 
-    deleteRkFunction<<<1, 1>>>(d_function);
+    deleteRkFunction<<<1, 1>>>((RobustKernelFunc**)d_function);
 }
 
 template <typename T, int DIM>
 Scalar
 maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* maxD, const cudaStream_t& stream)
 {
-    cudaStreamSynchronize(stream);
-
     constexpr int block = BLOCK_MAX_DIAGONAL;
     constexpr int grid = 4;
     const int size = D.size() * DIM;
@@ -1793,8 +1785,6 @@ void addLambda_(
     DeviceBlockVector<T, DIM, 1>& backup,
     const cudaStream_t& stream)
 {
-    cudaStreamSynchronize(stream);
-
     const int size = D.size() * DIM;
     const int block = ADD_LAMBDA_BLOCK_SIZE;
     const int grid = 16;
@@ -1856,6 +1846,7 @@ void computeBschure(
         cols, Hll, invHll, bl, Hpl, Hpl.outerIndices(), Hpl.innerIndices(), bsc, Hpl_invHll);
     CUDA_CHECK(cudaGetLastError());
 }
+
 void computeHschure(
     const GpuPxPBlockVec& Hpp,
     const GpuPxLBlockVec& Hpl_invHll,
@@ -1942,8 +1933,6 @@ void schurComplementPost(
 
 void updatePoses(const GpuPx1BlockVec& xp, GpuVecSe3d& estimate, const cudaStream_t& stream)
 {
-    cudaStreamSynchronize(stream); 
-
     const int block = UPDATE_POSES_BLOCK_SIZE;
     const int grid = 16;
 
@@ -1953,8 +1942,6 @@ void updatePoses(const GpuPx1BlockVec& xp, GpuVecSe3d& estimate, const cudaStrea
 
 void updateLandmarks(const GpuLx1BlockVec& xl, GpuVec3d& estimate, const cudaStream_t& stream)
 {
-    cudaStreamSynchronize(stream);
-
     const int block = UPDATE_LANDMARKS_BLOCK_SIZE;
     const int grid = 16;
 
@@ -2330,7 +2317,7 @@ __global__ void constructQuadraticFormKernel_Line(
 // BA custom edge - Wrapper functions
 ////////////////////////////////////////////////////////////////////////////////////
 
-Scalar computeActiveErrors_DepthBa(
+void computeActiveErrors_DepthBa(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVec3d& measurements,
@@ -2343,6 +2330,7 @@ Scalar computeActiveErrors_DepthBa(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
@@ -2353,8 +2341,12 @@ Scalar computeActiveErrors_DepthBa(
 
     RobustKernelFunc** d_function;
     cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
-    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta);
+    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
 
+    if (errorThreshold > 0.0)
+    {
+        CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
+    }
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     
     computeActiveErrorsKernel_DepthBa<<<grid, block, 0, stream>>>(
@@ -2374,49 +2366,38 @@ Scalar computeActiveErrors_DepthBa(
         Xcs,
         chi);
     CUDA_CHECK(cudaGetLastError());
-
-    deleteRkFunction<<<1, 1>>>(d_function);
-
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-    return h_chi;
+    h_chi.download(chi);
+    deleteRkFunction<<<1, 1>>>((RobustKernelFunc**)d_function);
+    cudaStreamSynchronize(stream);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
 // ICP custom edge - Wrapper functions
 ////////////////////////////////////////////////////////////////////////////////////
-Scalar computeActiveErrors_Line(
+void computeActiveErrors_Line(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToLineMatch<double>>& measurements,
     const GpuVec1d& omegas,
     const GpuVec2i& edge2PL,
     GpuVec1d& errors,
     GpuVec3d& Xcs,
-    Scalar* chi)
+    Scalar* chi,
+    hAsyncScalarVec& h_chi)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
     const int grid = 16;
 
-    if (nedges <= 0)
-    {
-        return 0;
-    }
-
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     computeActiveErrorsKernel_Line<<<grid, block>>>(
         nedges, nomegas, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
     CUDA_CHECK(cudaGetLastError());
 
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-    return h_chi;
+    h_chi.download(chi);
 }
 
-Scalar computeActiveErrors_Plane(
+void computeActiveErrors_Plane(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToPlaneMatch<double>>& measurements,
     const GpuVec1d& omegas,
@@ -2424,6 +2405,7 @@ Scalar computeActiveErrors_Plane(
     GpuVec1d& errors,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
@@ -2432,20 +2414,12 @@ Scalar computeActiveErrors_Plane(
     const int grid = 16;
     const int sharedBytes = block * sizeof(Scalar);
 
-    if (nedges <= 0)
-    {
-        return 0;
-    }
-
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     computeActiveErrorsKernel_Plane<<<grid, block, sharedBytes, stream>>>(
         nedges, nomegas, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
     CUDA_CHECK(cudaGetLastError());
 
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-    return h_chi;
+    h_chi.download(chi);
 }
 
 void constructQuadraticForm_Plane(
@@ -2467,11 +2441,6 @@ void constructQuadraticForm_Plane(
     const int nomegas = omegas.ssize();
     const int block = BLOCK_QUADRATIC_FORM;
     const int grid = 16;
-
-    if (nedges <= 0)
-    {
-        return;
-    }
 
     constructQuadraticFormKernel_Plane<1><<<grid, block, 0, stream>>>(
         nedges,
@@ -2509,11 +2478,6 @@ void constructQuadraticForm_Line(
     const int nomegas = omegas.ssize();
     const int block = BLOCK_QUADRATIC_FORM;
     const int grid = 16;
-
-    if (nedges <= 0)
-    {
-        return;
-    }
 
     constructQuadraticFormKernel_Line<1><<<grid, block>>>(
         nedges,
