@@ -48,12 +48,8 @@ int main(int argc, char** argv)
     landmarkVertexSet = new cugo::LandmarkVertexSet(true);
 
     planeEdgeSet = new cugo::PlaneEdgeSet();
-
     monoEdgeSet = new cugo::MonoEdgeSet();
-    //monoEdgeSet->setRobustKernel(cugo::RobustKernelType::Cauchy, fivePercent3DofSqrt);
-
     stereoEdgeSet = new cugo::StereoEdgeSet();
-    //stereoEdgeSet->setRobustKernel(cugo::RobustKernelType::Cauchy, fivePercent3DofSqrt);
 
     std::cout << "Reading Graph... " << std::flush;
 
@@ -86,7 +82,7 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
 
     cugo::GraphOptimisationOptions options;
     options.perEdgeInformation = true;
-    options.perEdgeCamera = false;
+    options.perEdgeCamera = true;
     auto optimizer = std::make_unique<cugo::CudaGraphOptimisationImpl>(options);
 
     // read pose vertices
@@ -94,7 +90,7 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
     {
         const int id = node["id"];
         const int fixed = node["fixed"];
-        cugo::QuatD q = cugo::Quat(getArray<double, 4>(node["q"]));
+        cugo::QuatD q = cugo::QuatD(getArray<double, 4>(node["q"]));
         cugo::Vec3d t = getArray<double, 3>(node["t"]);
 
         cugo::PoseVertex* poseVertex = new cugo::PoseVertex(id, cugo::Se3D(q, t), fixed);
@@ -114,6 +110,13 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
     }
     optimizer->addVertexSet(landmarkVertexSet);
 
+    cugo::Camera camera;
+    camera.fx = fs["fx"];
+    camera.fy = fs["fy"];
+    camera.cx = fs["cx"];
+    camera.cy = fs["cy"];
+    camera.bf = fs["bf"];
+
     // read monocular edges
     int i = 0;
     for (const auto& node : fs["monocular_edges"])
@@ -131,6 +134,7 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
         monoEdge->setVertex(landmarkVertex, 1);
         monoEdge->setMeasurement(measurement);
         monoEdge->setInformation(information);
+        monoEdge->setCamera(camera);
         monoEdgeSet->addEdge(monoEdge);
     }
 
@@ -151,19 +155,11 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
         stereoEdge->setVertex(landmarkVertex, 1);
         stereoEdge->setMeasurement(measurement);
         stereoEdge->setInformation(information);
+        stereoEdge->setCamera(camera);
         stereoEdgeSet->addEdge(stereoEdge);
     }
 
     // read camera parameters
-    cugo::Camera camera;
-    camera.fx = fs["fx"];
-    camera.fy = fs["fy"];
-    camera.cx = fs["cx"];
-    camera.cy = fs["cy"];
-    camera.bf = fs["bf"];
-
-    stereoEdgeSet->setCamera(camera);
-    monoEdgeSet->setCamera(camera);
     optimizer->addEdgeSet<cugo::MonoEdgeSet>(monoEdgeSet);
     optimizer->addEdgeSet<cugo::StereoEdgeSet>(stereoEdgeSet);
 
