@@ -25,7 +25,7 @@ endif()
 
 find_package(CUDAToolkit REQUIRED)
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set(CMAKE_CUDA_ARCHITECTURES 75)
+  set(CMAKE_CUDA_ARCHITECTURES 61 75)
 endif()
 
 message(STATUS "CUDA Found: ${CUDAToolkit_FOUND}")
