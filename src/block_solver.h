@@ -8,6 +8,7 @@
 #include "fixed_vector.h"
 #include "graph_optimisation_options.h"
 #include "sparse_block_matrix.h"
+#include "cuda_device.h"
 
 #include <array>
 #include <vector>
@@ -51,7 +52,10 @@ public:
      * @param edgeSets Edge sets associated with the graph optimisation.
      * @param vertexSets Vertex sets associated with the graph optimisation.
      */
-    void initialize(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
+    void initialize(
+        const EdgeSetVec& edgeSets,
+        const VertexSetVec& vertexSets,
+        CudaDevice::StreamContainer& streams);
 
     /**
      * @brief BUilds the graph structure based on the vertices and connecting edges.
@@ -61,7 +65,7 @@ public:
     void buildStructure(
         const EdgeSetVec& edgeSets,
         const VertexSetVec& vertexSets,
-        std::array<cudaStream_t, 3>& streams);
+        CudaDevice::StreamContainer& streams);
 
     /**
      * @brief Compute the error of the graph.
@@ -70,10 +74,10 @@ public:
      * @param streams A vector of CUDA streams
      * @return double The calculated error value.
      */
-    double computeErrors(
+    Scalar computeErrors(
         const EdgeSetVec& edgeSets,
         const VertexSetVec& vertexSets,
-        std::array<cudaStream_t, 3>& streams);
+        CudaDevice::StreamContainer& streams);
 
     /**
      * @brief Compute the quadratic equation of the graph.
@@ -84,33 +88,33 @@ public:
     void buildSystem(
         const EdgeSetVec& edgeSets,
         const VertexSetVec& vertexSets,
-        std::array<cudaStream_t, 3>& streams);
+        CudaDevice::StreamContainer& streams);
 
     /**
      * @brief Compute the maximum value on the hessain matrix as computed by @see buildSystem
      * @return The maximum value on the diagonal of the H matrix.
      */
-    double maxDiagonal(std::array<cudaStream_t, 3>& streams);
+    double maxDiagonal(CudaDevice::StreamContainer& streams);
 
     /**
      * @brief Set the lambda value on the H matrix diagonal.
      * @param lambda The lambda value to set.
      */
-    void setLambda(double lambda, std::array<cudaStream_t, 3>& streams);
+    void setLambda(double lambda, CudaDevice::StreamContainer& streams);
 
     /**
      * @brief Restore the H matrix diagonal back to the values before the @see setLambda call.
      *
      */
-    void restoreDiagonal(std::array<cudaStream_t, 3>& streams);
+    void restoreDiagonal(CudaDevice::StreamContainer& streams);
 
     /**
      * @brief Solve the linear equation Ax = b
      * @return If the equation is successful, returns true.
      */
-    bool solve(std::array<cudaStream_t, 3>& streams);
+    bool solve(CudaDevice::StreamContainer& streams);
 
-    void update(const VertexSetVec& vertexSets, std::array<cudaStream_t, 3>& streams);
+    void update(const VertexSetVec& vertexSets, CudaDevice::StreamContainer& streams);
 
     /**
     * @brief Remove outliers from the edgeSet if the outlier threshold is set.
@@ -154,6 +158,26 @@ public:
     int nedges() const { return nedges_; }
 
     /**
+     * @brief Create the robust kernel virtual function used on the device. 
+     * This requires cleanup via the @p deleteRobustKernelFunction.
+     * @param An inititalised robust kernel object. 
+     */
+    void createRobustKernelFunction(const RobustKernel& kernel);
+    
+    /**
+    * @brief Delete the robust kernel virtual function.
+    */
+    void deleteRobustKernelFunction();
+
+    Scalar getChiError(const EdgeSetVec& edgeSets, CudaDevice::StreamContainer& streams);
+
+    /**
+    * @brief Sets the outlier clear state - all kernels that are connected with the
+    * outlier logic will have their outlier containers cleared before the kernel call
+    */
+    void setOutlierClearState(bool state) noexcept;
+
+    /**
      * @brief Create a bit-flag that is used on the device to determine if pose or landmark vertices
      * are fixed.
      * @param fixedP States if the pose veretex is fixed.
@@ -180,11 +204,20 @@ private:
 
     bool doSchur_;
     int nedges_;
+    bool clearOutliers_;
 
     std::vector<BaseVertex*> verticesP_;
     std::vector<BaseVertex*> verticesL_;
 
     async_vector<HplBlockPos> HplblockPos_;
+
+    // pointer to pinned chi numbers which are the size of
+    // nstreams * nedgeSets. The total chi value is calculated via 
+    // a call to @p getChiError. 
+    std::array<Scalar*, 4> pChiValues_;
+
+    // robust kernel applied to all edges
+    RobustKernel robustKernel_;
 
     /// active sizes only for pose and landmark
     size_t numP_ = 0;
@@ -237,10 +270,8 @@ private:
 
     /// temporary buffer
     DeviceBuffer<Scalar> d_chi_;
+    DeviceBuffer<Scalar> d_scale_;
     GpuVec1i d_nnzPerCol_;
-
-    ///  host side allocated space for chi value download from device
-    hAsyncScalarVec h_chi_;
 
     std::vector<double> profItems_;
 };

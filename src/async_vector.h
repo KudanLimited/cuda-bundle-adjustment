@@ -41,8 +41,7 @@ public:
         // already existing size
         if (!data_ || size > capacity_)
         {
-            // allocate more memory than required to reduce costly resizes
-            allocate(size * 2);
+            allocate(size);
         }
         size_ = 0;
     }

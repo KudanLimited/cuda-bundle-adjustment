@@ -84,6 +84,7 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
     options.perEdgeInformation = true;
     options.perEdgeCamera = true;
     auto optimizer = std::make_unique<cugo::CudaGraphOptimisationImpl>(options);
+    optimizer->setRobustKernel(cugo::RobustKernelType::None, 1.0);
 
     // read pose vertices
     for (const auto& node : fs["pose_vertices"])
@@ -119,7 +120,7 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
 
     // read monocular edges
     int i = 0;
-    for (const auto& node : fs["monocular_edges"])
+    /* for (const auto& node : fs["monocular_edges"])
     {
         const int iP = node["vertexP"];
         const int iL = node["vertexL"];
@@ -136,7 +137,7 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
         monoEdge->setInformation(information);
         monoEdge->setCamera(camera);
         monoEdgeSet->addEdge(monoEdge);
-    }
+    }*/
 
     // read stereo edges
     i = 0;
@@ -160,7 +161,7 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
     }
 
     // read camera parameters
-    optimizer->addEdgeSet<cugo::MonoEdgeSet>(monoEdgeSet);
+    //optimizer->addEdgeSet<cugo::MonoEdgeSet>(monoEdgeSet);
     optimizer->addEdgeSet<cugo::StereoEdgeSet>(stereoEdgeSet);
 
     // "warm-up" to avoid overhead

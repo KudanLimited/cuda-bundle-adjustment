@@ -24,14 +24,14 @@ public:
     LineEdgeSet() {}
     ~LineEdgeSet() {}
 
-    void computeError(
+    Scalar computeError(
         const VertexSetVec& vertexSets,
         Scalar* chi,
-        hAsyncScalarVec& h_chi,
-        cudaStream_t stream) override
+        const CudaDevice::StreamContainer& streams,
+        bool clearOutliers) override
     {
         GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getDeviceEstimates();
-        gpu::computeActiveErrors_Line(estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi, h_chi);
+        return gpu::computeActiveErrors_Line(estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi, streams);
     }
 
     void constructQuadraticForm(
@@ -41,7 +41,8 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream) override
+        bool clearOutliers,
+        const CudaDevice::StreamContainer& streams) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d se3_data = poseVertexSet->getDeviceEstimates();
@@ -57,7 +58,8 @@ public:
             bp,
             Hll,
             bl,
-            Hpl);
+            Hpl,
+            streams);
     }
 };
 
@@ -71,14 +73,14 @@ public:
     PlaneEdgeSet() {}
     ~PlaneEdgeSet() {}
 
-    void computeError(
+    Scalar computeError(
         const VertexSetVec& vertexSets,
         Scalar* chi,
-        hAsyncScalarVec& h_chi,
-        cudaStream_t stream) override
+        const CudaDevice::StreamContainer& streams,
+        bool clearOutliers) override
     {
         GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getDeviceEstimates();
-        gpu::computeActiveErrors_Plane(estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi, h_chi, stream);
+        return gpu::computeActiveErrors_Plane(estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi, streams);
     }
 
     void constructQuadraticForm(
@@ -88,7 +90,8 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream) override
+        bool clearOutliers,
+        const CudaDevice::StreamContainer& streams) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d se3_data = poseVertexSet->getDeviceEstimates();
@@ -105,7 +108,7 @@ public:
             Hll,
             bl,
             Hpl,
-            stream);
+            streams);
     }
 };
 

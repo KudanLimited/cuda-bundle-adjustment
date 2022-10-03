@@ -91,6 +91,8 @@ void VertexSet<T, EstimateType>::generateEstimateData()
     vertices.reserve(vertexMap.size());
     estimates.reserve(vertexMap.size());
     estimateVertexIds.reserve(vertexMap.size());
+    fixedIds.reserve(vertexMap.size() / 2);
+    fixedVertices.reserve(vertexMap.size() / 2);
 
     for (const auto& [id, vertex] : vertexMap)
     {
@@ -285,6 +287,24 @@ int Edge<DIM, E, VertexTypes...>::dim() const noexcept
 }
 
 template <int DIM, typename E, typename... VertexTypes>
+void Edge<DIM, E, VertexTypes...>::inactivate() noexcept
+{
+    isActive_ = false;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+void Edge<DIM, E, VertexTypes...>::setActive() noexcept
+{
+    isActive_ = true;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+bool Edge<DIM, E, VertexTypes...>::isActive() const noexcept
+{
+    return isActive_;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
 void Edge<DIM, E, VertexTypes...>::setMeasurement(const Measurement& m) noexcept
 {
     measurement = m;
@@ -349,6 +369,18 @@ size_t EdgeSet<DIM, E, VertexTypes...>::nedges() const noexcept
 }
 
 template <int DIM, typename E, typename... VertexTypes>
+size_t EdgeSet<DIM, E, VertexTypes...>::totalOutlierCount() const noexcept
+{
+    return totalOutlierCount_;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+size_t EdgeSet<DIM, E, VertexTypes...>::outlierCount() const noexcept
+{
+    return outliersRemovedThisFrame_;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
 size_t EdgeSet<DIM, E, VertexTypes...>::nActiveEdges() const noexcept
 {
     return activeEdgeSize_;
@@ -367,20 +399,6 @@ const int EdgeSet<DIM, E, VertexTypes...>::dim() const noexcept
 }
 
 template <int DIM, typename E, typename... VertexTypes>
-void EdgeSet<DIM, E, VertexTypes...>::setRobustKernel(
-    const RobustKernelType type, Scalar delta) noexcept
-{
-    this->kernel.type = type;
-    this->kernel.delta = delta;
-}
-
-template <int DIM, typename E, typename... VertexTypes>
-RobustKernel& EdgeSet<DIM, E, VertexTypes...>::robustKernel() noexcept
-{
-    return kernel;
-}
-
-template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::setOutlierThreshold(const Scalar errorThreshold) noexcept
 {
     this->outlierThreshold = errorThreshold;
@@ -396,6 +414,9 @@ template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::clearEdges() noexcept
 {
     edges.clear();
+    totalOutlierCount_ = 0;
+    outliersRemovedThisFrame_ = 0;
+    outliersRemovedLastFrame_ = 0;
 }
 
 template <int DIM, typename E, typename... VertexTypes>
@@ -556,10 +577,8 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     d_Xcs.resize(activeEdgeSize_);
 
     d_outlierThreshold.assign(1, &outlierThreshold);
-    if (outlierThreshold > 0.0)
-    {
-        d_outliers.resize(activeEdgeSize_);
-    }
+    d_outliers.resize(activeEdgeSize_);
+
     if (edge2HData)
     {
         d_edge2Hpl.map(activeEdgeSize_, edge2HData);
@@ -575,36 +594,61 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     d_measurements.offset(d_dataBuffer, measurements->size(), measurements->bufferOffset());
     d_omegas.offset(d_dataBuffer, omegas->size(), omegas->bufferOffset());
     d_cameras.offset(d_dataBuffer, cameras->size(), cameras->bufferOffset());
+}
 
-    // upload the robust kernel delta value
-    kernel.d_delta.assign(1, &kernel.delta);
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::buildHplBlockPos(
+    async_vector<HplBlockPos>& hplBlockPos) noexcept
+{
+    int edgeId = 0;
+    for (BaseEdge* edge : edges)
+    {
+        if (!edge->isActive() || (!edge->getVertex(0)->isFixed() || !edge->getVertex(1)->isFixed()))
+        {
+            // we increase the edge id even if inactive as the edge container layout remains
+            // the same on the device and the id is used as an index into this.
+            ++edgeId;
+            continue;
+        }
+        if (!edge->getVertex(0)->isFixed() && !edge->getVertex(1)->isFixed())
+        {
+            VIndex vec {edge->getVertex(0)->getIndex(), edge->getVertex(1)->getIndex()};
+            hplBlockPos.push_back({vec[0], vec[1], edgeId++});
+        }
+    }
 }
 
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::updateEdges() noexcept
 {
-    std::vector<int> edgeOutliers;
-    std::vector<BaseEdge*> edgesToRemove;
+    if (!edges.size())
+    {
+        return;
+    }
 
     if (outlierThreshold > 0.0)
     {
-        edgeOutliers.resize(activeEdgeSize_);
-        d_outliers.download(edgeOutliers.data());
+        size_t outlierCount = 0;
+        edgeOutliers_.resize(activeEdgeSize_);
+        d_outliers.download(edgeOutliers_.data());
         
         size_t idx = 0;
-        assert(edgeOutliers.size() == edges.size());
         for (BaseEdge* edge : edges)
         {
-            if (edgeOutliers[idx++])
+            if (edgeOutliers_[idx++] == 1)
             {
-                edgesToRemove.emplace_back(edge);
+                edge->inactivate();
+                outlierCount++;
             }
         }
-        // delete any edge outliers
-        for (BaseEdge* edge : edgesToRemove)
-        {
-            removeEdge(edge);
-        }
+        // becuase the outlier container isn't cleared between optimisation runs,
+        // we keep track of how many outliers where removed in the current run.
+        // This is then used to determine whether certain structures need rebuilding
+        // on the next run to save time.
+        totalOutlierCount_ = outlierCount;
+        outliersRemovedThisFrame_ = outlierCount - outliersRemovedLastFrame_;
+        outliersRemovedLastFrame_ = outlierCount;
+        assert(outliersRemovedThisFrame_ >= 0);
     }
 }
    

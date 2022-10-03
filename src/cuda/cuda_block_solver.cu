@@ -111,7 +111,7 @@ struct CameraParamView
 ////////////////////////////////////////////////////////////////////////////////////
 // Host functions
 ////////////////////////////////////////////////////////////////////////////////////
-static int divUp(int total, int grain) { return (total + grain - 1) / grain; }
+static int calcGridSize(int N, int blockSize) { return (N + blockSize - 1) / blockSize; }
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Device functions (template matrix and verctor operation)
@@ -127,52 +127,52 @@ __device__ inline void DEACCUM_ATOMIC(Scalar* address, Scalar value) { atomicAdd
 
 // recursive dot product for inline expansion
 template <int N>
-__device__ inline Scalar dot_(const Scalar* __restrict__ a, const Scalar* __restrict__ b)
+__device__ inline Scalar dot_(const Scalar* a, const Scalar* b)
 {
     return dot_<N - 1>(a, b) + a[N - 1] * b[N - 1];
 }
 
 template <>
-__device__ inline Scalar dot_<1>(const Scalar* __restrict__ a, const Scalar* __restrict__ b)
+__device__ inline Scalar dot_<1>(const Scalar* a, const Scalar* b)
 {
     return a[0] * b[0];
 }
 
 // recursive dot product for inline expansion (strided access pattern)
 template <int N, int S1, int S2>
-__device__ inline Scalar dot_stride_(const Scalar* __restrict__ a, const Scalar* __restrict__ b)
+__device__ inline Scalar dot_stride_(const Scalar* a, const Scalar* b)
 {
     return dot_stride_<N - 1, S1, S2>(a, b) + a[S1 * (N - 1)] * b[S2 * (N - 1)];
 }
 
 template <>
 __device__ inline Scalar
-dot_stride_<1, PDIM, 1>(const Scalar* __restrict__ a, const Scalar* __restrict__ b)
+dot_stride_<1, PDIM, 1>(const Scalar* a, const Scalar* b)
 {
     return a[0] * b[0];
 }
 template <>
 __device__ inline Scalar
-dot_stride_<1, LDIM, 1>(const Scalar* __restrict__ a, const Scalar* __restrict__ b)
+dot_stride_<1, LDIM, 1>(const Scalar* a, const Scalar* b)
 {
     return a[0] * b[0];
 }
 template <>
 __device__ inline Scalar
-dot_stride_<1, PDIM, PDIM>(const Scalar* __restrict__ a, const Scalar* __restrict__ b)
+dot_stride_<1, PDIM, PDIM>(const Scalar* a, const Scalar* b)
 {
     return a[0] * b[0];
 }
 template <>
 __device__ inline Scalar
-dot_stride_<3, 1, 1>(const Scalar* __restrict__ a, const Scalar* __restrict__ b)
+dot_stride_<3, 1, 1>(const Scalar* a, const Scalar* b)
 {
     return a[0] * b[0];
 }
 
 // matrix(tansposed)-vector product: b = AT*x
 template <int M, int N, AssignOP OP = ASSIGN>
-__device__ inline void MatTMulVec(const Scalar* __restrict__ A, const Scalar* __restrict__ x, Scalar* __restrict__ b, Scalar omega)
+__device__ inline void MatTMulVec(const Scalar* A, const Scalar* x, Scalar* b, Scalar omega)
 {
 #pragma unroll
     for (int i = 0; i < M; i++)
@@ -184,9 +184,9 @@ __device__ inline void MatTMulVec(const Scalar* __restrict__ A, const Scalar* __
 // matrix(tansposed)-matrix product: C = AT*B
 template <int L, int M, int N, AssignOP OP = ASSIGN>
 __device__ inline void MatTMulMat(
-    const Scalar* __restrict__ A,
-    const Scalar* __restrict__ B,
-    Scalar* __restrict__ C,
+    const Scalar* A,
+    const Scalar* B,
+    Scalar* C,
     Scalar omega)
 {
 #pragma unroll
@@ -199,7 +199,7 @@ __device__ inline void MatTMulMat(
 // matrix-vector product: b = A*x
 template <int M, int N, int S = 1, AssignOP OP = ASSIGN>
 __device__ inline void
-MatMulVec(const Scalar* __restrict__ A, const Scalar* __restrict__ x, Scalar* __restrict__ b)
+MatMulVec(const Scalar* A, const Scalar* x, Scalar* b)
 {
 #pragma unroll
     for (int i = 0; i < M; i++)
@@ -211,7 +211,7 @@ MatMulVec(const Scalar* __restrict__ A, const Scalar* __restrict__ x, Scalar* __
 // matrix-matrix product: C = A*B
 template <int L, int M, int N, AssignOP OP = ASSIGN>
 __device__ inline void
-MatMulMat(const Scalar* __restrict__ A, const Scalar* __restrict__ B, Scalar* __restrict__ C)
+MatMulMat(const Scalar* A, const Scalar* B, Scalar* C)
 {
 #pragma unroll
     for (int i = 0; i < N; i++)
@@ -223,7 +223,7 @@ MatMulMat(const Scalar* __restrict__ A, const Scalar* __restrict__ B, Scalar* __
 // matrix-matrix(tansposed) product: C = A*BT
 template <int L, int M, int N, AssignOP OP = ASSIGN>
 __device__ inline void
-MatMulMatT(const Scalar* __restrict__ A, const Scalar* __restrict__ B, Scalar* __restrict__ C)
+MatMulMatT(const Scalar* A, const Scalar* B, Scalar* C)
 {
 #pragma unroll
     for (int i = 0; i < N; i++)
@@ -260,7 +260,7 @@ __device__ inline Scalar norm(const Vecxd<N>& x)
 __device__ inline Scalar norm(const QuatD& x) { return norm<4>(x.data); }
 
 __device__ inline Matx<Scalar, 1, 6>
-Vec1x3MulMat3x6(const Scalar* __restrict__ mat, const Scalar* __restrict__ vec)
+Vec1x3MulMat3x6(const Scalar* mat, const Scalar* vec)
 {
     Matx<Scalar, 1, 6> output;
     output(0, 0) = vec[0] * mat[0] + vec[1] * mat[6] + vec[2] * mat[12];
@@ -777,7 +777,7 @@ __device__ inline Scalar pow2(const Scalar x) { return x * x; }
 
 __device__ inline Scalar pow3(const Scalar x) { return x * x * x; }
 
-__device__ inline void updateExp(const Scalar* __restrict__ update, QuatD& rot, Vec3d& trans)
+__device__ inline void updateExp(const Scalar* update, QuatD& rot, Vec3d& trans)
 {
     Vec3d omega(update);
     Vec3d upsilon(update + 3);
@@ -822,7 +822,7 @@ __device__ inline void updatePose(const QuatD& q1, const Vec3d& t1, QuatD& q2, V
 }
 
 template <int N>
-__device__ inline void copy(const Scalar* __restrict__ src, Scalar* __restrict__ dst)
+__device__ inline void copy(const Scalar* src, Scalar* dst)
 {
     for (int i = 0; i < N; i++)
     {
@@ -839,21 +839,24 @@ __device__ inline Vec3i makeVec3i(int i, int j, int k)
     return vec;
 }
 
-__device__ int reduce_sum(cg::thread_group group, Scalar* temp, Scalar val)
+__device__ void parallelReduction(Scalar* __restrict__ cache, const int sharedIdx, const Scalar value, const int size, Scalar* accumValue)
 {
-    int lane = group.thread_rank();
+    cache[sharedIdx] = value;
+    __syncthreads();
 
-    for (int i = group.size() / 2; i > 0; i /= 2)
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1)
     {
-        temp[lane] = val;
-        group.sync();
-        if (lane < i)
+        if (sharedIdx < stride && sharedIdx + stride < size)
         {
-            val += temp[lane + 1];
+            cache[sharedIdx] += cache[sharedIdx + stride];
         }
-        group.sync();
+        __syncthreads();
     }
-    return val;
+
+    if (sharedIdx == 0)
+    {
+        atomicAdd(accumValue, cache[0]);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -911,39 +914,45 @@ public:
     {
         Scalar dsqrReci = 1.0 / deltaSq_;
         Scalar aux = dsqrReci * x + 1.0;
-        //Scalar result = -dsqrReci * pow2(1.0 / aux);
         return 1.0 / aux;
     }
 
     Scalar deltaSq_;
 };
 
+// naughty global function for the robust kernel virtual function used
+// by the BA compute errors. This is here as defining this outside of the
+// .cu file doesn't seem to work. This is set and deleted by the
+// createRobustKernelFunction and deleteRosbustKernelFunction respectively.
+__managed__ RobustKernelFunc* d_rkFunction = nullptr;
+__managed__ __align__(16) char rkBuffer[128];
+
 // required to create virtual functions on the device
-__global__ void createRkFunction(RobustKernelFunc** function, const RobustKernelType type, const Scalar* delta)
+__global__ void createRkFunction(const RobustKernelType type, const Scalar* delta)
 {
     if (threadIdx.x == 0 && blockIdx.x == 0)
     {
         switch (type) 
         {
             case RobustKernelType::None:
-                (*function) = new RobustKernelFunc(delta[0]);
+                d_rkFunction = new (rkBuffer) RobustKernelFunc(delta[0]);
                 break;
             case RobustKernelType::Turkey:
-                (*function) = new RobustKernelTurkey(delta[0]);
+                d_rkFunction = new (rkBuffer) RobustKernelTurkey(delta[0]);
                 break;
             case RobustKernelType::Cauchy:
-                (*function) = new RobustKernelCauchy(delta[0]);
+                d_rkFunction = new (rkBuffer) RobustKernelCauchy(delta[0]);
                 break;
         }
     }
 }
 
-__global__ void deleteRkFunction(RobustKernelFunc** function) { delete *function; }
+__global__ void deleteRkFunction() { delete d_rkFunction; }
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Kernel functions
 ////////////////////////////////////////////////////////////////////////////////////
-
+/*
 template <int MDIM>
 __global__ void computeActiveErrorsKernel(
     int nedges,
@@ -956,7 +965,6 @@ __global__ void computeActiveErrorsKernel(
     const Vec2i* edge2PL,
     const Vec5d* cameras,
     const Scalar errorThreshold,
-    RobustKernelFunc const* const* __restrict__ robustKernel,
     Vecxd<MDIM>* errors,
     int* outliers,
     Vec3d* Xcs,
@@ -965,11 +973,21 @@ __global__ void computeActiveErrorsKernel(
     using Vecmd = Vecxd<MDIM>;
     
     const int sharedIdx = threadIdx.x;
-    __shared__ Scalar cache[BLOCK_ACTIVE_ERRORS];
+    extern __shared__ Scalar cache[];
+
+    cg::thread_block cta = cg::this_thread_block();
 
     Scalar sumchi = 0;
-    for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
-    {
+
+    int iE = blockIdx.x * blockDim.x + threadIdx.x;
+
+    //for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
+    //{
+        if (iE >= nedges || outliers[iE] == 1)
+        {
+            return;
+            //continue;
+        }
         const Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
         const int iP = edge2PL[iE][0];
         const int iL = edge2PL[iE][1];
@@ -997,39 +1015,145 @@ __global__ void computeActiveErrorsKernel(
 
         errors[iE] = error;
         Xcs[iE] = Xc;
-        const Scalar chi2 = (*robustKernel)->robustify(omega * squaredNorm(error));
+        const Scalar chi2 = d_rkFunction->robustify(omega * squaredNorm(error));
         sumchi += chi2;
 
-        if (errorThreshold > 0.0 && chi2 > errorThreshold)
-        {
-            outliers[iE] = 1;
-        }
-    }
+        outliers[iE] = (errorThreshold > 0.0 && chi2 > errorThreshold) ? 1 : 0;
+   // }
 
-    /* extern __shared__ Scalar cache[];
-    auto group = cg::this_thread_block();
-    auto tileIdx = group.thread_rank() / 32;
-    Scalar* tileCache = &cache[32 * tileIdx];
+    cache[sharedIdx] = chi2;
+    cg::sync(cta);
 
-    auto tile32 = cg::tiled_partition(group, 32);
-    Scalar tile_chi = reduce_sum(tile32, tileCache, sumchi);
-
-    if (tile32.thread_rank() == 0)
-    {
-        atomicAdd(chi, tile_chi);
-    }*/
-    cache[sharedIdx] = sumchi;
-    __syncthreads();
-
-    for (int stride = BLOCK_ACTIVE_ERRORS / 2; stride > 0; stride >>= 1)
+    for (unsigned int stride = blockDim.x / 2; stride > 0; stride >>= 1)
     {
         if (sharedIdx < stride)
+        {
             cache[sharedIdx] += cache[sharedIdx + stride];
-        __syncthreads();
+        }
+        cg::sync(cta);
     }
 
     if (sharedIdx == 0)
+    {
         atomicAdd(chi, cache[0]);
+    }
+
+    //parallelReduction(cache, sharedIdx, sumchi, nedges, chi);
+}
+*/
+
+/* template <int MDIM>
+__global__ void computeOutliers(const Scalar errorThreshold, int* outlierCount, int* outlierIndices, int* outliers)
+{
+    int iE = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (errorThreshold > 0.0 && chi2 > errorThreshold)
+    {
+        outliers[iE] = 1;
+        outerInices[outlierCount[0]];
+        atomicAdd(outlierCount, 1);
+    }
+}*/
+
+template<int MDIM>
+__global__ void projectCameraToImageKernel(
+    int nedges,
+    int ncameras,
+    const Se3D* se3,
+    const Vec3d* Xws,
+    const Vec2i* edge2PL,
+    const Vec5d* cameras,
+    const int* outliers,
+    Vec3d* Xcs,
+    Vecxd<MDIM>* projects)
+{
+    int iE = blockIdx.x * blockDim.x + threadIdx.x;
+    cg::thread_block cta = cg::this_thread_block();
+
+    if (iE >= nedges || outliers[iE] == 1)
+    {
+        return;
+    }
+    const int iP = edge2PL[iE][0];
+    const int iL = edge2PL[iE][1];
+
+    const QuatD& q = se3[iP].r;
+    const Vec3d& t = se3[iP].t;
+    const Vec3d& Xw = Xws[iL];
+    const Vec5d& camera = (ncameras > 1) ? cameras[iE] : cameras[0];
+
+    // project world to camera
+    Vec3d Xc;
+    projectW2C(q, t, Xw, Xc);
+
+    // project camera to image
+    Vecxd<MDIM> proj;
+    projectC2I(Xc, camera, proj);
+
+    // output
+    Xcs[iE] = Xc;
+    projects[iE] = proj;
+    cg::sync(cta);
+}
+
+template <int MDIM>
+__global__ void computeChiErrorsKernel(
+    int nedges,
+    int nomegas,
+    const Vecxd<MDIM>* projects,
+    const Vecxd<MDIM>* measurements,
+    const Scalar* omegas,
+    const Scalar errorThreshold,
+    Vecxd<MDIM>* errors,
+    int* outliers,
+    Scalar* chiValues)
+{
+    int iE = blockIdx.x * blockDim.x + threadIdx.x;
+    
+   // if (iE >= nedges || outliers[iE] == 1)
+   // {
+   //     return;
+   // }
+    const Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
+    const Vecxd<MDIM>& measurement = measurements[iE];
+    const Vecxd<MDIM>& proj = projects[iE];
+
+    // compute residual
+    Vecxd<MDIM> error;
+    //for (int i = 0; i < MDIM; i++)
+    //{
+    //    error[i] = proj[i] - measurement[i];
+    //}
+    error[0] = proj[0] - measurement[0];
+    error[1] = proj[1] - measurement[1];
+    error[2] = proj[2] - measurement[2];
+
+    errors[iE] = error;
+    const Scalar chi2 = d_rkFunction->robustify(omega * squaredNorm(error));
+    chiValues[iE] = chi2;
+
+    /* outliers[iE] = (errorThreshold > 0.0 && chi2 > errorThreshold) ? 1 : 0;
+
+    cg::thread_block cta = cg::this_thread_block();
+    const int sharedIdx = threadIdx.x;
+    extern __shared__ Scalar cache[];
+
+    cache[sharedIdx] = chi2;
+    cg::sync(cta);
+
+    for (unsigned int stride = blockDim.x / 2; stride > 0; stride >>= 1)
+    {
+        if (sharedIdx < stride)
+        {
+            cache[sharedIdx] += cache[sharedIdx + stride];
+        }
+        cg::sync(cta);
+    }
+
+    if (sharedIdx == 0)
+    {
+        chiValues[blockIdx.x] = cache[0];
+    }*/
 }
 
 template <int MDIM>
@@ -1045,7 +1169,7 @@ __global__ void constructQuadraticFormKernel(
     const int* edge2Hpl,
     const uint8_t* flags,
     const Vec5d* cameras,
-    RobustKernelFunc const* const* __restrict__ robustKernel,
+    const int* outliers,
     PxPBlockPtr Hpp,
     Px1BlockPtr bp,
     LxLBlockPtr Hll,
@@ -1055,7 +1179,7 @@ __global__ void constructQuadraticFormKernel(
     using Vecmd = Vecxd<MDIM>;
 
     const int iE = blockIdx.x * blockDim.x + threadIdx.x;
-    if (iE >= nedges)
+    if (iE >= nedges /* || outliers[iE] == 1*/)
     {
         return;
     }
@@ -1072,7 +1196,7 @@ __global__ void constructQuadraticFormKernel(
     const Vec5d& camera = (ncameras > 1) ? cameras[iE] : cameras[0];
 
     const Scalar e = squaredNorm(error) * omega;
-    const Scalar rho1 = (*robustKernel)->derivative(e);
+    const Scalar rho1 = d_rkFunction->derivative(e);
     const Scalar rhoOmega = omega * rho1;
 
     // compute Jacobians
@@ -1104,10 +1228,10 @@ __global__ void constructQuadraticFormKernel(
 }
 
 template <int DIM>
-__global__ void maxDiagonalKernel(int size, const Scalar* __restrict__ D, Scalar* __restrict__ maxD)
+__global__ void maxDiagonalKernel(int size, int blockSize, const Scalar* D, Scalar* maxD)
 {
     const int sharedIdx = threadIdx.x;
-    __shared__ Scalar cache[BLOCK_MAX_DIAGONAL];
+    extern  __shared__ Scalar cache[];
 
     Scalar maxVal = 0;
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += gridDim.x * blockDim.x)
@@ -1121,7 +1245,7 @@ __global__ void maxDiagonalKernel(int size, const Scalar* __restrict__ D, Scalar
     cache[sharedIdx] = maxVal;
     __syncthreads();
 
-    for (int stride = BLOCK_MAX_DIAGONAL / 2; stride > 0; stride >>= 1)
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1)
     {
         if (sharedIdx < stride)
         {
@@ -1138,7 +1262,7 @@ __global__ void maxDiagonalKernel(int size, const Scalar* __restrict__ D, Scalar
 
 template <int DIM>
 __global__ void
-addLambdaKernel(int size, Scalar* __restrict__ D, Scalar lambda, Scalar* __restrict__ backup)
+addLambdaKernel(int size, Scalar* D, Scalar lambda, Scalar* backup)
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= size)
@@ -1154,7 +1278,7 @@ addLambdaKernel(int size, Scalar* __restrict__ D, Scalar lambda, Scalar* __restr
 
 template <int DIM>
 __global__ void
-restoreDiagonalKernel(int size, Scalar* __restrict__ D, const Scalar* __restrict__ backup)
+restoreDiagonalKernel(int size, Scalar* D, const Scalar* backup)
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= size)
@@ -1173,8 +1297,8 @@ __global__ void computeBschureKernel(
     LxLBlockPtr invHll,
     Lx1BlockPtr bl,
     PxLBlockPtr Hpl,
-    const int* __restrict__ HplColPtr,
-    const int* __restrict__ HplRowInd,
+    const int* HplColPtr,
+    const int* HplRowInd,
     Px1BlockPtr bsc,
     PxLBlockPtr Hpl_invHll)
 {
@@ -1198,7 +1322,7 @@ __global__ void computeBschureKernel(
 }
 
 __global__ void initializeHschurKernel(
-    int rows, PxPBlockPtr Hpp, PxPBlockPtr Hsc, const int* __restrict__ HscRowPtr)
+    int rows, PxPBlockPtr Hpp, PxPBlockPtr Hsc, const int* HscRowPtr)
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= rows)
@@ -1210,7 +1334,7 @@ __global__ void initializeHschurKernel(
 
 __global__ void computeHschureKernel(
     int size,
-    const Vec3i* __restrict__ mulBlockIds,
+    const Vec3i* mulBlockIds,
     PxLBlockPtr Hpl_invHll,
     PxLBlockPtr Hpl,
     PxPBlockPtr Hschur)
@@ -1230,12 +1354,12 @@ __global__ void computeHschureKernel(
 
 __global__ void findHschureMulBlockIndicesKernel(
     int cols,
-    const int* __restrict__ HplColPtr,
-    const int* __restrict__ HplRowInd,
-    const int* __restrict__ HscRowPtr,
-    const int* __restrict__ HscColInd,
-    Vec3i* __restrict__ mulBlockIds,
-    int* __restrict__ nindices)
+    const int* HplColPtr,
+    const int* HplRowInd,
+    const int* HscRowPtr,
+    const int* HscColInd,
+    Vec3i* mulBlockIds,
+    int* nindices)
 {
     const int colId = blockIdx.x * blockDim.x + threadIdx.x;
     if (colId >= cols)
@@ -1263,9 +1387,9 @@ __global__ void findHschureMulBlockIndicesKernel(
 
 __global__ void permuteNnzPerRowKernel(
     int size,
-    const int* __restrict__ srcRowPtr,
-    const int* __restrict__ P,
-    int* __restrict__ nnzPerRow)
+    const int* srcRowPtr,
+    const int* P,
+    int* nnzPerRow)
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= size)
@@ -1277,12 +1401,12 @@ __global__ void permuteNnzPerRowKernel(
 
 __global__ void permuteColIndKernel(
     int size,
-    const int* __restrict__ srcRowPtr,
-    const int* __restrict__ srcColInd,
-    const int* __restrict__ P,
-    int* __restrict__ dstColInd,
-    int* __restrict__ dstMap,
-    int* __restrict__ nnzPerRow)
+    const int* srcRowPtr,
+    const int* srcColInd,
+    const int* P,
+    int* dstColInd,
+    int* dstMap,
+    int* nnzPerRow)
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= size)
@@ -1305,8 +1429,8 @@ __global__ void schurComplementPostKernel(
     LxLBlockPtr invHll,
     Lx1BlockPtr bl,
     PxLBlockPtr Hpl,
-    const int* __restrict__ HplColPtr,
-    const int* __restrict__ HplRowInd,
+    const int* HplColPtr,
+    const int* HplRowInd,
     Px1BlockPtr xp,
     Lx1BlockPtr xl)
 {
@@ -1353,14 +1477,15 @@ __global__ void updateLandmarksKernel(int size, Lx1BlockPtr xl, Vec3d* Xws)
 }
 
 __global__ void computeScaleKernel(
-    const Scalar* __restrict__ x,
-    const Scalar* __restrict__ b,
-    Scalar* __restrict__ scale,
+    int blockSize,
+    const Scalar* x,
+    const Scalar* b,
+    Scalar* scale,
     Scalar lambda,
     int size)
 {
     const int sharedIdx = threadIdx.x;
-    __shared__ Scalar cache[BLOCK_COMPUTE_SCALE];
+    extern __shared__ Scalar cache[];
 
     Scalar sum = 0;
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += gridDim.x * blockDim.x)
@@ -1368,22 +1493,7 @@ __global__ void computeScaleKernel(
         sum += x[i] * (lambda * x[i] + b[i]);
     }
 
-    cache[sharedIdx] = sum;
-    __syncthreads();
-
-    for (int stride = BLOCK_COMPUTE_SCALE / 2; stride > 0; stride >>= 1)
-    {
-        if (sharedIdx < stride)
-        {
-            cache[sharedIdx] += cache[sharedIdx + stride];
-        }
-        __syncthreads();
-    }
-
-    if (sharedIdx == 0)
-    {
-        atomicAdd(scale, cache[0]);
-    }
+    parallelReduction(cache, sharedIdx, sum, size, scale);
 }
 
 __global__ void convertBSRToCSRKernel(
@@ -1398,7 +1508,7 @@ __global__ void convertBSRToCSRKernel(
 }
 
 __global__ void
-nnzPerColKernel(const Vec3i* __restrict__ blockpos, int nblocks, int* __restrict__ nnzPerCol)
+nnzPerColKernel(const Vec3i* blockpos, int nblocks, int* nnzPerCol)
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= nblocks)
@@ -1410,10 +1520,10 @@ nnzPerColKernel(const Vec3i* __restrict__ blockpos, int nblocks, int* __restrict
 }
 
 __global__ void setRowIndKernel(
-    const Vec3i* __restrict__ blockpos,
+    const Vec3i* blockpos,
     int nblocks,
-    int* __restrict__ rowInd,
-    int* __restrict__ indexPL)
+    int* rowInd,
+    int* indexPL)
 {
     const int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= nblocks)
@@ -1432,6 +1542,19 @@ __global__ void setRowIndKernel(
 
 void waitForKernelCompletion() { CUDA_CHECK(cudaDeviceSynchronize()); }
 
+void waitForCudaStream(const cudaStream_t& stream) 
+{ 
+    CUDA_CHECK(cudaStreamSynchronize(stream)); 
+}
+
+void createRobustKernelFunction(const RobustKernel& kernel)
+{
+    createRkFunction<<<1, 1>>>(kernel.type(), kernel.data());
+    cudaDeviceSynchronize();
+}
+
+void deleteRobustKernelFunction() { deleteRkFunction<<<1, 1>>>(); }
+
 void exclusiveScan(const int* src, int* dst, int size)
 {
     auto ptrSrc = thrust::device_pointer_cast(src);
@@ -1447,19 +1570,33 @@ void buildHplStructure(
     cudaStream_t stream)
 {
     const int nblocks = Hpl.nnz();
-    const int block = 1024;
-    const int grid = 16;
     int* colPtr = Hpl.outerIndices();
     int* rowInd = Hpl.innerIndices();
 
-    cudaStreamSynchronize(stream);
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, nnzPerColKernel, 0, nblocks);
+    blockSize = 512;
+    const int gridSize1 = calcGridSize(nblocks, blockSize);
+
     auto ptrBlockPos = thrust::device_pointer_cast(blockpos.data());
     thrust::sort(ptrBlockPos, ptrBlockPos + nblocks, LessColId());
 
     CUDA_CHECK(cudaMemset(nnzPerCol, 0, sizeof(int) * (Hpl.cols() + 1)));
-    nnzPerColKernel<<<grid, block, 0, stream>>>(blockpos, nblocks, nnzPerCol);
+
+    nnzPerColKernel<<<gridSize1, blockSize, 0, stream>>>(blockpos, nblocks, nnzPerCol);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
     exclusiveScan(nnzPerCol, colPtr, Hpl.cols() + 1);
-    setRowIndKernel<<<grid, block, 0 ,stream>>>(blockpos, nblocks, rowInd, indexPL);
+
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, setRowIndKernel, 0, 0);
+    blockSize = 512;
+    const int gridSize2 = calcGridSize(nblocks, blockSize);
+
+    setRowIndKernel<<<gridSize2, blockSize, 0 ,stream>>>(blockpos, nblocks, rowInd, indexPL);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void findHschureMulBlockIndices(
@@ -1468,13 +1605,17 @@ void findHschureMulBlockIndices(
     GpuVec3i& mulBlockIds,
     cudaStream_t stream)
 {
-    const int block = 1024;
-    const int grid = 16;
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(
+        &minGridSize, &blockSize, findHschureMulBlockIndicesKernel, 0, 0);
+    blockSize = 512;
+    const int gridSize = calcGridSize(Hpl.cols(), blockSize);
 
     DeviceBuffer<int> nindices(1);
     nindices.fillZero();
 
-    findHschureMulBlockIndicesKernel<<<grid, block, 0, stream>>>(
+    findHschureMulBlockIndicesKernel<<<gridSize, blockSize, 0, stream>>>(
         Hpl.cols(),
         Hpl.outerIndices(),
         Hpl.innerIndices(),
@@ -1483,13 +1624,14 @@ void findHschureMulBlockIndices(
         mulBlockIds,
         nindices);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     auto ptrSrc = thrust::device_pointer_cast(mulBlockIds.data());
     thrust::sort(ptrSrc, ptrSrc + mulBlockIds.size(), LessRowId());
 }
 
 template <int M>
-void computeActiveErrors_(
+Scalar computeActiveErrors_(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<M>& measurements,
@@ -1497,18 +1639,17 @@ void computeActiveErrors_(
     const GpuVec2i& edge2PL,
     const GpuVec5d& cameras,
     const Scalar errorThreshold,
-    const RobustKernel& robustKernel,
     GpuVecxd<M>& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
-    hAsyncScalarVec& h_chi,
-    const cudaStream_t stream)
+    const CudaDevice::StreamContainer& streams,
+    bool clearOutliers)
 {
 }
 
 template <>
-void computeActiveErrors_<2>(
+Scalar computeActiveErrors_<2>(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<2>& measurements,
@@ -1516,32 +1657,32 @@ void computeActiveErrors_<2>(
     const GpuVec2i& edge2PL,
     const GpuVec5d& cameras,
     const Scalar errorThreshold,
-    const RobustKernel& robustKernel,
     GpuVecxd<2>& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
-    hAsyncScalarVec& h_chi,
-    const cudaStream_t stream)
+    const CudaDevice::StreamContainer& streams,
+    bool clearOutliers)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
-    const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = 16;
-    const int sharedBytes = block * sizeof(Scalar);
 
-    RobustKernelFunc** d_function;
-    cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
-    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
+    /* int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(
+        &minGridSize, &blockSize, (void*)computeActiveErrorsKernel<2>);
+    const int gridSize = calcGridSize(nedges, blockSize);
+
+    const int sharedBytes = blockSize * sizeof(Scalar);
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-    if (errorThreshold > 0.0)
+    if (clearOutliers)
     {
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
-
-    computeActiveErrorsKernel<2><<<grid, block, 0, stream>>>(
+   
+    computeActiveErrorsKernel<2><<<minGridSize, blockSize, sharedBytes, streams[2]>>>(
         nedges,
         nomegas,
         ncameras,
@@ -1552,20 +1693,22 @@ void computeActiveErrors_<2>(
         edge2PL,
         cameras,
         errorThreshold,
-        d_function,
         errors,
         outliers,
         Xcs,
         chi);
-    CUDA_CHECK(cudaGetLastError());
-    h_chi.download(chi, stream);
-    deleteRkFunction<<<1, 1>>>(d_function);
-    cudaStreamSynchronize(stream);
     
+    CUDA_CHECK(cudaGetLastError());
+    
+    Scalar h_chi = 0;
+    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
+
+    return h_chi;*/
+    return 0;
 }
 
 template <>
-void computeActiveErrors_<3>(
+Scalar computeActiveErrors_<3>(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<3>& measurements,
@@ -1573,51 +1716,72 @@ void computeActiveErrors_<3>(
     const GpuVec2i& edge2PL,
     const GpuVec5d& cameras,
     const Scalar errorThreshold,
-    const RobustKernel& robustKernel,
     GpuVecxd<3>& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
-    hAsyncScalarVec& h_chi,
-    const cudaStream_t stream)
+    const CudaDevice::StreamContainer& streams,
+    bool clearOutliers)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
-    const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = 16;
-    const int sharedBytes = block * sizeof(Scalar);
 
-    RobustKernelFunc** d_function;
-    cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
-    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
+    int minGridSize;
+    int blockSize;
 
+    cudaOccupancyMaxPotentialBlockSize(
+        &minGridSize, &blockSize, (void*)projectCameraToImageKernel<3>);
+    int gridSize = calcGridSize(nedges, blockSize);
+
+    Vecxd<3>* projects;
+    CUDA_CHECK(cudaMalloc(&projects, nedges * (sizeof(Scalar) * 3)));
+
+    projectCameraToImageKernel<3><<<gridSize, blockSize>>>(
+        nedges, ncameras, poseEstimate, landmarkEstimate, edge2PL, cameras, outliers, Xcs, projects);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+   
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-    if (errorThreshold > 0.0)
+    if (clearOutliers)
     {
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
+    
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, (void*)computeChiErrorsKernel<3>);
+    gridSize = calcGridSize(nedges, blockSize);
+    const int sharedBytes = blockSize * sizeof(Scalar);
 
-    computeActiveErrorsKernel<3><<<grid, block, 0, stream>>>(
+    Scalar* d_chiValues;
+    CUDA_CHECK(cudaMalloc(&d_chiValues, nedges * (sizeof(Scalar) * 3)));
+
+    computeChiErrorsKernel<3><<<gridSize, blockSize, sharedBytes>>>(
         nedges,
         nomegas,
-        ncameras,
-        poseEstimate,
-        landmarkEstimate,
+        projects,
         measurements,
         omegas,
-        edge2PL,
-        cameras,
         errorThreshold,
-        d_function,
         errors,
         outliers,
-        Xcs,
-        chi);
+        d_chiValues);
     CUDA_CHECK(cudaGetLastError());
-    h_chi.download(chi, stream);
-    deleteRkFunction<<<1, 1>>>(d_function);
-    cudaStreamSynchronize(stream);
+
+    Scalar h_chi = 0;
+    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
+    
+    Scalar* h_chiValues;
+    CUDA_CHECK(cudaHostAlloc(&h_chiValues, sizeof(Scalar) * nedges, cudaHostAllocMapped));
+    CUDA_CHECK(cudaMemcpy(h_chiValues, d_chiValues, sizeof(Scalar) * nedges, cudaMemcpyDeviceToHost));
+    for (int i = 0; i < nedges; ++i)
+    {
+        //printf("%f\n", h_chiValues[i]);
+        h_chi += h_chiValues[i];
+    }
+    printf("final chi = %f\n", h_chi);
+    CUDA_CHECK(cudaFree(projects));
+
+    return h_chi;
 }
 
 template <int M>
@@ -1630,13 +1794,14 @@ void constructQuadraticForm_(
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
     const GpuVec5d& cameras,
-    const RobustKernel& robustKernel,
+    const GpuVec1i& outliers,
     GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
-    const cudaStream_t stream)
+    bool clearOutliers,
+    const CudaDevice::StreamContainer& streams)
 {
 }
 
@@ -1650,25 +1815,31 @@ void constructQuadraticForm_<2>(
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
     const GpuVec5d& cameras,
-    const RobustKernel& robustKernel,
+    GpuVec1i& outliers,
     GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
-    const cudaStream_t stream)
+    bool clearOutliers,
+    const CudaDevice::StreamContainer& streams)
 {
     const int nedges = errors.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
-    const int block = BLOCK_QUADRATIC_FORM;
-    const int grid = 16;
 
-    RobustKernelFunc** d_function;
-    cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
-    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(
+        &minGridSize, &blockSize, (void*)constructQuadraticFormKernel<2>);
+    int gridSize = calcGridSize(nedges, blockSize);
 
-    constructQuadraticFormKernel<2><<<grid, block, 0, stream>>>(
+    if (clearOutliers)
+    {
+        CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
+    }
+
+    constructQuadraticFormKernel<2><<<minGridSize, blockSize, 0, streams[2]>>>(
         nedges,
         nomegas,
         ncameras,
@@ -1680,15 +1851,14 @@ void constructQuadraticForm_<2>(
         edge2Hpl,
         flags,
         cameras,
-        d_function,
+        outliers,
         Hpp,
         bp,
         Hll,
         bl,
         Hpl);
     CUDA_CHECK(cudaGetLastError());
-
-    deleteRkFunction<<<1, 1>>>(d_function);
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 template <>
@@ -1701,25 +1871,31 @@ void constructQuadraticForm_<3>(
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
     const GpuVec5d& cameras,
-    const RobustKernel& robustKernel,
+    GpuVec1i& outliers,
     GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
-    const cudaStream_t stream)
+    bool clearOutliers,
+    const CudaDevice::StreamContainer& streams)
 {
     const int nedges = errors.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
-    const int block = BLOCK_QUADRATIC_FORM;
-    const int grid = 16;
 
-    RobustKernelFunc** d_function;
-    cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
-    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(
+        &minGridSize, &blockSize, (void*)constructQuadraticFormKernel<3>);
+    int gridSize = calcGridSize(nedges, blockSize);
 
-    constructQuadraticFormKernel<3><<<grid, block, 0, stream>>>(
+    if (clearOutliers)
+    {
+        CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
+    }
+
+    constructQuadraticFormKernel<3><<<minGridSize, blockSize, 0, streams[1]>>>(
         nedges,
         nomegas,
         ncameras,
@@ -1731,47 +1907,52 @@ void constructQuadraticForm_<3>(
         edge2Hpl,
         flags,
         cameras,
-        d_function,
+        outliers,
         Hpp,
         bp,
         Hll,
         bl,
         Hpl);
     CUDA_CHECK(cudaGetLastError());
-
-    deleteRkFunction<<<1, 1>>>((RobustKernelFunc**)d_function);
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 template <typename T, int DIM>
 Scalar
-maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* maxD, const cudaStream_t& stream)
+maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, const cudaStream_t& stream)
 {
-    constexpr int block = BLOCK_MAX_DIAGONAL;
-    constexpr int grid = 4;
     const int size = D.size() * DIM;
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, maxDiagonalKernel<DIM>, 0, 0);
+    int gridSize = calcGridSize(size, blockSize);
+    blockSize = 512;
+    gridSize = 4;
+    const int sharedBytes = blockSize * sizeof(Scalar);
+    DeviceBuffer<Scalar> maxD(gridSize);
 
-    maxDiagonalKernel<DIM><<<grid, block, 0, stream>>>(size, D.values(), maxD);
+    maxDiagonalKernel<DIM><<<gridSize, blockSize, sharedBytes, stream>>>(size, blockSize, D.values(), maxD);
     CUDA_CHECK(cudaGetLastError());
 
-    Scalar tmpMax[grid];
-    CUDA_CHECK(cudaMemcpy(tmpMax, maxD, sizeof(Scalar) * grid, cudaMemcpyDeviceToHost));
+    std::vector<Scalar> tmpMax(gridSize);
+    CUDA_CHECK(cudaMemcpy(tmpMax.data(), maxD, sizeof(Scalar) * gridSize, cudaMemcpyDeviceToHost));
 
     Scalar maxv = 0;
-    for (int i = 0; i < grid; i++)
+    for (int i = 0; i < gridSize; i++)
     {
         maxv = std::max(maxv, tmpMax[i]);
     }
     return maxv;
 }
 
-Scalar maxDiagonal(const GpuPxPBlockVec& Hpp, Scalar* maxD, const cudaStream_t& stream)
+Scalar maxDiagonal(const GpuPxPBlockVec& Hpp, const cudaStream_t& stream)
 {
-    return maxDiagonal_(Hpp, maxD, stream);
+    return maxDiagonal_(Hpp, stream);
 }
 
-Scalar maxDiagonal(const GpuLxLBlockVec& Hll, Scalar* maxD, const cudaStream_t& stream)
+Scalar maxDiagonal(const GpuLxLBlockVec& Hll, const cudaStream_t& stream)
 {
-    return maxDiagonal_(Hll, maxD, stream);
+    return maxDiagonal_(Hll, stream);
 }
 
 template <typename T, int DIM>
@@ -1782,10 +1963,14 @@ void addLambda_(
     const cudaStream_t& stream)
 {
     const int size = D.size() * DIM;
-    const int block = ADD_LAMBDA_BLOCK_SIZE;
-    const int grid = 16;
-    addLambdaKernel<DIM><<<grid, block, 0, stream>>>(size, D.values(), lambda, backup.values());
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, addLambdaKernel<DIM>, 0, 0);
+    int gridSize = calcGridSize(size, blockSize);
+
+    addLambdaKernel<DIM><<<gridSize, blockSize, 0, stream>>>(size, D.values(), lambda, backup.values());
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void addLambda(
@@ -1807,10 +1992,15 @@ void restoreDiagonal_(
     const cudaStream_t& stream)
 {
     const int size = D.size() * DIM;
-    const int block = RESTORE_DIAGONAL_BLOCK_SIZE;
-    const int grid = 16;
-    restoreDiagonalKernel<DIM><<<grid, block, 0, stream>>>(size, D.values(), backup.values());
+    
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, restoreDiagonalKernel<DIM>, 0, 0);
+    int gridSize = calcGridSize(size, blockSize);
+
+    restoreDiagonalKernel<DIM><<<gridSize, blockSize, 0, stream>>>(size, D.values(), backup.values());
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void restoreDiagonal(GpuPxPBlockVec& Hpp, const GpuPx1BlockVec& backup, const cudaStream_t& stream)
@@ -1834,13 +2024,16 @@ void computeBschure(
     const cudaStream_t& stream)
 {
     const int cols = Hll.size();
-    const int block = COMPUTE_BSCHURE_BLOCK_SIZE;
-    const int grid = 16;
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, computeBschureKernel);
+    int gridSize = calcGridSize(cols, blockSize);
 
     bp.copyTo(bsc);
-    computeBschureKernel<<<grid, block, 0, stream>>>(
+    computeBschureKernel<<<gridSize, blockSize, 0, stream>>>(
         cols, Hll, invHll, bl, Hpl, Hpl.outerIndices(), Hpl.innerIndices(), bsc, Hpl_invHll);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void computeHschure(
@@ -1852,14 +2045,24 @@ void computeHschure(
     const cudaStream_t& stream)
 {
     const int nmulBlocks = mulBlockIds.ssize();
-    const int block = COMPUTE_HSCHURE_BLOCK_SIZE;
-    const int grid1 = 16;
-    const int grid2 = 16;
+
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(
+        &minGridSize, &blockSize, initializeHschurKernel);
+    int gridSize1 = calcGridSize(Hsc.rows(), blockSize);
 
     Hsc.fillZero();
-    initializeHschurKernel<<<grid1, block, 0, stream>>>(Hsc.rows(), Hpp, Hsc, Hsc.outerIndices());
-    computeHschureKernel<<<grid2, block, 0, stream>>>(nmulBlocks, mulBlockIds, Hpl_invHll, Hpl, Hsc);
+    initializeHschurKernel<<<gridSize1, blockSize, 0, stream>>>(Hsc.rows(), Hpp, Hsc, Hsc.outerIndices());
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, computeHschureKernel);
+    int gridSize2 = calcGridSize(nmulBlocks, blockSize);
+
+    computeHschureKernel<<<gridSize2, blockSize, 0, stream>>>(nmulBlocks, mulBlockIds, Hpl_invHll, Hpl, Hsc);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void convertHschureBSRToCSR(
@@ -1869,17 +2072,27 @@ void convertHschureBSRToCSR(
     const cudaStream_t& stream)
 {
     const int size = HscCSR.ssize();
-    const int block = 1024;
-    const int grid = 16;
-    convertBSRToCSRKernel<<<grid, block, 0, stream>>>(size, HscBSR.values(), HscCSR, BSR2CSR);
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, convertBSRToCSRKernel);
+    int gridSize = calcGridSize(size, blockSize);
+
+    convertBSRToCSRKernel<<<gridSize, blockSize, 0, stream>>>(size, HscBSR.values(), HscCSR, BSR2CSR);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void convertHppBSRToCSR(const GpuHppBlockMat& HppBSR, const GpuVec1i& BSR2CSR, GpuVec1d& HppCSR)
 {
     const int size = HppCSR.ssize();
-    const int block = 1024;
-    const int grid = divUp(size, block);
-    convertBSRToCSRKernel<<<grid, block>>>(size, HppBSR.values(), HppCSR, BSR2CSR);
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, convertBSRToCSRKernel);
+    int gridSize = calcGridSize(size, blockSize);
+
+    convertBSRToCSRKernel<<<gridSize, blockSize>>>(size, HppBSR.values(), HppCSR, BSR2CSR);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void twistCSR(
@@ -1893,15 +2106,27 @@ void twistCSR(
     int* dstMap,
     int* nnzPerRow)
 {
-    const int block = TWIST_CSR_BLOCK_SIZE;
-    const int grid = 16;
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, permuteNnzPerRowKernel);
+    int gridSize1 = calcGridSize(size, blockSize);
 
-    permuteNnzPerRowKernel<<<grid, block>>>(size, srcRowPtr, P, nnzPerRow);
+    permuteNnzPerRowKernel<<<gridSize1, blockSize>>>(size, srcRowPtr, P, nnzPerRow);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
     exclusiveScan(nnzPerRow, dstRowPtr, size + 1);
+    
     CUDA_CHECK(
         cudaMemcpy(nnzPerRow, dstRowPtr, sizeof(int) * (size + 1), cudaMemcpyDeviceToDevice));
-    permuteColIndKernel<<<grid, block>>>(
+
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, permuteColIndKernel);
+    int gridSize2 = calcGridSize(size, blockSize);
+
+    permuteColIndKernel<<<gridSize2, blockSize>>>(
         size, srcRowPtr, srcColInd, P, dstColInd, dstMap, nnzPerRow);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void permute(int size, const Scalar* src, Scalar* dst, const int* P)
@@ -1919,40 +2144,54 @@ void schurComplementPost(
     const GpuPx1BlockVec& xp,
     GpuLx1BlockVec& xl)
 {
-    const int block = SCHUR_COMP_POST_BLOCK_SIZE;
-    const int grid = 16;
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, schurComplementPostKernel);
+    int gridSize = calcGridSize(Hpl.cols(), blockSize);
 
-    schurComplementPostKernel<<<grid, block>>>(
+    schurComplementPostKernel<<<gridSize, blockSize>>>(
         Hpl.cols(), invHll, bl, Hpl, Hpl.outerIndices(), Hpl.innerIndices(), xp, xl);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void updatePoses(const GpuPx1BlockVec& xp, GpuVecSe3d& estimate, const cudaStream_t& stream)
 {
-    const int block = UPDATE_POSES_BLOCK_SIZE;
-    const int grid = 16;
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, updatePosesKernel);
+    int gridSize = calcGridSize(xp.size(), blockSize);
 
-    updatePosesKernel<<<grid, block, 0, stream>>>(xp.size(), xp, estimate);
+    updatePosesKernel<<<gridSize, blockSize, 0, stream>>>(xp.size(), xp, estimate);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void updateLandmarks(const GpuLx1BlockVec& xl, GpuVec3d& estimate, const cudaStream_t& stream)
 {
-    const int block = UPDATE_LANDMARKS_BLOCK_SIZE;
-    const int grid = 16;
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, updateLandmarksKernel);
+    int gridSize = calcGridSize(xl.size(), blockSize);
 
-    updateLandmarksKernel<<<grid, block, 0, stream>>>(xl.size(), xl, estimate);
+    updateLandmarksKernel<<<gridSize, blockSize, 0, stream>>>(xl.size(), xl, estimate);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void computeScale(const GpuVec1d& x, const GpuVec1d& b, Scalar* scale, Scalar lambda)
 {
-    const int block = BLOCK_COMPUTE_SCALE;
-    const int grid = 4;
+    int gridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(&gridSize, &blockSize, computeScaleKernel, 0, x.ssize());
+    blockSize = 512;
+    gridSize = 4;
 
+    const int sharedBytes = blockSize * sizeof(Scalar);
     CUDA_CHECK(cudaMemset(scale, 0, sizeof(Scalar)));
-    computeScaleKernel<<<grid, block>>>(x, b, scale, lambda, x.ssize());
+    computeScaleKernel<<<gridSize, blockSize, sharedBytes, 0>>>(blockSize, x, b, scale, lambda, x.ssize());
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -2073,6 +2312,7 @@ __global__ void computeActiveErrorsKernel_DepthBa(
     int nedges,
     int nomegas,
     int ncameras,
+    int blockSize,
     const Se3D* se3,
     const Vec3d* Xws,
     const Vec3d* measurements,
@@ -2080,7 +2320,6 @@ __global__ void computeActiveErrorsKernel_DepthBa(
     const Vec2i* edge2PL,
     const Vec5d* cameras,
     const Scalar errorThreshold,
-    RobustKernelFunc const* const* __restrict__ robustKernel,
     Vec3d* errors,
     int* outliers,
     Vec3d* Xcs,
@@ -2089,6 +2328,10 @@ __global__ void computeActiveErrorsKernel_DepthBa(
     Scalar sumchi = 0;
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
+        if (iE >= nedges || outliers[iE] == 1)
+        {
+            continue;
+        }
         const Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
         const int iP = edge2PL[iE][0];
         const int iL = edge2PL[iE][1];
@@ -2106,7 +2349,7 @@ __global__ void computeActiveErrorsKernel_DepthBa(
         // project camera to image
         Vec3d proj;
         camProjectDepth(Xc, camera, proj);
-
+        
         // compute residual
         Vec3d error;
         error[0] = measurement[0] - proj[0];
@@ -2115,7 +2358,7 @@ __global__ void computeActiveErrorsKernel_DepthBa(
         errors[iE] = error;
         Xcs[iE] = Xc;
 
-        const Scalar chi2 = (*robustKernel)->robustify(omega * squaredNorm(error));
+        const Scalar chi2 = d_rkFunction->robustify(omega * squaredNorm(error));
         sumchi += chi2;
         if (errorThreshold > 0.0 && chi2 > errorThreshold)
         {
@@ -2124,24 +2367,9 @@ __global__ void computeActiveErrorsKernel_DepthBa(
     }
 
     const int sharedIdx = threadIdx.x;
-    __shared__ Scalar cache[BLOCK_ACTIVE_ERRORS];
+    extern __shared__ Scalar cache[];
 
-    cache[sharedIdx] = sumchi;
-    __syncthreads();
-
-    for (int stride = BLOCK_ACTIVE_ERRORS / 2; stride > 0; stride >>= 1)
-    {
-        if (sharedIdx < stride)
-        {
-            cache[sharedIdx] += cache[sharedIdx + stride];
-        }
-        __syncthreads();
-    }
-
-    if (sharedIdx == 0)
-    {
-        atomicAdd(chi, cache[0]);
-    }
+    parallelReduction(cache, sharedIdx, sumchi, nedges, chi);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -2192,6 +2420,9 @@ __global__ void computeActiveErrorsKernel_Plane(
     Scalar* chi)
 {
     Scalar sumchi = 0;
+    extern __shared__ Scalar cache[];
+    const int sharedIdx = threadIdx.x;
+
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
         const Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
@@ -2208,18 +2439,8 @@ __global__ void computeActiveErrorsKernel_Plane(
         sumchi += (errors[iE] * errors[iE]) * omega;
     }
 
-    extern __shared__ Scalar cache[];
-    auto group = cg::this_thread_block();
-    auto tileIdx = group.thread_rank() / 32;
-    Scalar* tileCache = &cache[32 * tileIdx];
-
-    auto tile32 = cg::tiled_partition(group, 32);
-    Scalar tile_chi = reduce_sum(tile32, tileCache, sumchi);
-
-    if (tile32.thread_rank() == 0)
-    {
-        atomicAdd(chi, tile_chi);
-    }
+    
+    parallelReduction(cache, sharedIdx, sumchi, nedges, chi);
 }
 
 template <int MDIM>
@@ -2313,7 +2534,7 @@ __global__ void constructQuadraticFormKernel_Line(
 // BA custom edge - Wrapper functions
 ////////////////////////////////////////////////////////////////////////////////////
 
-void computeActiveErrors_DepthBa(
+Scalar computeActiveErrors_DepthBa(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVec3d& measurements,
@@ -2321,34 +2542,36 @@ void computeActiveErrors_DepthBa(
     const GpuVec2i& edge2PL,
     const GpuVec5d& cameras,
     const Scalar errorThreshold,
-    const RobustKernel& robustKernel,
     GpuVec3d& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
-    hAsyncScalarVec& h_chi,
-    cudaStream_t stream)
+    const CudaDevice::StreamContainer& streams,
+    bool clearOutliers)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
-    const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = 16;
+    
+    int minGridSize;
+    int blockSize;
+     cudaOccupancyMaxPotentialBlockSize(
+         &minGridSize, &blockSize, computeActiveErrorsKernel_DepthBa, 0, 0);
+    const int gridSize = calcGridSize(nedges, blockSize);
 
-    RobustKernelFunc** d_function;
-    cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
-    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
+    const int sharedBytes = blockSize * sizeof(Scalar);
 
-    if (errorThreshold > 0.0)
+    CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
+    if (clearOutliers)
     {
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
-    CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-    
-    computeActiveErrorsKernel_DepthBa<<<grid, block, 0, stream>>>(
+   
+    computeActiveErrorsKernel_DepthBa<<<gridSize, blockSize, sharedBytes, streams[1]>>>(
         nedges,
         nomegas,
         ncameras,
+        blockSize,
         poseEstimate,
         landmarkEstimate,
         measurements,
@@ -2356,21 +2579,21 @@ void computeActiveErrors_DepthBa(
         edge2PL,
         cameras,
         errorThreshold,
-        d_function,
         errors,
         outliers,
         Xcs,
         chi);
     CUDA_CHECK(cudaGetLastError());
-    h_chi.download(chi);
-    deleteRkFunction<<<1, 1>>>((RobustKernelFunc**)d_function);
-    cudaStreamSynchronize(stream);
+
+    Scalar h_chi = 0;
+    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
+    return h_chi;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
 // ICP custom edge - Wrapper functions
 ////////////////////////////////////////////////////////////////////////////////////
-void computeActiveErrors_Line(
+Scalar computeActiveErrors_Line(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToLineMatch<double>>& measurements,
     const GpuVec1d& omegas,
@@ -2378,22 +2601,30 @@ void computeActiveErrors_Line(
     GpuVec1d& errors,
     GpuVec3d& Xcs,
     Scalar* chi,
-    hAsyncScalarVec& h_chi)
+    const CudaDevice::StreamContainer& streams)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
-    const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = 16;
+    const int nstreams = streams.size();
+    
+    int gridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(
+        &gridSize, &blockSize, computeActiveErrorsKernel_Line, 0, nedges);
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-    computeActiveErrorsKernel_Line<<<grid, block>>>(
+
+    computeActiveErrorsKernel_Line<<<gridSize, blockSize, 0, streams[2]>>>(
         nedges, nomegas, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
+
     CUDA_CHECK(cudaGetLastError());
 
-    h_chi.download(chi);
+    Scalar h_chi = 0;
+    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
+    return h_chi;
 }
 
-void computeActiveErrors_Plane(
+Scalar computeActiveErrors_Plane(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToPlaneMatch<double>>& measurements,
     const GpuVec1d& omegas,
@@ -2401,21 +2632,30 @@ void computeActiveErrors_Plane(
     GpuVec1d& errors,
     GpuVec3d& Xcs,
     Scalar* chi,
-    hAsyncScalarVec& h_chi,
-    cudaStream_t stream)
+    const CudaDevice::StreamContainer& streams)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
-    const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = 16;
-    const int sharedBytes = block * sizeof(Scalar);
+    const int nstreams = streams.size();
+   
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(
+        &minGridSize, &blockSize, computeActiveErrorsKernel_Plane, 0, 0);
+    const int gridSize = calcGridSize(nedges, blockSize);
+
+    const int sharedBytes = blockSize * sizeof(Scalar);
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-    computeActiveErrorsKernel_Plane<<<grid, block, sharedBytes, stream>>>(
+
+    computeActiveErrorsKernel_Plane<<<gridSize, blockSize, sharedBytes, streams[1]>>>(
         nedges, nomegas, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
+    
     CUDA_CHECK(cudaGetLastError());
 
-    h_chi.download(chi);
+    Scalar h_chi = 0;
+    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
+    return h_chi;
 }
 
 void constructQuadraticForm_Plane(
@@ -2431,14 +2671,18 @@ void constructQuadraticForm_Plane(
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
-    cudaStream_t stream)
+    const CudaDevice::StreamContainer& streams)
 {
     const int nedges = errors.ssize();
     const int nomegas = omegas.ssize();
-    const int block = BLOCK_QUADRATIC_FORM;
-    const int grid = 16;
+   
+    int minGridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(
+        &minGridSize, &blockSize, constructQuadraticFormKernel_Plane<1>, 0, 0);
+    const int gridSize = calcGridSize(nedges, blockSize);
 
-    constructQuadraticFormKernel_Plane<1><<<grid, block, 0, stream>>>(
+    constructQuadraticFormKernel_Plane<1><<<gridSize, blockSize, 0, streams[1]>>>(
         nedges,
         nomegas,
         se3,
@@ -2468,14 +2712,18 @@ void constructQuadraticForm_Line(
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
-    GpuHplBlockMat& Hpl)
+    GpuHplBlockMat& Hpl,
+    const CudaDevice::StreamContainer& streams)
 {
     const int nedges = errors.ssize();
     const int nomegas = omegas.ssize();
-    const int block = BLOCK_QUADRATIC_FORM;
-    const int grid = 16;
+    
+    int gridSize;
+    int blockSize;
+    cudaOccupancyMaxPotentialBlockSize(
+        &gridSize, &blockSize, constructQuadraticFormKernel_Line<1>, 0, nedges);
 
-    constructQuadraticFormKernel_Line<1><<<grid, block>>>(
+    constructQuadraticFormKernel_Line<1><<<gridSize, blockSize, 0, streams[2]>>>(
         nedges,
         nomegas,
         se3,

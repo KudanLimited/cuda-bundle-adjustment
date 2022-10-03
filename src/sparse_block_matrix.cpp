@@ -87,6 +87,10 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
         indices.clear();
         for (const auto e : v->getEdges())
         {
+            if (!e->isActive())
+            {
+                continue;
+            }
             const BaseVertex* vP =
                 e->getVertex(0); // Note: assuming pose vertices are in idx 0 of the array - need to
                                  // use a better method! check if not marginilised

@@ -9,7 +9,10 @@
 namespace cugo
 {
 
-void BlockSolver::initialize(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets)
+void BlockSolver::initialize(
+    const EdgeSetVec& edgeSets,
+    const VertexSetVec& vertexSets,
+    CudaDevice::StreamContainer& streams)
 {
     // ensure we have data to work with
     assert(edgeSets.size() > 0);
@@ -42,141 +45,9 @@ void BlockSolver::initialize(const EdgeSetVec& edgeSets, const VertexSetVec& ver
             numL_ += vertexSet->getActiveSize();
         }
     }
-    
+
     // only perform schur if we have landmark vertices
     doSchur_ = (verticesL_.size() > 0) ? true : false;
-    
-    // setup the edge set estimation data, indices and flags on the host
-    // Note: this is dependent on the vertex data so this must be initialised first
-    int edgeIdOffset = 0;
-
-    HplblockPos_.reserve(HBLOCKPOS_ARENA_SIZE);
-
-    for (BaseEdgeSet* edgeSet : edgeSets)
-    {
-        if (!edgeSet->nedges())
-        {
-            continue;
-        }
-
-        // clear the edges and vertices from the last run.
-        // Note: these calls do no memory de-allocating and do not
-        // destroy or touch device buffers.
-        edgeSet->clearDevice();
-
-        edgeSet->init(HplblockPos_, edgeIdOffset, 0, doSchur_, options);
-        nedges_ += edgeSet->nActiveEdges();
-        edgeIdOffset += nedges_;
-    }
-
-    // initialise the linear solver
-    if (!linearSolver_)
-    {
-        if (doSchur_)
-        {
-            linearSolver_ = std::make_unique<HscSparseLinearSolver>();
-        }
-        else
-        {
-            linearSolver_ = std::make_unique<DenseLinearSolver>();
-        }
-    }
-}
-
-void BlockSolver::buildStructure(
-    const EdgeSetVec& edgeSets, 
-    const VertexSetVec& vertexSets,
-    std::array<cudaStream_t, 3>& streams)
-{
-    // upload edge information to device memory
-    // Note: the edge data is uploaded to device first as 
-    // this will be a large chunk and running async means 
-    // that the CPU based schur setup (if using) will
-    // continue on the main CPU thread.
-    d_edge2Hpl_.resize(nedges_);
-
-    int prevEdgeSize = 0;
-    for (BaseEdgeSet* edgeSet : edgeSets)
-    {
-        if (!edgeSet->nedges())
-        {
-            continue;
-        }
-        // upload the graph data to the device
-        // Note: nullptr passed to map function if no landmark
-        // data as the Hpl matrix then doesn't make sense.
-        int* edge2HplPtr = nullptr;
-        if (doSchur_)
-        {
-            // data layout is pose data first followed by landmark
-            edge2HplPtr = d_edge2Hpl_.data() + prevEdgeSize;
-        }
-        edgeSet->mapDevice(edge2HplPtr, streams[0], options);
-        prevEdgeSize += edgeSet->nActiveEdges();
-    }
-
-    // allocate device buffers
-    d_x_.resize(numP_ * PDIM + numL_ * LDIM);
-    d_b_.resize(numP_ * PDIM + numL_ * LDIM);
-
-    if (doSchur_)
-    {
-        size_t nVertexBlockPos = HplblockPos_.size();
-
-        d_Hpl_.resize(numP_, numL_);
-        d_Hpl_.resizeNonZeros(nVertexBlockPos);
-        d_nnzPerCol_.resize(numL_ + 1);
-   
-        // build Hpl block matrix structure
-        d_HplBlockPos_.assignAsync(nVertexBlockPos, HplblockPos_.data(), streams[1]);
-        gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_, streams[1]);
-
-        // build host Hschur sparse block matrix structure
-        Hsc_.resize(numP_, numP_);
-        Hsc_.constructFromVertices(verticesL_);
-        Hsc_.convertBSRToCSR();
-
-        // initialise the device schur hessian matrix
-        d_Hsc_.resize(numP_, numP_);
-        d_Hsc_.resizeNonZeros(Hsc_.nblocks());
-        // TODO: use async upload - need to converted Eigen::VectorXi to a pinned memory address
-        // version
-        d_Hsc_.uploadAsync(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
-
-        // initialise the device landmark Hessian matrix - 
-        // this is filled by the computation of the quadratic form
-        d_Hll_.resize(numL_);
-       
-        d_HscCSR_.resize(Hsc_.nnzSymm());
-        d_BSR2CSR_.assignAsync(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
-
-        d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
-        gpu::findHschureMulBlockIndices(d_Hpl_, d_Hsc_, d_HscMulBlockIds_, streams[2]);
-
-        d_bsc_.resize(numP_);
-        d_Hpl_invHll_.resize(nVertexBlockPos);
-        d_HllBackup_.resize(numL_);
-        d_invHll_.resize(numL_);
-
-        d_xl_.map(numL_, d_x_.data() + numP_ * PDIM);
-        d_bl_.map(numL_, d_b_.data() + numP_ * PDIM);
-    }
-    else
-    {
-        Hpp_.resize(numP_, numP_);
-        Hpp_.constructFromVertices(verticesP_);
-        Hpp_.convertBSRToCSR();
-    }
-
-    // initialise the device pose Hessian matrix -
-    // this is filled by the computation of the quadratic form
-    d_Hpp_.resize(numP_);
-
-    d_xp_.map(numP_, d_x_.data());
-    d_bp_.map(numP_, d_b_.data());
-
-    d_HppBackup_.resize(numP_);
-    d_chi_.resize(1);
 
     // upload the estimates to the device
     int offset = 0;
@@ -200,6 +71,157 @@ void BlockSolver::buildStructure(
         }
     }
 
+    // setup the edge set estimation data, indices and flags on the host
+    // Note: this is dependent on the vertex data so this must be initialised first
+    int edgeIdOffset = 0;
+
+    HplblockPos_.reserve(HBLOCKPOS_ARENA_SIZE);
+
+    for (BaseEdgeSet* edgeSet : edgeSets)
+    {
+        if (!edgeSet->nedges())
+        {
+            continue;
+        }
+
+        // clear the edges and vertices from the last run.
+        // Note: these calls do no memory de-allocating and do not
+        // destroy or touch device buffers.
+        edgeSet->clearDevice();
+
+        edgeSet->init(HplblockPos_, edgeIdOffset, 0, doSchur_, options);
+        nedges_ += edgeSet->nActiveEdges();
+        edgeIdOffset += nedges_;
+    }
+
+    d_edge2Hpl_.resize(nedges_);
+
+    int prevEdgeSize = 0;
+    for (BaseEdgeSet* edgeSet : edgeSets)
+    {
+        if (!edgeSet->nedges())
+        {
+            continue;
+        }
+        // upload the graph data to the device
+        // Note: nullptr passed to map function if no landmark
+        // data as the Hpl matrix then doesn't make sense.
+        int* edge2HplPtr = nullptr;
+        if (doSchur_)
+        {
+            // data layout is pose data first followed by landmark
+            edge2HplPtr = d_edge2Hpl_.data() + prevEdgeSize;
+        }
+        edgeSet->mapDevice(edge2HplPtr, streams[0], options);
+        prevEdgeSize += edgeSet->nActiveEdges();
+    }
+
+     // build Hpl block matrix structure
+    d_Hpl_.resize(numP_, numL_);
+    d_Hpl_.resizeNonZeros(HplblockPos_.size());
+    d_nnzPerCol_.resize(numL_ + 1);
+    d_HplBlockPos_.assign(HplblockPos_.size(), HplblockPos_.data());
+    gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_);
+
+    // initialise the linear solver
+    if (!linearSolver_)
+    {
+        if (doSchur_)
+        {
+            linearSolver_ = std::make_unique<HscSparseLinearSolver>();
+        }
+        else
+        {
+            linearSolver_ = std::make_unique<DenseLinearSolver>();
+        }
+    }
+}
+
+void BlockSolver::buildStructure(
+    const EdgeSetVec& edgeSets,
+    const VertexSetVec& vertexSets,
+    CudaDevice::StreamContainer& streams)
+{
+    // allocate device buffers
+    d_x_.resize(numP_ * PDIM + numL_ * LDIM);
+    d_b_.resize(numP_ * PDIM + numL_ * LDIM);
+    
+    if (doSchur_)
+    {
+        // check if we need to update the Hpl block positions -
+        // inactivation of edges due to being classed as outliers 
+        // means that the structure will need rebuilding
+        bool rebuildBlockPos = false;
+        for (BaseEdgeSet* edgeSet : edgeSets)
+        {
+            if (!edgeSet->nedges())
+            {
+                continue;
+            }
+            if (edgeSet->outlierCount())
+            {
+                HplblockPos_.clear();
+                edgeSet->buildHplBlockPos(HplblockPos_);
+                rebuildBlockPos = true;
+            }
+        }
+
+        if (rebuildBlockPos)
+        {
+            d_HplBlockPos_.assign(HplblockPos_.size(), HplblockPos_.data());
+            d_Hpl_.resizeNonZeros(HplblockPos_.size());
+            gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_);
+            rebuildBlockPos = false;
+        }
+
+        // build host Hschur sparse block matrix structure
+        Hsc_.resize(numP_, numP_);
+        Hsc_.constructFromVertices(verticesL_);
+        Hsc_.convertBSRToCSR();
+
+        // initialise the device schur hessian matrix
+        d_Hsc_.resize(numP_, numP_);
+        d_Hsc_.resizeNonZeros(Hsc_.nblocks());
+        d_Hsc_.uploadAsync(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices(), streams[2]);
+
+        // initialise the device landmark Hessian matrix -
+        // this is filled by the computation of the quadratic form
+        d_Hll_.resize(numL_);
+
+        // BSR to CSR conversion buffers
+        d_HscCSR_.resize(Hsc_.nnzSymm());
+        d_BSR2CSR_.assignAsync(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
+
+        d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
+        gpu::findHschureMulBlockIndices(d_Hpl_, d_Hsc_, d_HscMulBlockIds_, streams[2]);
+
+        d_bsc_.resize(numP_);
+        d_Hpl_invHll_.resize(HplblockPos_.size());
+        d_HllBackup_.resize(numL_);
+        d_invHll_.resize(numL_);
+
+        d_xl_.map(numL_, d_x_.data() + numP_ * PDIM);
+        d_bl_.map(numL_, d_b_.data() + numP_ * PDIM);
+    }
+    else
+    {
+        Hpp_.resize(numP_, numP_);
+        Hpp_.constructFromVertices(verticesP_);
+        Hpp_.convertBSRToCSR();
+    }
+
+    // initialise the device pose Hessian matrix -
+    // this is filled by the computation of the quadratic form
+    d_Hpp_.resize(numP_);
+
+     // final solution buffers for pose estimates
+    d_xp_.map(numP_, d_x_.data());
+    d_bp_.map(numP_, d_b_.data());
+
+    d_HppBackup_.resize(numP_);
+    d_chi_.resize(1);
+    d_scale_.resize(1);
+
     if (doSchur_)
     {
         HscSparseLinearSolver* sparseLinearSolver =
@@ -215,21 +237,24 @@ void BlockSolver::buildStructure(
     }
 }
 
-double BlockSolver::computeErrors(
+Scalar BlockSolver::computeErrors(
     const EdgeSetVec& edgeSets,
     const VertexSetVec& vertexSets,
-    std::array<cudaStream_t, 3>& streams)
+    CudaDevice::StreamContainer& streams)
 {
-    Scalar accumChi = 0;
+    // make sure the buildsystem stuff has finished before computing the errors
+    gpu::waitForKernelCompletion();
 
+    Scalar accumChi = 0;
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
         if (!edgeSet->nedges())
         {
             continue;
         }
-        edgeSet->computeError(vertexSets, d_chi_, h_chi_, streams[0]);
-        accumChi += h_chi_[0];
+        
+        const Scalar chi = edgeSet->computeError(vertexSets, d_chi_, streams, clearOutliers_);
+        accumChi += chi;
     }
 
     return accumChi;
@@ -238,7 +263,7 @@ double BlockSolver::computeErrors(
 void BlockSolver::buildSystem(
     const EdgeSetVec& edgeSets,
     const VertexSetVec& vertexSets,
-    std::array<cudaStream_t, 3>& streams)
+    CudaDevice::StreamContainer& streams)
 {
     // Build linear system about solution increments Δx
     // H*Δx = -b
@@ -256,32 +281,29 @@ void BlockSolver::buildSystem(
         d_bl_.fillZero();
     }
 
+    gpu::waitForKernelCompletion();
     for (auto* edgeSet : edgeSets)
     {
         if (!edgeSet->nedges())
         {
             continue;
         }
-        edgeSet->constructQuadraticForm(
-            vertexSets, d_Hpp_, d_bp_, d_Hll_, d_bl_, d_Hpl_, streams[0]);
+        edgeSet->constructQuadraticForm(vertexSets, d_Hpp_, d_bp_, d_Hll_, d_bl_, d_Hpl_, clearOutliers_, streams);
     }
-
 }
 
-double BlockSolver::maxDiagonal(std::array<cudaStream_t, 3>& streams)
+double BlockSolver::maxDiagonal(CudaDevice::StreamContainer& streams)
 {
-    DeviceBuffer<Scalar> d_buffer_Hpp(16);
-    const Scalar maxP = gpu::maxDiagonal(d_Hpp_, d_buffer_Hpp, streams[1]);
+    const Scalar maxP = gpu::maxDiagonal(d_Hpp_, streams[1]);
     if (doSchur_)
     {
-        DeviceBuffer<Scalar> d_buffer_Hll(16);
-        const Scalar maxL = gpu::maxDiagonal(d_Hll_, d_buffer_Hll, streams[2]);
+        const Scalar maxL = gpu::maxDiagonal(d_Hll_, streams[2]);
         return std::max(maxP, maxL);
     }
     return maxP;
 }
 
-void BlockSolver::setLambda(double lambda, std::array<cudaStream_t, 3>& streams)
+void BlockSolver::setLambda(double lambda, CudaDevice::StreamContainer& streams)
 {
     gpu::addLambda(d_Hpp_, ScalarCast(lambda), d_HppBackup_, streams[1]);
     if (doSchur_)
@@ -290,7 +312,7 @@ void BlockSolver::setLambda(double lambda, std::array<cudaStream_t, 3>& streams)
     }
 }
 
-void BlockSolver::restoreDiagonal(std::array<cudaStream_t, 3>& streams)
+void BlockSolver::restoreDiagonal(CudaDevice::StreamContainer& streams)
 {
     gpu::restoreDiagonal(d_Hpp_, d_HppBackup_, streams[1]);
     if (doSchur_)
@@ -299,7 +321,7 @@ void BlockSolver::restoreDiagonal(std::array<cudaStream_t, 3>& streams)
     }
 }
 
-bool BlockSolver::solve(std::array<cudaStream_t, 3>& streams)
+bool BlockSolver::solve(CudaDevice::StreamContainer& streams)
 {
     if (!doSchur_)
     {
@@ -329,11 +351,11 @@ bool BlockSolver::solve(std::array<cudaStream_t, 3>& streams)
     // Solve linear equation about Δxl
     // Hll*Δxl = -bl - HplT*Δxp
     gpu::schurComplementPost(d_invHll_, d_bl_, d_Hpl_, d_xp_, d_xl_);
-   
+
     return true;
 }
 
-void BlockSolver::update(const VertexSetVec& vertexSets, std::array<cudaStream_t, 3>& streams)
+void BlockSolver::update(const VertexSetVec& vertexSets, CudaDevice::StreamContainer& streams)
 {
     for (BaseVertexSet* vertexSet : vertexSets)
     {
@@ -356,29 +378,23 @@ void BlockSolver::update(const VertexSetVec& vertexSets, std::array<cudaStream_t
 
 double BlockSolver::computeScale(double lambda)
 {
-    gpu::computeScale(d_x_, d_b_, d_chi_, ScalarCast(lambda));
+    gpu::computeScale(d_x_, d_b_, d_scale_, ScalarCast(lambda));
     Scalar scale = 0;
-    d_chi_.download(&scale);
+    d_scale_.download(&scale);
     return scale;
 }
 
 void BlockSolver::updateEdges(const EdgeSetVec& edgeSets)
-{ 
+{
     for (const auto& edgeSet : edgeSets)
     {
         edgeSet->updateEdges();
     }
 }
 
-void BlockSolver::push()
-{
-    d_solution_.copyTo(d_solutionBackup_);
-}
+void BlockSolver::push() { d_solution_.copyTo(d_solutionBackup_); }
 
-void BlockSolver::pop()
-{
-    d_solutionBackup_.copyTo(d_solution_);
-}
+void BlockSolver::pop() { d_solutionBackup_.copyTo(d_solution_); }
 
 void BlockSolver::finalize(const VertexSetVec& vertexSets)
 {
@@ -386,17 +402,33 @@ void BlockSolver::finalize(const VertexSetVec& vertexSets)
     {
         if (!vertexSet->isMarginilised())
         {
-            PoseVertexSet* poseVertexSet = dynamic_cast<PoseVertexSet*>(vertexSet);
+            PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSet);
             assert(poseVertexSet != nullptr);
             poseVertexSet->finalise();
         }
         else
         {
-            LandmarkVertexSet* lmVertexSet = dynamic_cast<LandmarkVertexSet*>(vertexSet);
+            LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSet);
             assert(lmVertexSet != nullptr);
             lmVertexSet->finalise();
         }
     }
+}
+
+
+void BlockSolver::createRobustKernelFunction(const RobustKernel& kernel) 
+{
+    gpu::createRobustKernelFunction(kernel);
+}
+
+void BlockSolver::deleteRobustKernelFunction() 
+{ 
+    gpu::deleteRobustKernelFunction(); 
+}
+
+void BlockSolver::setOutlierClearState(bool state) noexcept 
+{ 
+    clearOutliers_ = state; 
 }
 
 void BlockSolver::clear() noexcept

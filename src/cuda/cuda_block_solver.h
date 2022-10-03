@@ -22,6 +22,7 @@ limitations under the License.
 #include "graph_optimisation_options.h"
 #include "measurements.h"
 #include "robust_kernel.h"
+#include "cuda_device.h"
 
 namespace cugo
 {
@@ -37,6 +38,8 @@ using GpuVecxd = GpuVec<Vecxd<N>>;
 // kernel functions
 void waitForKernelCompletion();
 
+void waitForCudaStream(const cudaStream_t& stream);
+
 void buildHplStructure(
     GpuVec3i& blockpos,
     GpuHplBlockMat& Hpl,
@@ -50,8 +53,8 @@ void findHschureMulBlockIndices(
     GpuVec3i& mulBlockIds,
     cudaStream_t stream = 0);
 
-Scalar maxDiagonal(const GpuPxPBlockVec& Hpp, Scalar* maxD, const cudaStream_t& stream = 0);
-Scalar maxDiagonal(const GpuLxLBlockVec& Hll, Scalar* maxD, const cudaStream_t& stream = 0);
+Scalar maxDiagonal(const GpuPxPBlockVec& Hpp, const cudaStream_t& stream = 0);
+Scalar maxDiagonal(const GpuLxLBlockVec& Hll, const cudaStream_t& stream = 0);
 
 void addLambda(
     GpuPxPBlockVec& Hpp, Scalar lambda, GpuPx1BlockVec& backup, const cudaStream_t& stream = 0);
@@ -113,6 +116,10 @@ void updateLandmarks(const GpuLx1BlockVec& xl, GpuVec3d& Xws, const cudaStream_t
 
 void computeScale(const GpuVec1d& x, const GpuVec1d& b, Scalar* scale, Scalar lambda);
 
+void createRobustKernelFunction(const RobustKernel& kernel);
+
+void deleteRobustKernelFunction();
+
 template <int M>
 void CUGO_API constructQuadraticForm_(
     const GpuVec3d& Xcs,
@@ -123,16 +130,17 @@ void CUGO_API constructQuadraticForm_(
     const GpuVec1i& edge2Hpl,
     const GpuVec1b& flags,
     const GpuVec5d& cameras,
-    const RobustKernel& robustKernel,
+    GpuVec1i& outliers,
     GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
-    const cudaStream_t stream = 0);
+    bool clearOutliers,
+    const CudaDevice::StreamContainer& streams);
 
 template <int M>
-void CUGO_API computeActiveErrors_(
+Scalar computeActiveErrors_(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<M>& measurements,
@@ -140,15 +148,14 @@ void CUGO_API computeActiveErrors_(
     const GpuVec2i& edge2PL,
     const GpuVec5d& cameras,
     const Scalar errorThreshold,
-    const RobustKernel& robustKernel,
     GpuVecxd<M>& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
-    hAsyncScalarVec& h_chi,
-    const cudaStream_t stream = 0);
+    const CudaDevice::StreamContainer& streams,
+    bool clearOutliers);
 
-void CUGO_API computeActiveErrors_DepthBa(
+Scalar computeActiveErrors_DepthBa(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVec3d& measurements,
@@ -156,15 +163,14 @@ void CUGO_API computeActiveErrors_DepthBa(
     const GpuVec2i& edge2PL,
     const GpuVec5d& cameras,
     const Scalar errorThreshold,
-    const RobustKernel& robustKernel,
     GpuVec3d& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
-    hAsyncScalarVec& h_chi,
-    cudaStream_t stream = 0);
+    const CudaDevice::StreamContainer& streams,
+    bool clearOutliers);
 
-void CUGO_API computeActiveErrors_Line(
+Scalar computeActiveErrors_Line(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToLineMatch<double>>& measurements,
     const GpuVec1d& omegas,
@@ -172,9 +178,9 @@ void CUGO_API computeActiveErrors_Line(
     GpuVec1d& errors,
     GpuVec3d& Xcs,
     Scalar* chi,
-    hAsyncScalarVec& h_chi);
+    const CudaDevice::StreamContainer& streams);
 
-void CUGO_API computeActiveErrors_Plane(
+Scalar computeActiveErrors_Plane(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToPlaneMatch<double>>& measurements,
     const GpuVec1d& omegas,
@@ -182,8 +188,7 @@ void CUGO_API computeActiveErrors_Plane(
     GpuVec1d& errors,
     GpuVec3d& Xcs,
     Scalar* chi,
-    hAsyncScalarVec& h_chi,
-    cudaStream_t stream = 0);
+    const CudaDevice::StreamContainer& streams);
 
 void CUGO_API constructQuadraticForm_Line(
     const GpuVecSe3d& se3,
@@ -197,7 +202,8 @@ void CUGO_API constructQuadraticForm_Line(
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
-    GpuHplBlockMat& Hpl);
+    GpuHplBlockMat& Hpl,
+    const CudaDevice::StreamContainer& streams);
 
 void CUGO_API constructQuadraticForm_Plane(
     const GpuVecSe3d& se3,
@@ -212,7 +218,7 @@ void CUGO_API constructQuadraticForm_Plane(
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
-    cudaStream_t stream = 0);
+    const CudaDevice::StreamContainer& streams);
 
 
 } // namespace gpu

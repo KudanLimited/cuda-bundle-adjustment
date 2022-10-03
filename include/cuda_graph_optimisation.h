@@ -19,7 +19,9 @@ limitations under the License.
 #include "device_buffer.h"
 #include "device_matrix.h"
 #include "graph_optimisation_options.h"
+#include "robust_kernel.h"
 #include "macro.h"
+#include "cuda_device.h"
 
 #include <array>
 #include <cmath>
@@ -62,7 +64,7 @@ public:
     /** @brief Statisical information for the first frame of optimistaion
      * @return A BatchInfo struct with statistical info for the first frame.
      */
-    BatchInfo getStartStats() const
+    BatchInfo getStartStats() const noexcept
     {
         assert(!stats.empty());
         return stats[0];
@@ -71,7 +73,7 @@ public:
     /** @brief Statisical information for the last frame of optimistaion
      * @return A BatchInfo struct with statistical info for the last frame.
      */
-    BatchInfo getLastStats() const
+    BatchInfo getLastStats() const noexcept
     {
         assert(!stats.empty());
         return stats.back();
@@ -81,7 +83,7 @@ public:
      * @param idx The frame to get statistical info for.
      * @return A BatchInfo struct with statistical info for the specified frame.
      */
-    BatchInfo getStatEntry(const int idx) const
+    BatchInfo getStatEntry(const int idx) const noexcept
     {
         assert(stats.size() < idx);
         return stats[idx];
@@ -90,16 +92,16 @@ public:
     /** @brief Adds statistical information to the container.
      * @param batchInfo The stastical information to add.
      */
-    void addStat(const BatchInfo& batchInfo) { stats.push_back(batchInfo); }
+    void addStat(const BatchInfo& batchInfo) noexcept { stats.push_back(batchInfo); }
 
     /** @brief Returns a vector containing all stats information for the optimisation so far.
      * @return Returns a vector contains stats info.
      */
-    const std::vector<BatchInfo>& get() { return stats; }
+    const std::vector<BatchInfo>& get() noexcept { return stats; }
 
     /** @brief clears the statistical info container.
      */
-    void clear() { stats.clear(); }
+    void clear() noexcept { stats.clear(); }
 
 private:
     std::vector<BatchInfo> stats;
@@ -132,7 +134,7 @@ class CUGO_API CudaGraphOptimisation
 {
 public:
     using Ptr = UniquePtr<CudaGraphOptimisationImpl>;
-
+    
     virtual ~CudaGraphOptimisation();
 
     /**
@@ -188,6 +190,13 @@ public:
      * @param status If true, then the optimiser will output infornmation for each iteration.
      */
     virtual void setVerbose(bool status) = 0;
+
+    /**
+    * @brief Set the robust kernel to use for all edges. 
+    * @type The type of robust kernel to apply. See @p RobustKernelType
+    * @delta The delta value to use in the robust kernel calculations.
+    */
+    virtual void setRobustKernel(const RobustKernelType& type, double delta) = 0;
 };
 
 /** @brief Implementation of CudaGraphOptimisation.
@@ -239,15 +248,10 @@ public:
     void clearEdgeSets() override;
     void clearVertexSets() override;
     void setVerbose(bool status) override { verbose = status; }
+    void setRobustKernel(const RobustKernelType& type, double delta) override;
 
 private:
-    /**
-     * @brief Initialise the CUDA backend. This will check that the system
-     * has the required compute capability and initialise the cuda streams
-     *
-     */
-    void initCuda();
-
+    
     static inline double attenuation(double x) { return 1 - std::pow(2 * x - 1, 3); }
     static inline double clamp(double v, double lo, double hi)
     {
@@ -272,14 +276,10 @@ private:
     BatchStatistics stats_;
     TimeProfile timeProfile_;
 
-    /// cuda streams
-    std::array<cudaStream_t, 3> streams_;
+     /// The robust kernal associated with this edge set. Defaults to None.
+    RobustKernel robustKernel_;
 
-    /// the GPU device id that will be used
-    int deviceId_;
-
-    /// Properties of the GPU that will be used.
-    cudaDeviceProp deviceProp_;
+    CudaDevice cudaDevice_;
 };
 
 } // namespace cugo

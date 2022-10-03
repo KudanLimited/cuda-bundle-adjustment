@@ -18,6 +18,7 @@ limitations under the License.
 
 #include "macro.h"
 #include "optimisable_graph.h"
+#include "cuda_device.h"
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -38,18 +39,18 @@ public:
     StereoEdgeSet() {}
     ~StereoEdgeSet() {}
 
-    void computeError(
+    Scalar computeError(
         const VertexSetVec& vertexSets,
         Scalar* chi,
-        hAsyncScalarVec& h_chi,
-        cudaStream_t stream) override
+        const CudaDevice::StreamContainer& streams, 
+        bool clearOutliers) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d poseEstimateData = poseVertexSet->getDeviceEstimates();
         LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSets[1]);
         GpuVec3d landmarkEstimateData = lmVertexSet->getDeviceEstimates();
 
-        gpu::computeActiveErrors_<3>(
+        return gpu::computeActiveErrors_<3>(
             poseEstimateData,
             landmarkEstimateData,
             d_measurements,
@@ -57,13 +58,12 @@ public:
             d_edge2PL,
             d_cameras,
             outlierThreshold,
-            kernel,
             d_errors,
             d_outliers,
             d_Xcs,
             chi,
-            h_chi,
-            stream);
+            streams,
+            clearOutliers);
     }
 
     void constructQuadraticForm(
@@ -73,7 +73,8 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream) override
+        bool clearOutliers,
+        const CudaDevice::StreamContainer& streams) override
     {
         // NOTE: This assumes the pose vertex is of the SE3 form - also would break if more than one
         // pose vertexset.
@@ -89,13 +90,14 @@ public:
             d_edge2Hpl,
             d_edgeFlags,
             d_cameras,
-            kernel,
+            d_outliers,
             Hpp,
             bp,
             Hll,
             bl,
             Hpl,
-            stream);
+            clearOutliers,
+            streams);
     }
 
 private:
@@ -109,18 +111,18 @@ public:
     MonoEdgeSet() {}
     ~MonoEdgeSet() {}
 
-    void computeError(
+    Scalar computeError(
         const VertexSetVec& vertexSets,
         Scalar* chi,
-        hAsyncScalarVec& h_chi,
-        cudaStream_t stream) override
+        const CudaDevice::StreamContainer& streams,
+        bool clearOutliers) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d poseEstimateData = poseVertexSet->getDeviceEstimates();
         LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSets[1]);
         GpuVec3d landmarkEstimateData = lmVertexSet->getDeviceEstimates();
 
-        gpu::computeActiveErrors_<2>(
+        return gpu::computeActiveErrors_<2>(
             poseEstimateData,
             landmarkEstimateData,
             d_measurements,
@@ -128,13 +130,12 @@ public:
             d_edge2PL,
             d_cameras,
             outlierThreshold,
-            kernel,
             d_errors,
             d_outliers,
             d_Xcs,
             chi,
-            h_chi,
-            stream);
+            streams,
+            clearOutliers);
     }
 
     void constructQuadraticForm(
@@ -144,7 +145,8 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream) override
+        bool clearOutliers,
+        const CudaDevice::StreamContainer& streams) override
     {
         // NOTE: This assumes the pose vertex is of the SE3 form and is in index position zero
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
@@ -158,13 +160,14 @@ public:
             d_edge2Hpl,
             d_edgeFlags,
             d_cameras,
-            kernel,
+            d_outliers,
             Hpp,
             bp,
             Hll,
             bl,
             Hpl,
-            stream);
+            clearOutliers,
+            streams);
 
     }
 
@@ -179,18 +182,18 @@ public:
     DepthEdgeSet() {}
     ~DepthEdgeSet() {}
 
-    void computeError(
+    Scalar computeError(
         const VertexSetVec& vertexSets,
         Scalar* chi,
-        hAsyncScalarVec& h_chi,
-        cudaStream_t stream) override
+        const CudaDevice::StreamContainer& streams,
+        bool clearOutliers) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d poseEstimateData = poseVertexSet->getDeviceEstimates();
         LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSets[1]);
         GpuVec3d landmarkEstimateData = lmVertexSet->getDeviceEstimates();
 
-        gpu::computeActiveErrors_DepthBa(
+        return gpu::computeActiveErrors_DepthBa(
             poseEstimateData,
             landmarkEstimateData,
             d_measurements,
@@ -198,13 +201,12 @@ public:
             d_edge2PL,
             d_cameras,
             outlierThreshold,
-            kernel,
             d_errors,
             d_outliers,
             d_Xcs,
             chi,
-            h_chi,
-            stream);
+            streams,
+            clearOutliers);
     }
 
     void constructQuadraticForm(
@@ -214,7 +216,8 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream) override
+        bool clearOutliers,
+        const CudaDevice::StreamContainer& streams) override
     {
         // NOTE: This assumes the pose vertex is of the SE3 form and is in index position zero
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
@@ -228,13 +231,14 @@ public:
             d_edge2Hpl,
             d_edgeFlags,
             d_cameras,
-            kernel,
+            d_outliers,
             Hpp,
             bp,
             Hll,
             bl,
             Hpl,
-            stream);
+            clearOutliers,
+            streams);
     }
 };
 

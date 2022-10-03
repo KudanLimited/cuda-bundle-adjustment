@@ -26,7 +26,15 @@ limitations under the License.
 namespace cugo
 {
 
-/**
+enum class MemoryType
+{
+    /// Memory that can only be used by device code
+    Device,
+    /// Unified memory accesible by CPU and GPU
+    Managed
+};
+
+    /**
  * @brief A wrapper class for device allocated memory.
  * @tparam T The type this buffer will hold
  */
@@ -47,7 +55,7 @@ public:
      * less than the previously allocated size, then no allocation will occur.
      * @param count The number of type @p T slots to allocate
      */
-    void allocate(size_t count)
+    void allocate(size_t count, MemoryType type) noexcept
     {
         if (data_ && capacity_ >= count)
         {
@@ -55,7 +63,14 @@ public:
         }
 
         destroy();
-        CUDA_CHECK(cudaMalloc(&data_, sizeof(T) * count));
+        if (type == MemoryType::Device)
+        {
+            CUDA_CHECK(cudaMalloc(&data_, sizeof(T) * count));
+        }
+        else
+        {
+            CUDA_CHECK(cudaMallocManaged(&data_, sizeof(T) * count));
+        }
         capacity_ = count;
         allocated_ = true;
     }
@@ -63,7 +78,7 @@ public:
     /**
      * @brief If a buffer has been allocated on the device, destroy the buffer.
      */
-    void destroy()
+    void destroy() noexcept
     {
         if (allocated_ && data_)
         {
@@ -79,15 +94,10 @@ public:
      * the device memory is allocated. if a buffer has already been allocated, a resize
      * will only occur if the previous size is smaller than the newly required size.
      * @param size The size to resize the buffer to.
-     * @param clear If true, sets the allocated memory to zeros.
      */
-    void resize(size_t size, bool clear = false)
+    void resize(size_t size, MemoryType type = MemoryType::Device) noexcept
     {
-        allocate(size);
-        if (clear)
-        {
-            cudaMemset(data_, 0, sizeof(T) * size_);
-        }
+        allocate(size, type);
         size_ = size;
     }
 
@@ -99,7 +109,7 @@ public:
      * @param size The size of the buffer to map.
      * @param data A pointer to a valid device memory space.
      */
-    void map(size_t size, void* data)
+    void map(size_t size, void* data) noexcept
     {
         data_ = reinterpret_cast<T*>(data);
         size_ = size;
@@ -115,7 +125,7 @@ public:
      * @param offset An offset into the @p buffer which this buffer will map to.
      */
     template <typename U>
-    void offset(DeviceBuffer<U>& buffer, size_t size, size_t offset)
+    void offset(DeviceBuffer<U>& buffer, size_t size, size_t offset) noexcept
     {
         void* offset_ptr = static_cast<uint8_t*>(buffer.data()) + offset;
         data_ = reinterpret_cast<T*>(offset_ptr);
@@ -131,7 +141,7 @@ public:
      * @param size The size of the memory space required
      * @param h_data A pointer to the host data to upload.
      */
-    void assign(size_t size, const void* h_data)
+    void assign(size_t size, const void* h_data) noexcept
     {
 #ifdef USE_ZERO_COPY
         CUDA_CHECK(cudaHostGetDevicePointer(&data_, (T*)h_data, 0));
@@ -141,7 +151,7 @@ public:
 #endif
     }
 
-    void insert(size_t size, const void* h_data, size_t offset)
+    void insert(size_t size, const void* h_data, size_t offset) noexcept
     {
         assert(offset < capacity_);
         assert(size < capacity_);
@@ -159,7 +169,7 @@ public:
      * @param stream A cuda stream which will be used for the upload. If not stated,
      * the default stream is used.
      */
-    void assignAsync(size_t size, const void* h_data, cudaStream_t stream = 0)
+    void assignAsync(size_t size, const void* h_data, cudaStream_t stream = 0) noexcept
     {
 #ifdef USE_ZERO_COPY
         CUDA_CHECK(cudaHostGetDevicePointer(&data_, (T*)h_data, 0));
@@ -175,7 +185,7 @@ public:
      *
      * @param h_data A pointer to the host data to upload.
      */
-    void upload(const T* h_data)
+    void upload(const T* h_data) noexcept
     {
         assert(h_data != nullptr);
         assert(size_ > 0);
@@ -190,7 +200,7 @@ public:
      * @param stream A cuda stream which will be used for the upload. If not stated,
      * the default stream is used.
      */
-    void uploadAsync(const T* h_data, cudaStream_t stream = 0)
+    void uploadAsync(const T* h_data, cudaStream_t stream = 0) noexcept
     {
         assert(h_data != nullptr);
         assert(size_ > 0);
@@ -203,7 +213,7 @@ public:
      * @param h_data A pointer to memory where the data will be downloaded to.#
      * Note: This must be of adequate size to stage the downnloaded data (no check is carried out)
      */
-    void download(T* h_data) const
+    void download(T* h_data) const noexcept
     {
         CUDA_CHECK(cudaMemcpy(h_data, data_, sizeof(T) * size_, cudaMemcpyDeviceToHost));
     }
@@ -213,7 +223,7 @@ public:
      * thread is not blocked.
      * @param h_data A pointer to memory where the data will be downloaded to.
      */
-    void downloadAsync(T* h_data, const cudaStream_t stream = 0) const
+    void downloadAsync(T* h_data, const cudaStream_t stream = 0) const noexcept
     {
         CUDA_CHECK(
             cudaMemcpyAsync(h_data, data_, sizeof(T) * size_, cudaMemcpyDeviceToHost, stream));
@@ -224,7 +234,7 @@ public:
      *
      * @param rhs A device memory pointer to copy the data to.
      */
-    void copyTo(T* rhs) const
+    void copyTo(T* rhs) const noexcept
     {
         CUDA_CHECK(cudaMemcpy(rhs, data_, sizeof(T) * size_, cudaMemcpyDeviceToDevice));
     }
@@ -235,7 +245,7 @@ public:
      *
      * @param rhs A device memory pointer to copy the data to.
      */
-    void copyToAsync(T* rhs, int stream = 0) const
+    void copyToAsync(T* rhs, int stream = 0) const noexcept
     {
         CUDA_CHECK(
             cudaMemcpyAsync(rhs, data_, sizeof(T) * size_, cudaMemcpyDeviceToDevice, stream));
@@ -245,29 +255,29 @@ public:
      * @brief Fill the allocated device memory with zeros.
      *
      */
-    void fillZero() { CUDA_CHECK(cudaMemset(data_, 0, sizeof(T) * size_)); }
+    void fillZero() noexcept { CUDA_CHECK(cudaMemset(data_, 0, sizeof(T) * size_)); }
 
     /**
      * @brief Get the pointer to device memory
      * @return A device memory pointer of this buffer.
      */
-    T* data() { return data_; }
+    T* data() noexcept { return data_; }
 
     /**
      * @brief Get the constant pointer to device memory
      * @return A device memory pointer of this buffer.
      */
-    const T* data() const { return data_; }
+    const T* data() const noexcept { return data_; }
 
     /**
      * @brief Get the size of this buffer.
      * @return The size of the allocated space.
      */
-    size_t size() const { return size_; }
-    int ssize() const { return static_cast<int>(size_); }
+    size_t size() const noexcept { return size_; }
+    int ssize() const noexcept { return static_cast<int>(size_); }
 
-    operator T*() { return data_; }
-    operator const T*() const { return data_; }
+    operator T*() noexcept { return data_; }
+    operator const T*() const noexcept { return data_; }
 
 private:
     T* data_;

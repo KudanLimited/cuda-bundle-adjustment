@@ -396,6 +396,12 @@ public:
      * @return The camera parameters used by this edge.
      */
     virtual Camera& getCamera() noexcept = 0;
+
+    virtual void inactivate() noexcept = 0;
+
+    virtual bool isActive() const noexcept = 0;
+
+    virtual void setActive() noexcept = 0;
 };
 
 /**
@@ -446,6 +452,9 @@ public:
     Information getInformation() noexcept override;
     void setCamera(const Camera& camera) noexcept override;
     Camera& getCamera() noexcept override;
+    void inactivate() noexcept override;
+    bool isActive() const noexcept override;
+    void setActive() noexcept override; 
 
     // non-virtual functions
     template <std::size_t... Ints>
@@ -470,6 +479,8 @@ protected:
     Camera camera_;
     /// The vertex types for the edge
     BaseVertex* vertices[VertexSize];
+    /// States the activity state of this edge.
+    bool isActive_ = true;
 };
 
 
@@ -547,6 +558,12 @@ public:
     mapDevice(int* edge2HData, cudaStream_t stream, const GraphOptimisationOptions& options) = 0;
 
     /**
+    * @brief Build the block position structure for the Hpl matrix
+    * @param hplBlockPos An async vector container which will nbe filled with the block positional data.
+    */
+    virtual void buildHplBlockPos(async_vector<HplBlockPos>& hplBlockPos) noexcept = 0;
+
+    /**
      * @brief Clear the device side containers in this set. Note: This does not deallocate device
      * memory.
      */
@@ -562,19 +579,6 @@ public:
     * @p computeErrors kernel, will be removed from the edge container.
     */
     virtual void updateEdges() noexcept = 0;
-
-    /**
-     * @brief Set the Robust Kernel associated with this set (applied to all edges)
-     * @param kernel A initialised Robust Kernel class @see BaseRobustKernel
-     */
-    virtual void setRobustKernel(const RobustKernelType type, Scalar delta) noexcept = 0;
-
-    /**
-     * @brief Get the Robust Kernel associated with this set.
-     * @return A pointer to the RobustKernel class associated with this set. If not set, will be
-     * nullptr.
-     */
-    virtual RobustKernel& robustKernel() noexcept = 0;
 
     /**
      * @brief Sets the information for this edge set.
@@ -631,7 +635,8 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream)
+        bool clearOutliers,
+        const CudaDevice::StreamContainer& streams)
     {
     }
 
@@ -644,10 +649,25 @@ public:
      * @param stream A CUDA stream object
      * @return Scalar The calculated chi2 value
      */
-    virtual void computeError(const VertexSetVec& vertexSets, Scalar* chi, hAsyncScalarVec& h_chi, cudaStream_t stream)
+    virtual Scalar computeError(const VertexSetVec& vertexSets,
+                                 Scalar* chi,
+                                 const CudaDevice::StreamContainer& streams,
+                                 bool clearOutliers)
     {
-        return;
+        return 0;
     }
+
+    /**
+    * @brief The number of edges removed as outliers for this optimistaion run.
+    * @return The outlier edge count.
+    */
+    virtual size_t outlierCount() const noexcept = 0;
+
+    /**
+     * @brief The total number of edges removed as outliers for all optimistaion runs.
+     * @return The total outlier edge count.
+     */
+    virtual size_t totalOutlierCount() const noexcept = 0;
 };
 
 /**
@@ -688,14 +708,15 @@ public:
     void updateEdges() noexcept override;
     const EdgeContainer& get() noexcept;
     const int dim() const noexcept override;
-    void setRobustKernel(const RobustKernelType type, Scalar delta) noexcept override;
-    RobustKernel& robustKernel() noexcept override;
     void clearEdges() noexcept override;
     void setInformation(const Information info) noexcept override;
     Information getInformation() noexcept override;
     void setCamera(const Camera& camera) noexcept override;
     Camera& getCamera() noexcept override;
     Scalar getOutlierThreshold() const noexcept override;
+    size_t totalOutlierCount() const noexcept;
+    size_t outlierCount() const noexcept;
+    void buildHplBlockPos(async_vector<HplBlockPos>& hplBlockPos) noexcept override;
 
     // non-virtual functions
     /**
@@ -718,8 +739,6 @@ protected:
     EdgeContainer edges;
     /// The number of active edges (has a non-fixed vertex)
     size_t activeEdgeSize_;
-    /// The robust kernal associated with this edge set. Defaults to None.
-    RobustKernel kernel;
     /// The threshold in which an error is considered a outlier
     Scalar outlierThreshold;
     /// The toal buffer size for the arena
@@ -730,6 +749,14 @@ protected:
     /// The camera params which which will be applied to all edges in this set. This is only used if
     /// option @p perEdgeCamera is false.
     Camera camera_;
+    /// The number of edges determined to be outliers in the current optimisation run
+    /// Note: This is only used if the outlierThreshold value is set.
+    size_t outliersRemovedThisFrame_ = 0;
+    /// The total number of edges determined to be outliers over all optimistaion runs
+    /// Note: This is only used if the outlierThreshold value is set.
+    size_t totalOutlierCount_ = 0;
+    size_t outliersRemovedLastFrame_ = 0;
+    async_vector<int> edgeOutliers_;
 
 public:
     // device side

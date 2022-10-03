@@ -14,8 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef __CUDA_LINEAR_SOLVER_H__
-#define __CUDA_LINEAR_SOLVER_H__
+#pragma once
 
 #include "cholesky.h"
 #include "scalar.h"
@@ -23,7 +22,6 @@ limitations under the License.
 
 #include <Eigen/Core>
 #include <Eigen/Sparse>
-#include <iostream>
 #include <memory>
 
 namespace cugo
@@ -82,4 +80,3 @@ private:
 
 } // namespace cugo
 
-#endif // !__CUDA_LINEAR_SOLVER_H__

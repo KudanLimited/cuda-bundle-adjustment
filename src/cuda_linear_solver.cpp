@@ -45,7 +45,7 @@ bool HscSparseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* 
 
     if (cholesky_.info() != Cholesky::SUCCESS)
     {
-        std::cerr << "factorize failed" << std::endl;
+        printf("factorize failed\n");
         return false;
     }
 
@@ -71,7 +71,7 @@ bool HppSparseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* 
 
     if (cholesky_.info() != Cholesky::SUCCESS)
     {
-        std::cerr << "factorize failed" << std::endl;
+        printf("factorize failed\n");
         return false;
     }
 
@@ -95,7 +95,7 @@ bool DenseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x)
 
     if (cholesky_.info() != Cholesky::SUCCESS)
     {
-        std::cerr << "factorize failed" << std::endl;
+        printf("factorize failed\n");
         return false;
     }
 
