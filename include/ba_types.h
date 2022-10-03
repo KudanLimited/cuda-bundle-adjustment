@@ -38,14 +38,18 @@ public:
     StereoEdgeSet() {}
     ~StereoEdgeSet() {}
 
-    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream) override
+    void computeError(
+        const VertexSetVec& vertexSets,
+        Scalar* chi,
+        hAsyncScalarVec& h_chi,
+        cudaStream_t stream) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d poseEstimateData = poseVertexSet->getDeviceEstimates();
         LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSets[1]);
         GpuVec3d landmarkEstimateData = lmVertexSet->getDeviceEstimates();
 
-        return gpu::computeActiveErrors_<3>(
+        gpu::computeActiveErrors_<3>(
             poseEstimateData,
             landmarkEstimateData,
             d_measurements,
@@ -58,6 +62,7 @@ public:
             d_outliers,
             d_Xcs,
             chi,
+            h_chi,
             stream);
     }
 
@@ -104,14 +109,18 @@ public:
     MonoEdgeSet() {}
     ~MonoEdgeSet() {}
 
-    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream) override
+    void computeError(
+        const VertexSetVec& vertexSets,
+        Scalar* chi,
+        hAsyncScalarVec& h_chi,
+        cudaStream_t stream) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d poseEstimateData = poseVertexSet->getDeviceEstimates();
         LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSets[1]);
         GpuVec3d landmarkEstimateData = lmVertexSet->getDeviceEstimates();
 
-        return gpu::computeActiveErrors_<2>(
+        gpu::computeActiveErrors_<2>(
             poseEstimateData,
             landmarkEstimateData,
             d_measurements,
@@ -124,6 +133,7 @@ public:
             d_outliers,
             d_Xcs,
             chi,
+            h_chi,
             stream);
     }
 
@@ -169,14 +179,18 @@ public:
     DepthEdgeSet() {}
     ~DepthEdgeSet() {}
 
-    Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream) override
+    void computeError(
+        const VertexSetVec& vertexSets,
+        Scalar* chi,
+        hAsyncScalarVec& h_chi,
+        cudaStream_t stream) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d poseEstimateData = poseVertexSet->getDeviceEstimates();
         LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSets[1]);
         GpuVec3d landmarkEstimateData = lmVertexSet->getDeviceEstimates();
 
-        return gpu::computeActiveErrors_DepthBa(
+        gpu::computeActiveErrors_DepthBa(
             poseEstimateData,
             landmarkEstimateData,
             d_measurements,
@@ -189,6 +203,7 @@ public:
             d_outliers,
             d_Xcs,
             chi,
+            h_chi,
             stream);
     }
 

@@ -54,6 +54,11 @@ void BlockSolver::initialize(const EdgeSetVec& edgeSets, const VertexSetVec& ver
 
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
+        if (!edgeSet->nedges())
+        {
+            continue;
+        }
+
         // clear the edges and vertices from the last run.
         // Note: these calls do no memory de-allocating and do not
         // destroy or touch device buffers.
@@ -65,13 +70,16 @@ void BlockSolver::initialize(const EdgeSetVec& edgeSets, const VertexSetVec& ver
     }
 
     // initialise the linear solver
-    if (doSchur_)
+    if (!linearSolver_)
     {
-        linearSolver_ = std::make_unique<HscSparseLinearSolver>();
-    }
-    else
-    {
-        linearSolver_ = std::make_unique<DenseLinearSolver>();
+        if (doSchur_)
+        {
+            linearSolver_ = std::make_unique<HscSparseLinearSolver>();
+        }
+        else
+        {
+            linearSolver_ = std::make_unique<DenseLinearSolver>();
+        }
     }
 }
 
@@ -106,7 +114,7 @@ void BlockSolver::buildStructure(
         edgeSet->mapDevice(edge2HplPtr, streams[0], options);
         prevEdgeSize += edgeSet->nActiveEdges();
     }
-    
+
     // allocate device buffers
     d_x_.resize(numP_ * PDIM + numL_ * LDIM);
     d_b_.resize(numP_ * PDIM + numL_ * LDIM);
@@ -120,7 +128,7 @@ void BlockSolver::buildStructure(
         d_nnzPerCol_.resize(numL_ + 1);
    
         // build Hpl block matrix structure
-        d_HplBlockPos_.assign(nVertexBlockPos, HplblockPos_.data());
+        d_HplBlockPos_.assignAsync(nVertexBlockPos, HplblockPos_.data(), streams[1]);
         gpu::buildHplStructure(d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_, streams[1]);
 
         // build host Hschur sparse block matrix structure
@@ -133,17 +141,17 @@ void BlockSolver::buildStructure(
         d_Hsc_.resizeNonZeros(Hsc_.nblocks());
         // TODO: use async upload - need to converted Eigen::VectorXi to a pinned memory address
         // version
-        d_Hsc_.uploadAsync(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices(), streams[0]);
+        d_Hsc_.uploadAsync(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
 
         // initialise the device landmark Hessian matrix - 
         // this is filled by the computation of the quadratic form
         d_Hll_.resize(numL_);
        
         d_HscCSR_.resize(Hsc_.nnzSymm());
-        d_BSR2CSR_.assignAsync(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR(), streams[2]);
+        d_BSR2CSR_.assignAsync(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
 
         d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
-        gpu::findHschureMulBlockIndices(d_Hpl_, d_Hsc_, d_HscMulBlockIds_, streams[1]);
+        gpu::findHschureMulBlockIndices(d_Hpl_, d_Hsc_, d_HscMulBlockIds_, streams[2]);
 
         d_bsc_.resize(numP_);
         d_Hpl_invHll_.resize(nVertexBlockPos);
@@ -169,7 +177,7 @@ void BlockSolver::buildStructure(
 
     d_HppBackup_.resize(numP_);
     d_chi_.resize(1);
-    
+
     // upload the estimates to the device
     int offset = 0;
 
@@ -191,7 +199,7 @@ void BlockSolver::buildStructure(
             offset += lmVertexSet->getDeviceEstimateSize() * 3;
         }
     }
-     
+
     if (doSchur_)
     {
         HscSparseLinearSolver* sparseLinearSolver =
@@ -220,8 +228,8 @@ double BlockSolver::computeErrors(
         {
             continue;
         }
-        const Scalar chi = edgeSet->computeError(vertexSets, d_chi_, streams[0]);
-        accumChi += chi;
+        edgeSet->computeError(vertexSets, d_chi_, h_chi_, streams[0]);
+        accumChi += h_chi_[0];
     }
 
     return accumChi;
@@ -306,12 +314,12 @@ bool BlockSolver::solve(std::array<cudaStream_t, 3>& streams)
     // Schur complement
     // bSc = -bp + Hpl*Hll^-1*bl
     // HSc = Hpp - Hpl*Hll^-1*HplT
-    gpu::computeBschure(d_bp_, d_Hpl_, d_Hll_, d_bl_, d_bsc_, d_invHll_, d_Hpl_invHll_, streams[1]);
-    gpu::computeHschure(d_Hpp_, d_Hpl_invHll_, d_Hpl_, d_HscMulBlockIds_, d_Hsc_, streams[1]);
+    gpu::computeBschure(d_bp_, d_Hpl_, d_Hll_, d_bl_, d_bsc_, d_invHll_, d_Hpl_invHll_);
+    gpu::computeHschure(d_Hpp_, d_Hpl_invHll_, d_Hpl_, d_HscMulBlockIds_, d_Hsc_);
 
     // Solve linear equation about Δxp
     // HSc*Δxp = bp
-    gpu::convertHschureBSRToCSR(d_Hsc_, d_BSR2CSR_, d_HscCSR_, streams[1]);
+    gpu::convertHschureBSRToCSR(d_Hsc_, d_BSR2CSR_, d_HscCSR_);
     const bool success = linearSolver_->solve(d_HscCSR_, d_bsc_.values(), d_xp_.values());
     if (!success)
     {

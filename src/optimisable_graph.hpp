@@ -436,7 +436,7 @@ const Vec5d EdgeSet<DIM, E, VertexTypes...>::cameraToVec(const Camera& cam) noex
 
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::init(
-    std::vector<HplBlockPos>& hBlockPosArena,
+    async_vector<HplBlockPos>& hBlockPosArena,
     const int edgeIdOffset,
     cudaStream_t stream,
     bool doSchur,
@@ -545,8 +545,6 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
             ++edgeId;
         }
     }
-
-    kernel.d_delta.assign(1, &kernel.delta);    
 }
 
 template <int DIM, typename E, typename... VertexTypes>
@@ -560,7 +558,7 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     d_outlierThreshold.assign(1, &outlierThreshold);
     if (outlierThreshold > 0.0)
     {
-        d_outliers.resize(activeEdgeSize_, true);
+        d_outliers.resize(activeEdgeSize_);
     }
     if (edge2HData)
     {
@@ -577,13 +575,15 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     d_measurements.offset(d_dataBuffer, measurements->size(), measurements->bufferOffset());
     d_omegas.offset(d_dataBuffer, omegas->size(), omegas->bufferOffset());
     d_cameras.offset(d_dataBuffer, cameras->size(), cameras->bufferOffset());
+
+    // upload the robust kernel delta value
+    kernel.d_delta.assign(1, &kernel.delta);
 }
 
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::updateEdges() noexcept
 {
     std::vector<int> edgeOutliers;
-    edgeOutliers.reserve(activeEdgeSize_);
     std::vector<BaseEdge*> edgesToRemove;
 
     if (outlierThreshold > 0.0)
@@ -600,15 +600,14 @@ void EdgeSet<DIM, E, VertexTypes...>::updateEdges() noexcept
                 edgesToRemove.emplace_back(edge);
             }
         }
-    }
-
-    // delete any edge outliers
-    for (BaseEdge* edge : edgesToRemove)
-    {
-        removeEdge(edge);
+        // delete any edge outliers
+        for (BaseEdge* edge : edgesToRemove)
+        {
+            removeEdge(edge);
+        }
     }
 }
-    
+   
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::clearDevice() noexcept
 {

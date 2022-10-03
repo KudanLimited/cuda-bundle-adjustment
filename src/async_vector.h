@@ -39,9 +39,10 @@ public:
     {
         // only resize if we the new size is greater than the
         // already existing size
-        if (!data_ || size >= capacity_)
+        if (!data_ || size > capacity_)
         {
-            allocate(size);
+            // allocate more memory than required to reduce costly resizes
+            allocate(size * 2);
         }
         size_ = 0;
     }
@@ -52,7 +53,10 @@ public:
      */
     void resize(size_t size) noexcept
     {
-        reserve(size);
+        if (!data_ || size > capacity_)
+        {
+            allocate(size);
+        }
         size_ = size;
     }
 

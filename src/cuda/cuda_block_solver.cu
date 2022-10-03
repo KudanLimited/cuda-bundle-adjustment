@@ -1448,17 +1448,18 @@ void buildHplStructure(
 {
     const int nblocks = Hpl.nnz();
     const int block = 1024;
-    const int grid = divUp(nblocks, block);
+    const int grid = 16;
     int* colPtr = Hpl.outerIndices();
     int* rowInd = Hpl.innerIndices();
 
+    cudaStreamSynchronize(stream);
     auto ptrBlockPos = thrust::device_pointer_cast(blockpos.data());
     thrust::sort(ptrBlockPos, ptrBlockPos + nblocks, LessColId());
 
     CUDA_CHECK(cudaMemset(nnzPerCol, 0, sizeof(int) * (Hpl.cols() + 1)));
     nnzPerColKernel<<<grid, block, 0, stream>>>(blockpos, nblocks, nnzPerCol);
     exclusiveScan(nnzPerCol, colPtr, Hpl.cols() + 1);
-    setRowIndKernel<<<grid, block>>>(blockpos, nblocks, rowInd, indexPL);
+    setRowIndKernel<<<grid, block, 0 ,stream>>>(blockpos, nblocks, rowInd, indexPL);
 }
 
 void findHschureMulBlockIndices(
@@ -1468,7 +1469,7 @@ void findHschureMulBlockIndices(
     cudaStream_t stream)
 {
     const int block = 1024;
-    const int grid = divUp(Hpl.cols(), block);
+    const int grid = 16;
 
     DeviceBuffer<int> nindices(1);
     nindices.fillZero();
@@ -1488,7 +1489,7 @@ void findHschureMulBlockIndices(
 }
 
 template <int M>
-Scalar computeActiveErrors_(
+void computeActiveErrors_(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<M>& measurements,
@@ -1501,12 +1502,13 @@ Scalar computeActiveErrors_(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     const cudaStream_t stream)
 {
 }
 
 template <>
-Scalar computeActiveErrors_<2>(
+void computeActiveErrors_<2>(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<2>& measurements,
@@ -1519,13 +1521,14 @@ Scalar computeActiveErrors_<2>(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     const cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = divUp(nedges, block);
+    const int grid = 16;
     const int sharedBytes = block * sizeof(Scalar);
 
     RobustKernelFunc** d_function;
@@ -1537,6 +1540,7 @@ Scalar computeActiveErrors_<2>(
     {
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
+
     computeActiveErrorsKernel<2><<<grid, block, 0, stream>>>(
         nedges,
         nomegas,
@@ -1554,16 +1558,14 @@ Scalar computeActiveErrors_<2>(
         Xcs,
         chi);
     CUDA_CHECK(cudaGetLastError());
+    h_chi.download(chi, stream);
     deleteRkFunction<<<1, 1>>>(d_function);
-
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-    return h_chi;
+    cudaStreamSynchronize(stream);
+    
 }
 
 template <>
-Scalar computeActiveErrors_<3>(
+void computeActiveErrors_<3>(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<3>& measurements,
@@ -1576,13 +1578,14 @@ Scalar computeActiveErrors_<3>(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     const cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = divUp(nedges, block);
+    const int grid = 16;
     const int sharedBytes = block * sizeof(Scalar);
 
     RobustKernelFunc** d_function;
@@ -1594,6 +1597,7 @@ Scalar computeActiveErrors_<3>(
     {
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
+
     computeActiveErrorsKernel<3><<<grid, block, 0, stream>>>(
         nedges,
         nomegas,
@@ -1611,13 +1615,9 @@ Scalar computeActiveErrors_<3>(
         Xcs,
         chi);
     CUDA_CHECK(cudaGetLastError());
-
+    h_chi.download(chi, stream);
     deleteRkFunction<<<1, 1>>>(d_function);
-
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-    return h_chi;
+    cudaStreamSynchronize(stream);
 }
 
 template <int M>
@@ -1662,7 +1662,7 @@ void constructQuadraticForm_<2>(
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
     const int block = BLOCK_QUADRATIC_FORM;
-    const int grid = divUp(nedges, block);
+    const int grid = 16;
 
     RobustKernelFunc** d_function;
     cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
@@ -1713,7 +1713,7 @@ void constructQuadraticForm_<3>(
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
     const int block = BLOCK_QUADRATIC_FORM;
-    const int grid = divUp(nedges, block);
+    const int grid = 16;
 
     RobustKernelFunc** d_function;
     cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
@@ -1739,17 +1739,13 @@ void constructQuadraticForm_<3>(
         Hpl);
     CUDA_CHECK(cudaGetLastError());
 
-    deleteRkFunction<<<1, 1>>>(d_function);
+    deleteRkFunction<<<1, 1>>>((RobustKernelFunc**)d_function);
 }
 
 template <typename T, int DIM>
 Scalar
 maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* maxD, const cudaStream_t& stream)
 {
-    if (!D.size())
-    {
-        return 0;
-    }
     constexpr int block = BLOCK_MAX_DIAGONAL;
     constexpr int grid = 4;
     const int size = D.size() * DIM;
@@ -1785,13 +1781,9 @@ void addLambda_(
     DeviceBlockVector<T, DIM, 1>& backup,
     const cudaStream_t& stream)
 {
-    if (!D.size())
-    {
-        return;
-    }
     const int size = D.size() * DIM;
-    const int block = 1024;
-    const int grid = divUp(size, block);
+    const int block = ADD_LAMBDA_BLOCK_SIZE;
+    const int grid = 16;
     addLambdaKernel<DIM><<<grid, block, 0, stream>>>(size, D.values(), lambda, backup.values());
     CUDA_CHECK(cudaGetLastError());
 }
@@ -1814,13 +1806,9 @@ void restoreDiagonal_(
     const DeviceBlockVector<T, DIM, 1>& backup,
     const cudaStream_t& stream)
 {
-    if (!D.size())
-    {
-        return;
-    }
     const int size = D.size() * DIM;
-    const int block = 1024;
-    const int grid = divUp(size, block);
+    const int block = RESTORE_DIAGONAL_BLOCK_SIZE;
+    const int grid = 16;
     restoreDiagonalKernel<DIM><<<grid, block, 0, stream>>>(size, D.values(), backup.values());
     CUDA_CHECK(cudaGetLastError());
 }
@@ -1846,14 +1834,15 @@ void computeBschure(
     const cudaStream_t& stream)
 {
     const int cols = Hll.size();
-    const int block = 256;
-    const int grid = divUp(cols, block);
+    const int block = COMPUTE_BSCHURE_BLOCK_SIZE;
+    const int grid = 16;
 
     bp.copyTo(bsc);
     computeBschureKernel<<<grid, block, 0, stream>>>(
         cols, Hll, invHll, bl, Hpl, Hpl.outerIndices(), Hpl.innerIndices(), bsc, Hpl_invHll);
     CUDA_CHECK(cudaGetLastError());
 }
+
 void computeHschure(
     const GpuPxPBlockVec& Hpp,
     const GpuPxLBlockVec& Hpl_invHll,
@@ -1863,13 +1852,13 @@ void computeHschure(
     const cudaStream_t& stream)
 {
     const int nmulBlocks = mulBlockIds.ssize();
-    const int block = 256;
-    const int grid1 = divUp(Hsc.rows(), block);
-    const int grid2 = divUp(nmulBlocks, block);
+    const int block = COMPUTE_HSCHURE_BLOCK_SIZE;
+    const int grid1 = 16;
+    const int grid2 = 16;
 
     Hsc.fillZero();
     initializeHschurKernel<<<grid1, block, 0, stream>>>(Hsc.rows(), Hpp, Hsc, Hsc.outerIndices());
-    computeHschureKernel<<<grid2, block>>>(nmulBlocks, mulBlockIds, Hpl_invHll, Hpl, Hsc);
+    computeHschureKernel<<<grid2, block, 0, stream>>>(nmulBlocks, mulBlockIds, Hpl_invHll, Hpl, Hsc);
     CUDA_CHECK(cudaGetLastError());
 }
 
@@ -1881,7 +1870,7 @@ void convertHschureBSRToCSR(
 {
     const int size = HscCSR.ssize();
     const int block = 1024;
-    const int grid = divUp(size, block);
+    const int grid = 16;
     convertBSRToCSRKernel<<<grid, block, 0, stream>>>(size, HscBSR.values(), HscCSR, BSR2CSR);
 }
 
@@ -1904,8 +1893,8 @@ void twistCSR(
     int* dstMap,
     int* nnzPerRow)
 {
-    const int block = 512;
-    const int grid = divUp(size, block);
+    const int block = TWIST_CSR_BLOCK_SIZE;
+    const int grid = 16;
 
     permuteNnzPerRowKernel<<<grid, block>>>(size, srcRowPtr, P, nnzPerRow);
     exclusiveScan(nnzPerRow, dstRowPtr, size + 1);
@@ -1930,8 +1919,8 @@ void schurComplementPost(
     const GpuPx1BlockVec& xp,
     GpuLx1BlockVec& xl)
 {
-    const int block = 1024;
-    const int grid = divUp(Hpl.cols(), block);
+    const int block = SCHUR_COMP_POST_BLOCK_SIZE;
+    const int grid = 16;
 
     schurComplementPostKernel<<<grid, block>>>(
         Hpl.cols(), invHll, bl, Hpl, Hpl.outerIndices(), Hpl.innerIndices(), xp, xl);
@@ -1940,12 +1929,8 @@ void schurComplementPost(
 
 void updatePoses(const GpuPx1BlockVec& xp, GpuVecSe3d& estimate, const cudaStream_t& stream)
 {
-    if (!xp.size())
-    {
-        return;
-    }
-    const int block = 256;
-    const int grid = divUp(xp.size(), block);
+    const int block = UPDATE_POSES_BLOCK_SIZE;
+    const int grid = 16;
 
     updatePosesKernel<<<grid, block, 0, stream>>>(xp.size(), xp, estimate);
     CUDA_CHECK(cudaGetLastError());
@@ -1953,12 +1938,8 @@ void updatePoses(const GpuPx1BlockVec& xp, GpuVecSe3d& estimate, const cudaStrea
 
 void updateLandmarks(const GpuLx1BlockVec& xl, GpuVec3d& estimate, const cudaStream_t& stream)
 {
-    if (!xl.size())
-    {
-        return;
-    }
-    const int block = 1024;
-    const int grid = divUp(xl.size(), block);
+    const int block = UPDATE_LANDMARKS_BLOCK_SIZE;
+    const int grid = 16;
 
     updateLandmarksKernel<<<grid, block, 0, stream>>>(xl.size(), xl, estimate);
     CUDA_CHECK(cudaGetLastError());
@@ -2332,7 +2313,7 @@ __global__ void constructQuadraticFormKernel_Line(
 // BA custom edge - Wrapper functions
 ////////////////////////////////////////////////////////////////////////////////////
 
-Scalar computeActiveErrors_DepthBa(
+void computeActiveErrors_DepthBa(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVec3d& measurements,
@@ -2345,23 +2326,25 @@ Scalar computeActiveErrors_DepthBa(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = divUp(nedges, block);
+    const int grid = 16;
 
     RobustKernelFunc** d_function;
     cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
-    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta);
+    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
 
-    CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     if (errorThreshold > 0.0)
     {
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
+    CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
+    
     computeActiveErrorsKernel_DepthBa<<<grid, block, 0, stream>>>(
         nedges,
         nomegas,
@@ -2379,49 +2362,38 @@ Scalar computeActiveErrors_DepthBa(
         Xcs,
         chi);
     CUDA_CHECK(cudaGetLastError());
-
-    deleteRkFunction<<<1, 1>>>(d_function);
-
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-    return h_chi;
+    h_chi.download(chi);
+    deleteRkFunction<<<1, 1>>>((RobustKernelFunc**)d_function);
+    cudaStreamSynchronize(stream);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
 // ICP custom edge - Wrapper functions
 ////////////////////////////////////////////////////////////////////////////////////
-Scalar computeActiveErrors_Line(
+void computeActiveErrors_Line(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToLineMatch<double>>& measurements,
     const GpuVec1d& omegas,
     const GpuVec2i& edge2PL,
     GpuVec1d& errors,
     GpuVec3d& Xcs,
-    Scalar* chi)
+    Scalar* chi,
+    hAsyncScalarVec& h_chi)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = divUp(nedges, block);
-
-    if (nedges <= 0)
-    {
-        return 0;
-    }
+    const int grid = 16;
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     computeActiveErrorsKernel_Line<<<grid, block>>>(
         nedges, nomegas, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
     CUDA_CHECK(cudaGetLastError());
 
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-    return h_chi;
+    h_chi.download(chi);
 }
 
-Scalar computeActiveErrors_Plane(
+void computeActiveErrors_Plane(
     const GpuVecSe3d& poseEstimate,
     const GpuVec<PointToPlaneMatch<double>>& measurements,
     const GpuVec1d& omegas,
@@ -2429,28 +2401,21 @@ Scalar computeActiveErrors_Plane(
     GpuVec1d& errors,
     GpuVec3d& Xcs,
     Scalar* chi,
+    hAsyncScalarVec& h_chi,
     cudaStream_t stream)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = divUp(nedges, block);
+    const int grid = 16;
     const int sharedBytes = block * sizeof(Scalar);
-
-    if (nedges <= 0)
-    {
-        return 0;
-    }
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     computeActiveErrorsKernel_Plane<<<grid, block, sharedBytes, stream>>>(
         nedges, nomegas, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
     CUDA_CHECK(cudaGetLastError());
 
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-    return h_chi;
+    h_chi.download(chi);
 }
 
 void constructQuadraticForm_Plane(
@@ -2471,12 +2436,7 @@ void constructQuadraticForm_Plane(
     const int nedges = errors.ssize();
     const int nomegas = omegas.ssize();
     const int block = BLOCK_QUADRATIC_FORM;
-    const int grid = divUp(nedges, block);
-
-    if (nedges <= 0)
-    {
-        return;
-    }
+    const int grid = 16;
 
     constructQuadraticFormKernel_Plane<1><<<grid, block, 0, stream>>>(
         nedges,
@@ -2513,12 +2473,7 @@ void constructQuadraticForm_Line(
     const int nedges = errors.ssize();
     const int nomegas = omegas.ssize();
     const int block = BLOCK_QUADRATIC_FORM;
-    const int grid = divUp(nedges, block);
-
-    if (nedges <= 0)
-    {
-        return;
-    }
+    const int grid = 16;
 
     constructQuadraticFormKernel_Line<1><<<grid, block>>>(
         nedges,
