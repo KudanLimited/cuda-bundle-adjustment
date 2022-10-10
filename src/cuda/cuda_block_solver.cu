@@ -856,6 +856,31 @@ __device__ int reduce_sum(cg::thread_group group, Scalar* temp, Scalar val)
     return val;
 }
 
+__device__ void parallelReduction(
+    Scalar* __restrict__ cache,
+    const int sharedIdx,
+    const Scalar value,
+    const int size,
+    Scalar* accumValue)
+{
+    cache[sharedIdx] = value;
+    __syncthreads();
+
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1)
+    {
+        if (sharedIdx < stride && sharedIdx + stride < size)
+        {
+            cache[sharedIdx] += cache[sharedIdx + stride];
+        }
+        __syncthreads();
+    }
+
+    if (sharedIdx == 0)
+    {
+        atomicAdd(accumValue, cache[0]);
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////
 // Robust Kernel functions
 ////////////////////////////////////////////////////////////////////////////////////
@@ -2192,6 +2217,9 @@ __global__ void computeActiveErrorsKernel_Plane(
     Scalar* chi)
 {
     Scalar sumchi = 0;
+    const int sharedIdx = threadIdx.x;
+    extern __shared__ Scalar cache[];
+
     for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
     {
         const Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
@@ -2208,18 +2236,7 @@ __global__ void computeActiveErrorsKernel_Plane(
         sumchi += (errors[iE] * errors[iE]) * omega;
     }
 
-    extern __shared__ Scalar cache[];
-    auto group = cg::this_thread_block();
-    auto tileIdx = group.thread_rank() / 32;
-    Scalar* tileCache = &cache[32 * tileIdx];
-
-    auto tile32 = cg::tiled_partition(group, 32);
-    Scalar tile_chi = reduce_sum(tile32, tileCache, sumchi);
-
-    if (tile32.thread_rank() == 0)
-    {
-        atomicAdd(chi, tile_chi);
-    }
+    parallelReduction(cache, sharedIdx, sumchi, nedges, chi);
 }
 
 template <int MDIM>
