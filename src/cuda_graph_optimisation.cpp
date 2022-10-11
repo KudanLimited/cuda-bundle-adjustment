@@ -54,22 +54,25 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
     double lambda = 0.0;
     double F = 0.0;
 
+
     // Levenberg-Marquardt iteration
     for (int iteration = 0; iteration < niterations; iteration++)
     {
+        auto t0 = get_time_point();
+
         if (iteration == 0)
         {
-            solver_->buildStructure(edgeSets, vertexSets, streams_);
+            solver_->buildStructure(edgeSets, vertexSets);
         }
 
-        const double iniF = solver_->computeErrors(edgeSets, vertexSets, streams_);
+        const double iniF = solver_->computeErrors(edgeSets, vertexSets);
         F = iniF;
 
-        solver_->buildSystem(edgeSets, vertexSets, streams_);
+        solver_->buildSystem(edgeSets, vertexSets);
 
         if (iteration == 0)
         {
-            lambda = tau * solver_->maxDiagonal(streams_);
+            lambda = tau * solver_->maxDiagonal();
         }
 
         int q = 0;
@@ -78,14 +81,14 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
         {
             solver_->push();
 
-            solver_->setLambda(lambda, streams_);
+            solver_->setLambda(lambda);
 
-            const bool success = solver_->solve(streams_);
+            const bool success = solver_->solve();
 
-            solver_->update(vertexSets, streams_);
-            solver_->restoreDiagonal(streams_);
+            solver_->update(vertexSets);
+            solver_->restoreDiagonal();
 
-            const double Fhat = solver_->computeErrors(edgeSets, vertexSets, streams_);
+            const double Fhat = solver_->computeErrors(edgeSets, vertexSets);
             const double scale = solver_->computeScale(lambda) + 1e-3;
             rho = success ? (F - Fhat) / scale : -1.0;
 
@@ -104,13 +107,17 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
             }
         }
 
+        auto t1 = get_time_point();
+
         stats_.addStat({iteration, F});
         if (verbose)
         {
+            auto duration = get_duration(t0, t1);
             printf(
-                "iteration= %i;   chi2= %f;   lambda= %f   rho= "
+                "iteration= %i;   time: %.4f   chi2= %f;   lambda= %f   rho= "
                 "%f	   nedges= %i\n",
                 iteration,
+                duration,
                 F,
                 lambda,
                 rho,
@@ -137,39 +144,14 @@ BatchStatistics& CudaGraphOptimisationImpl::batchStatistics() { return stats_; }
 
 const TimeProfile& CudaGraphOptimisationImpl::timeProfile() { return timeProfile_; }
 
-void CudaGraphOptimisationImpl::initCuda()
-{
-    deviceId_ = findCudaDevice();
-    CUDA_CHECK(cudaGetDeviceProperties(&deviceProp_, deviceId_));
-
-#ifndef USE_ZERO_COPY
-    for (int i = 0; i < streams_.size(); ++i)
-    {
-        CUDA_CHECK(cudaStreamCreate(&streams_[i]));
-    }
-#else
-    // Set flag to enable zero copy access
-    cudaSetDeviceFlags(cudaDeviceMapHost);
-
-    // use default stream if using zero copy as copying data to the device
-    // async is no longer required.
-    for (int i = 0; i < streams_.size(); ++i)
-    {
-        streams_[i] = 0;
-    }
-#endif
-}
-
 CudaGraphOptimisationImpl::CudaGraphOptimisationImpl()
-    : solver_(std::make_unique<BlockSolver>(options))
+    : solver_(std::make_unique<BlockSolver>(options, cudaDevice_))
 {
-    initCuda();
 }
 
 CudaGraphOptimisationImpl::CudaGraphOptimisationImpl(GraphOptimisationOptions& options)
-    : solver_(std::make_unique<BlockSolver>(options)), options(options)
+    : solver_(std::make_unique<BlockSolver>(options, cudaDevice_)), options(options)
 {
-    initCuda();
 }
 
 CudaGraphOptimisationImpl::~CudaGraphOptimisationImpl() {}

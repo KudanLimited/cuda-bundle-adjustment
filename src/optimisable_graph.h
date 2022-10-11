@@ -29,6 +29,7 @@ namespace cugo
 // forward declerations
 class BaseEdge;
 class BaseRobustKernel;
+struct CudaDeviceInfo;
 
 using EdgeContainer = std::unordered_set<BaseEdge*>;
 
@@ -544,7 +545,7 @@ public:
      * @param options A @see GraphOptimisationOptions object
      */
     virtual void
-    mapDevice(int* edge2HData, cudaStream_t stream, const GraphOptimisationOptions& options) = 0;
+    mapDevice(const GraphOptimisationOptions& options, cudaStream_t stream, int* edge2HData = nullptr) = 0;
 
     /**
      * @brief Clear the device side containers in this set. Note: This does not deallocate device
@@ -631,7 +632,7 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream)
+        const CudaDeviceInfo& deviceInfo)
     {
     }
 
@@ -644,7 +645,7 @@ public:
      * @param stream A CUDA stream object
      * @return Scalar The calculated chi2 value
      */
-    virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream)
+    virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, const CudaDeviceInfo& deviceInfo)
     {
         return 0;
     }
@@ -744,7 +745,7 @@ public:
         const GraphOptimisationOptions& options) override;
 
     void mapDevice(
-        int* edge2HData, cudaStream_t stream, const GraphOptimisationOptions& options) override;
+        const GraphOptimisationOptions& options, cudaStream_t stream, int* edge2HData = nullptr) override;
 
     void clearDevice() noexcept override;
 

@@ -43,7 +43,7 @@ public:
     static constexpr int LANDMARK_VERTEX_RESERVE_SIZE = 20000;
 
     BlockSolver() = delete;
-    BlockSolver(GraphOptimisationOptions& options) : options(options), doSchur_(false), nedges_(0) {}
+    BlockSolver(GraphOptimisationOptions& options, CudaDevice& cudaDevice) : options(options), cudaDevice_(cudaDevice), doSchur_(false), nedges_(0) {}
 
     /**
      * @brief Initialise the block solver. This will clear the old estimate values (if an
@@ -51,29 +51,28 @@ public:
      * @param edgeSets Edge sets associated with the graph optimisation.
      * @param vertexSets Vertex sets associated with the graph optimisation.
      */
-    void initialize(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
+    void initialize(
+        const EdgeSetVec& edgeSets,
+        const VertexSetVec& vertexSets);
 
     /**
      * @brief BUilds the graph structure based on the vertices and connecting edges.
      * @param edgeSets Edge sets associated with the graph optimisation.
-     * @param streams A vector of CUDA streams
+     * @param vertexSets Vertex sets associated with the graph optimisation.
      */
     void buildStructure(
         const EdgeSetVec& edgeSets,
-        const VertexSetVec& vertexSets,
-        std::array<cudaStream_t, 3>& streams);
+        const VertexSetVec& vertexSets);
 
     /**
      * @brief Compute the error of the graph.
      * @param edgeSets Edge sets associated with the graph optimisation.
      * @param vertexSets Vertex sets associated with the graph optimisation.
-     * @param streams A vector of CUDA streams
      * @return double The calculated error value.
      */
     double computeErrors(
         const EdgeSetVec& edgeSets,
-        const VertexSetVec& vertexSets,
-        std::array<cudaStream_t, 3>& streams);
+        const VertexSetVec& vertexSets);
 
     /**
      * @brief Compute the quadratic equation of the graph.
@@ -83,34 +82,33 @@ public:
      */
     void buildSystem(
         const EdgeSetVec& edgeSets,
-        const VertexSetVec& vertexSets,
-        std::array<cudaStream_t, 3>& streams);
+        const VertexSetVec& vertexSets);
 
     /**
      * @brief Compute the maximum value on the hessain matrix as computed by @see buildSystem
      * @return The maximum value on the diagonal of the H matrix.
      */
-    double maxDiagonal(std::array<cudaStream_t, 3>& streams);
+    double maxDiagonal();
 
     /**
      * @brief Set the lambda value on the H matrix diagonal.
      * @param lambda The lambda value to set.
      */
-    void setLambda(double lambda, std::array<cudaStream_t, 3>& streams);
+    void setLambda(double lambda);
 
     /**
      * @brief Restore the H matrix diagonal back to the values before the @see setLambda call.
      *
      */
-    void restoreDiagonal(std::array<cudaStream_t, 3>& streams);
+    void restoreDiagonal();
 
     /**
      * @brief Solve the linear equation Ax = b
      * @return If the equation is successful, returns true.
      */
-    bool solve(std::array<cudaStream_t, 3>& streams);
+    bool solve();
 
-    void update(const VertexSetVec& vertexSets, std::array<cudaStream_t, 3>& streams);
+    void update(const VertexSetVec& vertexSets);
 
     /**
     * @brief Remove outliers from the edgeSet if the outlier threshold is set.
@@ -189,6 +187,10 @@ private:
     /// active sizes only for pose and landmark
     size_t numP_ = 0;
     size_t numL_ = 0;
+
+    // We keep a reference to the CUDA device here as its used
+    // heavily by the solver.
+    CudaDevice& cudaDevice_;
 
     /// block matrices
     HplSparseBlockMatrix Hpl_;

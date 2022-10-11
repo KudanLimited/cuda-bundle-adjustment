@@ -18,6 +18,7 @@ limitations under the License.
 
 #include "macro.h"
 #include "optimisable_graph.h"
+#include "cuda_device.h"
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -40,8 +41,7 @@ public:
 
     Scalar computeError(
         const VertexSetVec& vertexSets,
-        Scalar* chi,
-        cudaStream_t stream) override
+        Scalar* chi, const CudaDeviceInfo& deviceInfo) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d poseEstimateData = poseVertexSet->getDeviceEstimates();
@@ -61,7 +61,7 @@ public:
             d_outliers,
             d_Xcs,
             chi,
-            stream);
+            deviceInfo);
     }
 
     void constructQuadraticForm(
@@ -71,7 +71,7 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream) override
+        const CudaDeviceInfo& deviceInfo) override
     {
         // NOTE: This assumes the pose vertex is of the SE3 form - also would break if more than one
         // pose vertexset.
@@ -93,7 +93,7 @@ public:
             Hll,
             bl,
             Hpl,
-            stream);
+            deviceInfo);
     }
 
 private:
@@ -109,8 +109,7 @@ public:
 
     Scalar computeError(
         const VertexSetVec& vertexSets,
-        Scalar* chi,
-        cudaStream_t stream) override
+        Scalar* chi, const CudaDeviceInfo& deviceInfo) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d poseEstimateData = poseVertexSet->getDeviceEstimates();
@@ -130,7 +129,7 @@ public:
             d_outliers,
             d_Xcs,
             chi,
-            stream);
+            deviceInfo);
     }
 
     void constructQuadraticForm(
@@ -140,7 +139,7 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream) override
+        const CudaDeviceInfo& deviceInfo) override
     {
         // NOTE: This assumes the pose vertex is of the SE3 form and is in index position zero
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
@@ -160,7 +159,7 @@ public:
             Hll,
             bl,
             Hpl,
-            stream);
+            deviceInfo);
 
     }
 
@@ -177,8 +176,7 @@ public:
 
     Scalar computeError(
         const VertexSetVec& vertexSets,
-        Scalar* chi,
-        cudaStream_t stream) override
+        Scalar* chi, const CudaDeviceInfo& deviceInfo) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d poseEstimateData = poseVertexSet->getDeviceEstimates();
@@ -198,7 +196,7 @@ public:
             d_outliers,
             d_Xcs,
             chi,
-            stream);
+            deviceInfo);
     }
 
     void constructQuadraticForm(
@@ -208,7 +206,7 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream) override
+        const CudaDeviceInfo& deviceInfo) override
     {
         // NOTE: This assumes the pose vertex is of the SE3 form and is in index position zero
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
@@ -228,7 +226,7 @@ public:
             Hll,
             bl,
             Hpl,
-            stream);
+            deviceInfo);
     }
 };
 

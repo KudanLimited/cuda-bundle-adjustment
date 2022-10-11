@@ -22,6 +22,7 @@ limitations under the License.
 #include "graph_optimisation_options.h"
 #include "measurements.h"
 #include "robust_kernel.h"
+#include "cuda_device.h"
 
 namespace cugo
 {
@@ -129,7 +130,7 @@ void CUGO_API constructQuadraticForm_(
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
-    const cudaStream_t stream = 0);
+    const CudaDeviceInfo& deviceInfo);
 
 template <int M>
 Scalar CUGO_API computeActiveErrors_(
@@ -145,7 +146,7 @@ Scalar CUGO_API computeActiveErrors_(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
-    const cudaStream_t stream = 0);
+    const CudaDeviceInfo& deviceInfo);
 
 Scalar CUGO_API computeActiveErrors_DepthBa(
     const GpuVecSe3d& poseEstimate,
@@ -160,7 +161,7 @@ Scalar CUGO_API computeActiveErrors_DepthBa(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
-    cudaStream_t stream = 0);
+    const CudaDeviceInfo& deviceInfo);
 
 Scalar CUGO_API computeActiveErrors_Line(
     const GpuVecSe3d& poseEstimate,
@@ -179,7 +180,7 @@ Scalar CUGO_API computeActiveErrors_Plane(
     GpuVec1d& errors,
     GpuVec3d& Xcs,
     Scalar* chi,
-    cudaStream_t stream = 0);
+    const CudaDeviceInfo& deviceInfo);
 
 void CUGO_API constructQuadraticForm_Line(
     const GpuVecSe3d& se3,
@@ -208,7 +209,7 @@ void CUGO_API constructQuadraticForm_Plane(
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
-    cudaStream_t stream = 0);
+    const CudaDeviceInfo& deviceInfo);
 
 
 } // namespace gpu
