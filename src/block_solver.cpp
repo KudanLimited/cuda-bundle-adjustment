@@ -9,7 +9,10 @@
 namespace cugo
 {
 
-void BlockSolver::initialize(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets)
+void BlockSolver::initialize(
+    const EdgeSetVec& edgeSets,
+    const VertexSetVec& vertexSets,
+    std::array<cudaStream_t, 3>& streams)
 {
     // ensure we have data to work with
     assert(edgeSets.size() > 0);
@@ -43,6 +46,28 @@ void BlockSolver::initialize(const EdgeSetVec& edgeSets, const VertexSetVec& ver
         }
     }
     
+    // upload the estimates to the device
+    int offset = 0;
+
+    d_solution_.resize(verticesL_.size() * 3 + verticesP_.size() * 7);
+    d_solutionBackup_.resize(d_solution_.size());
+
+    for (BaseVertexSet* vertexSet : vertexSets)
+    {
+        if (!vertexSet->isMarginilised())
+        {
+            PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSet);
+            poseVertexSet->mapEstimateData(d_solution_.data() + offset, streams[0]);
+            offset += poseVertexSet->getDeviceEstimateSize() * 7;
+        }
+        else
+        {
+            LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSet);
+            lmVertexSet->mapEstimateData(d_solution_.data() + offset, streams[0]);
+            offset += lmVertexSet->getDeviceEstimateSize() * 3;
+        }
+    }
+
     // only perform schur if we have landmark vertices
     doSchur_ = (verticesL_.size() > 0) ? true : false;
     
@@ -50,7 +75,10 @@ void BlockSolver::initialize(const EdgeSetVec& edgeSets, const VertexSetVec& ver
     // Note: this is dependent on the vertex data so this must be initialised first
     int edgeIdOffset = 0;
 
-    HplblockPos_.reserve(HBLOCKPOS_ARENA_SIZE);
+    if (doSchur_)
+    {
+        HplblockPos_.reserve(HBLOCKPOS_ARENA_SIZE);
+    }
 
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
@@ -67,6 +95,32 @@ void BlockSolver::initialize(const EdgeSetVec& edgeSets, const VertexSetVec& ver
         edgeSet->init(HplblockPos_, edgeIdOffset, 0, doSchur_, options);
         nedges_ += edgeSet->nActiveEdges();
         edgeIdOffset += nedges_;
+    }
+    
+    if (doSchur_)
+    {
+        d_edge2Hpl_.resize(nedges_);
+    }
+
+    int prevEdgeSize = 0;
+
+    for (BaseEdgeSet* edgeSet : edgeSets)
+    {
+        if (!edgeSet->nedges())
+        {
+            continue;
+        }
+        if (doSchur_)
+        {
+            // data layout is pose data first followed by landmark
+            int* edge2HplPtr = d_edge2Hpl_.data() + prevEdgeSize;
+            edgeSet->mapDevice(options, streams[0], edge2HplPtr);
+            prevEdgeSize += edgeSet->nActiveEdges();
+        }
+        else
+        {
+            edgeSet->mapDevice(options, streams[0]);
+        }
     }
 
     // initialise the linear solver
@@ -88,33 +142,6 @@ void BlockSolver::buildStructure(
     const VertexSetVec& vertexSets,
     std::array<cudaStream_t, 3>& streams)
 {
-    // upload edge information to device memory
-    // Note: the edge data is uploaded to device first as 
-    // this will be a large chunk and running async means 
-    // that the CPU based schur setup (if using) will
-    // continue on the main CPU thread.
-    d_edge2Hpl_.resize(nedges_);
-
-    int prevEdgeSize = 0;
-    for (BaseEdgeSet* edgeSet : edgeSets)
-    {
-        if (!edgeSet->nedges())
-        {
-            continue;
-        }
-        // upload the graph data to the device
-        // Note: nullptr passed to map function if no landmark
-        // data as the Hpl matrix then doesn't make sense.
-        int* edge2HplPtr = nullptr;
-        if (doSchur_)
-        {
-            // data layout is pose data first followed by landmark
-            edge2HplPtr = d_edge2Hpl_.data() + prevEdgeSize;
-        }
-        edgeSet->mapDevice(edge2HplPtr, streams[0], options);
-        prevEdgeSize += edgeSet->nActiveEdges();
-    }
-
     // allocate device buffers
     d_x_.resize(numP_ * PDIM + numL_ * LDIM);
     d_b_.resize(numP_ * PDIM + numL_ * LDIM);
@@ -177,28 +204,6 @@ void BlockSolver::buildStructure(
 
     d_HppBackup_.resize(numP_);
     d_chi_.resize(1);
-
-    // upload the estimates to the device
-    int offset = 0;
-
-    d_solution_.resize(verticesL_.size() * 3 + verticesP_.size() * 7);
-    d_solutionBackup_.resize(d_solution_.size());
-
-    for (BaseVertexSet* vertexSet : vertexSets)
-    {
-        if (!vertexSet->isMarginilised())
-        {
-            PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSet);
-            poseVertexSet->mapEstimateData(d_solution_.data() + offset, streams[0]);
-            offset += poseVertexSet->getDeviceEstimateSize() * 7;
-        }
-        else
-        {
-            LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSet);
-            lmVertexSet->mapEstimateData(d_solution_.data() + offset, streams[0]);
-            offset += lmVertexSet->getDeviceEstimateSize() * 3;
-        }
-    }
 
     if (doSchur_)
     {

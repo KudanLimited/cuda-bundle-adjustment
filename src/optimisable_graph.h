@@ -544,7 +544,7 @@ public:
      * @param options A @see GraphOptimisationOptions object
      */
     virtual void
-    mapDevice(int* edge2HData, cudaStream_t stream, const GraphOptimisationOptions& options) = 0;
+    mapDevice(const GraphOptimisationOptions& options, cudaStream_t stream, int* edge2HData = nullptr) = 0;
 
     /**
      * @brief Clear the device side containers in this set. Note: This does not deallocate device
@@ -744,7 +744,7 @@ public:
         const GraphOptimisationOptions& options) override;
 
     void mapDevice(
-        int* edge2HData, cudaStream_t stream, const GraphOptimisationOptions& options) override;
+        const GraphOptimisationOptions& options, cudaStream_t stream, int* edge2HData = nullptr) override;
 
     void clearDevice() noexcept override;
 

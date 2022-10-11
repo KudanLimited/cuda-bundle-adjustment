@@ -37,8 +37,6 @@ public:
 
     virtual void clear() 
     { 
-        innerIndices_.clear();
-        outerIndices_.clear();
         nblocks_ = 0;
     }
 
@@ -70,7 +68,7 @@ public:
     int cols() const { return bcols_ * BLOCK_COLS; }
 
 protected:
-    async_vector<int> outerIndices_, innerIndices_;
+    Eigen::VectorXi outerIndices_, innerIndices_;
     int brows_, bcols_, nblocks_, outerSize_, innerSize_;
 };
 
@@ -101,12 +99,6 @@ public:
 
     virtual void clear() override
     {
-        innerIndices_.clear();
-        outerIndices_.clear();
-        rowPtr_.clear();
-        colInd_.clear();
-        nnzPerRow_.clear();
-        BSR2CSR_.clear();
         nmultiplies_ = 0;
         nblocks_ = 0;
     }
@@ -114,7 +106,7 @@ public:
 
 private:
     int nmultiplies_;
-    async_vector<int> rowPtr_, colInd_, nnzPerRow_, BSR2CSR_;
+    Eigen::VectorXi rowPtr_, colInd_, nnzPerRow_, BSR2CSR_;
 };
 
 using HschurSparseBlockMatrix = PoseSparseBlockMatrix;

@@ -41,7 +41,7 @@ size_t CudaGraphOptimisationImpl::nVertices(const int id)
 
 void CudaGraphOptimisationImpl::initialize()
 {
-    solver_->initialize(edgeSets, vertexSets);
+    solver_->initialize(edgeSets, vertexSets, streams_);
     stats_.clear();
 }
 
@@ -54,9 +54,12 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
     double lambda = 0.0;
     double F = 0.0;
 
+
     // Levenberg-Marquardt iteration
     for (int iteration = 0; iteration < niterations; iteration++)
     {
+        auto t0 = get_time_point();
+
         if (iteration == 0)
         {
             solver_->buildStructure(edgeSets, vertexSets, streams_);
@@ -104,13 +107,17 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
             }
         }
 
+        auto t1 = get_time_point();
+
         stats_.addStat({iteration, F});
         if (verbose)
         {
+            auto duration = get_duration(t0, t1);
             printf(
-                "iteration= %i;   chi2= %f;   lambda= %f   rho= "
+                "iteration= %i;   time: %.4f   chi2= %f;   lambda= %f   rho= "
                 "%f	   nedges= %i\n",
                 iteration,
+                duration,
                 F,
                 lambda,
                 rho,
