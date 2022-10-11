@@ -24,14 +24,13 @@ public:
     LineEdgeSet() {}
     ~LineEdgeSet() {}
 
-    void computeError(
+    Scalar computeError(
         const VertexSetVec& vertexSets,
         Scalar* chi,
-        hAsyncScalarVec& h_chi,
         cudaStream_t stream) override
     {
         GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getDeviceEstimates();
-        gpu::computeActiveErrors_Line(estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi, h_chi);
+        return gpu::computeActiveErrors_Line(estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi);
     }
 
     void constructQuadraticForm(
@@ -71,14 +70,13 @@ public:
     PlaneEdgeSet() {}
     ~PlaneEdgeSet() {}
 
-    void computeError(
+    Scalar computeError(
         const VertexSetVec& vertexSets,
         Scalar* chi,
-        hAsyncScalarVec& h_chi,
         cudaStream_t stream) override
     {
         GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getDeviceEstimates();
-        gpu::computeActiveErrors_Plane(estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi, h_chi, stream);
+        return gpu::computeActiveErrors_Plane(estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi, stream);
     }
 
     void constructQuadraticForm(

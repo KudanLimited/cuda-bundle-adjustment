@@ -228,8 +228,8 @@ double BlockSolver::computeErrors(
         {
             continue;
         }
-        edgeSet->computeError(vertexSets, d_chi_, h_chi_, streams[0]);
-        accumChi += h_chi_[0];
+        const Scalar chi = edgeSet->computeError(vertexSets, d_chi_, streams[0]);
+        accumChi += chi;
     }
 
     return accumChi;
