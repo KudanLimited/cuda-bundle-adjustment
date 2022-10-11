@@ -549,7 +549,7 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
 
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
-    int* edge2HData, cudaStream_t stream, const GraphOptimisationOptions& options)
+    const GraphOptimisationOptions& options, cudaStream_t stream, int* edge2HData)
 {
     // buffers filled by the gpu kernels.
     d_errors.resize(activeEdgeSize_);
@@ -559,6 +559,8 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     if (outlierThreshold > 0.0)
     {
         d_outliers.resize(activeEdgeSize_);
+        // upload the robust kernel delta value
+        kernel.d_delta.assign(1, &kernel.delta);
     }
     if (edge2HData)
     {
@@ -575,9 +577,6 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     d_measurements.offset(d_dataBuffer, measurements->size(), measurements->bufferOffset());
     d_omegas.offset(d_dataBuffer, omegas->size(), omegas->bufferOffset());
     d_cameras.offset(d_dataBuffer, cameras->size(), cameras->bufferOffset());
-
-    // upload the robust kernel delta value
-    kernel.d_delta.assign(1, &kernel.delta);
 }
 
 template <int DIM, typename E, typename... VertexTypes>

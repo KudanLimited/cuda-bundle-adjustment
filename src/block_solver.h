@@ -51,7 +51,10 @@ public:
      * @param edgeSets Edge sets associated with the graph optimisation.
      * @param vertexSets Vertex sets associated with the graph optimisation.
      */
-    void initialize(const EdgeSetVec& edgeSets, const VertexSetVec& vertexSets);
+    void initialize(
+        const EdgeSetVec& edgeSets,
+        const VertexSetVec& vertexSets,
+        std::array<cudaStream_t, 3>& streams);
 
     /**
      * @brief BUilds the graph structure based on the vertices and connecting edges.
