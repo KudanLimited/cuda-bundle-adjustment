@@ -239,9 +239,6 @@ private:
     DeviceBuffer<Scalar> d_chi_;
     GpuVec1i d_nnzPerCol_;
 
-    ///  host side allocated space for chi value download from device
-    hAsyncScalarVec h_chi_;
-
     std::vector<double> profItems_;
 };
 

@@ -644,9 +644,9 @@ public:
      * @param stream A CUDA stream object
      * @return Scalar The calculated chi2 value
      */
-    virtual void computeError(const VertexSetVec& vertexSets, Scalar* chi, hAsyncScalarVec& h_chi, cudaStream_t stream)
+    virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream)
     {
-        return;
+        return 0;
     }
 };
 
