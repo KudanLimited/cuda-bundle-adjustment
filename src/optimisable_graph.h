@@ -29,6 +29,7 @@ namespace cugo
 // forward declerations
 class BaseEdge;
 class BaseRobustKernel;
+struct CudaDeviceInfo;
 
 using EdgeContainer = std::unordered_set<BaseEdge*>;
 
@@ -631,7 +632,7 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream)
+        const CudaDeviceInfo& deviceInfo)
     {
     }
 
@@ -644,7 +645,7 @@ public:
      * @param stream A CUDA stream object
      * @return Scalar The calculated chi2 value
      */
-    virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, cudaStream_t stream)
+    virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, const CudaDeviceInfo& deviceInfo)
     {
         return 0;
     }

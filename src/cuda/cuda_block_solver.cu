@@ -1526,7 +1526,7 @@ Scalar computeActiveErrors_(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
-    const cudaStream_t stream)
+    const CudaDeviceInfo& deviceInfo)
 {
 }
 
@@ -1544,7 +1544,7 @@ Scalar computeActiveErrors_<2>(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
-    const cudaStream_t stream)
+    const CudaDeviceInfo& deviceInfo)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
@@ -1563,7 +1563,7 @@ Scalar computeActiveErrors_<2>(
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
 
-    computeActiveErrorsKernel<2><<<grid, block, 0, stream>>>(
+    computeActiveErrorsKernel<2><<<grid, block, 0, deviceInfo.stream>>>(
         nedges,
         nomegas,
         ncameras,
@@ -1585,7 +1585,6 @@ Scalar computeActiveErrors_<2>(
     CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
 
     deleteRkFunction<<<1, 1>>>(d_function);
-    cudaStreamSynchronize(stream);
     
     return h_chi;
 }
@@ -1604,7 +1603,7 @@ Scalar computeActiveErrors_<3>(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
-    const cudaStream_t stream)
+    const CudaDeviceInfo& deviceInfo)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
@@ -1623,7 +1622,7 @@ Scalar computeActiveErrors_<3>(
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
 
-    computeActiveErrorsKernel<3><<<grid, block, 0, stream>>>(
+    computeActiveErrorsKernel<3><<<grid, block, 0, deviceInfo.stream>>>(
         nedges,
         nomegas,
         ncameras,
@@ -1665,7 +1664,7 @@ void constructQuadraticForm_(
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
-    const cudaStream_t stream)
+    const CudaDeviceInfo& deviceInfo)
 {
 }
 
@@ -1685,7 +1684,7 @@ void constructQuadraticForm_<2>(
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
-    const cudaStream_t stream)
+    const CudaDeviceInfo& deviceInfo)
 {
     const int nedges = errors.ssize();
     const int nomegas = omegas.ssize();
@@ -1697,7 +1696,7 @@ void constructQuadraticForm_<2>(
     cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
     createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
 
-    constructQuadraticFormKernel<2><<<grid, block, 0, stream>>>(
+    constructQuadraticFormKernel<2><<<grid, block, 0, deviceInfo.stream>>>(
         nedges,
         nomegas,
         ncameras,
@@ -1736,7 +1735,7 @@ void constructQuadraticForm_<3>(
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
-    const cudaStream_t stream)
+    const CudaDeviceInfo& deviceInfo)
 {
     const int nedges = errors.ssize();
     const int nomegas = omegas.ssize();
@@ -1748,7 +1747,7 @@ void constructQuadraticForm_<3>(
     cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
     createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
 
-    constructQuadraticFormKernel<3><<<grid, block, 0, stream>>>(
+    constructQuadraticFormKernel<3><<<grid, block, 0, deviceInfo.stream>>>(
         nedges,
         nomegas,
         ncameras,
@@ -2361,7 +2360,7 @@ Scalar computeActiveErrors_DepthBa(
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
-    cudaStream_t stream)
+    const CudaDeviceInfo& deviceInfo)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
@@ -2379,7 +2378,7 @@ Scalar computeActiveErrors_DepthBa(
     }
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     
-    computeActiveErrorsKernel_DepthBa<<<grid, block, 0, stream>>>(
+    computeActiveErrorsKernel_DepthBa<<<grid, block, 0, deviceInfo.stream>>>(
         nedges,
         nomegas,
         ncameras,
@@ -2441,7 +2440,7 @@ Scalar computeActiveErrors_Plane(
     GpuVec1d& errors,
     GpuVec3d& Xcs,
     Scalar* chi,
-    cudaStream_t stream)
+    const CudaDeviceInfo& deviceInfo)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
@@ -2456,7 +2455,7 @@ Scalar computeActiveErrors_Plane(
     const int sharedBytes = blockSize * sizeof(Scalar);
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-    computeActiveErrorsKernel_Plane<<<gridSize, blockSize, sharedBytes, stream>>>(
+    computeActiveErrorsKernel_Plane<<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
         nedges, nomegas, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
     CUDA_CHECK(cudaGetLastError());
 
@@ -2479,7 +2478,7 @@ void constructQuadraticForm_Plane(
     GpuLxLBlockVec& Hll,
     GpuLx1BlockVec& bl,
     GpuHplBlockMat& Hpl,
-    cudaStream_t stream)
+    const CudaDeviceInfo& deviceInfo)
 {
     const int nedges = errors.ssize();
     const int nomegas = omegas.ssize();
@@ -2490,7 +2489,7 @@ void constructQuadraticForm_Plane(
         &minGridSize, &blockSize, (void*)constructQuadraticFormKernel_Plane<1>);
     const int gridSize = divUp(nedges, blockSize);
 
-    constructQuadraticFormKernel_Plane<1><<<gridSize, blockSize, 0, stream>>>(
+    constructQuadraticFormKernel_Plane<1><<<gridSize, blockSize, 0, deviceInfo.stream>>>(
         nedges,
         nomegas,
         se3,
@@ -2506,6 +2505,8 @@ void constructQuadraticForm_Plane(
         bl,
         Hpl);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
 }
 
 void constructQuadraticForm_Line(

@@ -4,6 +4,7 @@
 #include "fixed_vector.h"
 #include "measurements.h"
 #include "optimisable_graph.h"
+#include "cuda_device.h"
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -26,8 +27,7 @@ public:
 
     Scalar computeError(
         const VertexSetVec& vertexSets,
-        Scalar* chi,
-        cudaStream_t stream) override
+        Scalar* chi, const CudaDeviceInfo& deviceInfo) override
     {
         GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getDeviceEstimates();
         return gpu::computeActiveErrors_Line(estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi);
@@ -40,7 +40,7 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream) override
+        const CudaDeviceInfo& deviceInfo) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d se3_data = poseVertexSet->getDeviceEstimates();
@@ -72,11 +72,10 @@ public:
 
     Scalar computeError(
         const VertexSetVec& vertexSets,
-        Scalar* chi,
-        cudaStream_t stream) override
+        Scalar* chi, const CudaDeviceInfo& deviceInfo) override
     {
         GpuVecSe3d estimates = static_cast<PoseVertexSet*>(vertexSets[0])->getDeviceEstimates();
-        return gpu::computeActiveErrors_Plane(estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi, stream);
+        return gpu::computeActiveErrors_Plane(estimates, d_measurements, d_omegas, d_edge2PL, d_errors, d_Xcs, chi, deviceInfo);
     }
 
     void constructQuadraticForm(
@@ -86,7 +85,7 @@ public:
         GpuLxLBlockVec& Hll,
         GpuLx1BlockVec& bl,
         GpuHplBlockMat& Hpl,
-        cudaStream_t stream) override
+        const CudaDeviceInfo& deviceInfo) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d se3_data = poseVertexSet->getDeviceEstimates();
@@ -103,7 +102,7 @@ public:
             Hll,
             bl,
             Hpl,
-            stream);
+            deviceInfo);
     }
 };
 
