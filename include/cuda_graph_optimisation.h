@@ -20,6 +20,7 @@ limitations under the License.
 #include "device_matrix.h"
 #include "graph_optimisation_options.h"
 #include "macro.h"
+#include "cuda_device.h"
 
 #include <array>
 #include <cmath>
@@ -272,14 +273,8 @@ private:
     BatchStatistics stats_;
     TimeProfile timeProfile_;
 
-    /// cuda streams
-    std::array<cudaStream_t, 3> streams_;
-
-    /// the GPU device id that will be used
-    int deviceId_;
-
-    /// Properties of the GPU that will be used.
-    cudaDeviceProp deviceProp_;
+    /// cuda device parameters
+    CudaDevice cudaDevice_;
 };
 
 } // namespace cugo

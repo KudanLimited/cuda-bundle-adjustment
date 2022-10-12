@@ -84,7 +84,7 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
     options.perEdgeInformation = true;
     options.perEdgeCamera = true;
     auto optimizer = std::make_unique<cugo::CudaGraphOptimisationImpl>(options);
-
+    
     // read pose vertices
     for (const auto& node : fs["pose_vertices"])
     {
@@ -160,7 +160,9 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
     }
 
     // read camera parameters
-    optimizer->addEdgeSet<cugo::MonoEdgeSet>(monoEdgeSet);
+    stereoEdgeSet->setRobustKernel(cugo::RobustKernelType::None, 1.0);
+    monoEdgeSet->setRobustKernel(cugo::RobustKernelType::None, 1.0);
+    //optimizer->addEdgeSet<cugo::MonoEdgeSet>(monoEdgeSet);
     optimizer->addEdgeSet<cugo::StereoEdgeSet>(stereoEdgeSet);
 
     // "warm-up" to avoid overhead

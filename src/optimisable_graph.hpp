@@ -556,11 +556,12 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     d_Xcs.resize(activeEdgeSize_);
 
     d_outlierThreshold.assign(1, &outlierThreshold);
+    // upload the robust kernel delta value
+    kernel.d_delta.assign(1, &kernel.delta);
+
     if (outlierThreshold > 0.0)
     {
         d_outliers.resize(activeEdgeSize_);
-        // upload the robust kernel delta value
-        kernel.d_delta.assign(1, &kernel.delta);
     }
     if (edge2HData)
     {
