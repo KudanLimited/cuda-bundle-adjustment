@@ -38,6 +38,10 @@ using GpuVecxd = GpuVec<Vecxd<N>>;
 // kernel functions
 void waitForKernelCompletion();
 
+void recordEvent(const CudaDeviceInfo& info);
+
+void waitForEvent(const cudaEvent_t event);
+
 void buildHplStructure(
     GpuVec3i& blockpos,
     GpuHplBlockMat& Hpl,
@@ -51,16 +55,20 @@ void findHschureMulBlockIndices(
     GpuVec3i& mulBlockIds,
     cudaStream_t stream = 0);
 
-Scalar maxDiagonal(const GpuPxPBlockVec& Hpp, Scalar* maxD, const cudaStream_t& stream = 0);
-Scalar maxDiagonal(const GpuLxLBlockVec& Hll, Scalar* maxD, const cudaStream_t& stream = 0);
+Scalar maxDiagonal(
+    const GpuPxPBlockVec& Hpp, Scalar* d_maxD, Scalar* h_tmpMax, const CudaDeviceInfo& deviceInfo);
+Scalar maxDiagonal(
+    const GpuLxLBlockVec& Hll, Scalar* d_maxD, Scalar* h_tmpMax, const CudaDeviceInfo& deviceInfo);
 
 void addLambda(
-    GpuPxPBlockVec& Hpp, Scalar lambda, GpuPx1BlockVec& backup, const cudaStream_t& stream = 0);
+    GpuPxPBlockVec& Hpp, Scalar lambda, GpuPx1BlockVec& backup, const CudaDeviceInfo& deviceInfo);
 void addLambda(
-    GpuLxLBlockVec& Hll, Scalar lambda, GpuLx1BlockVec& backup, const cudaStream_t& stream = 0);
+    GpuLxLBlockVec& Hll, Scalar lambda, GpuLx1BlockVec& backup, const CudaDeviceInfo& deviceInfo);
 
-void restoreDiagonal(GpuPxPBlockVec& Hpp, const GpuPx1BlockVec& backup, const cudaStream_t& stream = 0);
-void restoreDiagonal(GpuLxLBlockVec& Hll, const GpuLx1BlockVec& backup, const cudaStream_t& stream = 0);
+void restoreDiagonal(
+    GpuPxPBlockVec& Hpp, const GpuPx1BlockVec& backup, const CudaDeviceInfo& deviceInfo);
+void restoreDiagonal(
+    GpuLxLBlockVec& Hll, const GpuLx1BlockVec& backup, const CudaDeviceInfo& deviceInfo);
 
 void computeBschure(
     const GpuPx1BlockVec& bp,
@@ -108,11 +116,16 @@ void schurComplementPost(
     const GpuPx1BlockVec& xp,
     GpuLx1BlockVec& xl);
 
-void updatePoses(const GpuPx1BlockVec& xp, GpuVecSe3d& estimate, const cudaStream_t& stream = 0);
+void updatePoses(const GpuPx1BlockVec& xp, GpuVecSe3d& estimate, const CudaDeviceInfo& deviceInfo);
 
-void updateLandmarks(const GpuLx1BlockVec& xl, GpuVec3d& Xws, const cudaStream_t& stream = 0);
+void updateLandmarks(const GpuLx1BlockVec& xl, GpuVec3d& Xws, const CudaDeviceInfo& deviceInfo);
 
-void computeScale(const GpuVec1d& x, const GpuVec1d& b, Scalar* scale, Scalar lambda);
+void computeScale(
+    const GpuVec1d& x,
+    const GpuVec1d& b,
+    Scalar* scale,
+    Scalar lambda,
+    const CudaDeviceInfo& deviceInfo);
 
 template <int M>
 void CUGO_API constructQuadraticForm_(

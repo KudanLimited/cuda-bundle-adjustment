@@ -58,7 +58,7 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
     // Levenberg-Marquardt iteration
     for (int iteration = 0; iteration < niterations; iteration++)
     {
-        auto t0 = get_time_point();
+        cudaDevice_.startTimingEvent();
 
         if (iteration == 0)
         {
@@ -86,8 +86,7 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
             const bool success = solver_->solve();
 
             solver_->update(vertexSets);
-            solver_->restoreDiagonal();
-
+        
             const double Fhat = solver_->computeErrors(edgeSets, vertexSets);
             const double scale = solver_->computeScale(lambda) + 1e-3;
             rho = success ? (F - Fhat) / scale : -1.0;
@@ -103,28 +102,28 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
             {
                 lambda *= nu;
                 nu *= 2.0;
+                solver_->restoreDiagonal();
                 solver_->pop();
             }
         }
 
-        auto t1 = get_time_point();
+        double timeTaken = cudaDevice_.stopTimingEvent();
 
         stats_.addStat({iteration, F});
         if (verbose)
         {
-            auto duration = get_duration(t0, t1);
             printf(
-                "iteration= %i;   time: %.4f   chi2= %f;   lambda= %f   rho= "
+                "iteration= %i;   time(ms): %.4f   chi2= %f;   lambda= %f   rho= "
                 "%f	   nedges= %i\n",
                 iteration,
-                duration,
+                timeTaken,
                 F,
                 lambda,
                 rho,
                 solver_->nedges());
         }
 
-        if (q == maxq || rho <= 0.0 || !std::isfinite(lambda))
+        if (q == maxq || rho < 1e-4 || !std::isfinite(lambda))
         {
             break;
         }

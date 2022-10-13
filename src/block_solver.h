@@ -237,8 +237,11 @@ private:
     GpuVec1d d_HppCSR_;
     GpuVec1i d_BSR2CSR_;
 
-    /// temporary buffer
+    /// temporary buffers
     DeviceBuffer<Scalar> d_chi_;
+    HostAsyncVec<Scalar, 40> h_tmpMax_;
+    DeviceBuffer<Scalar> d_tmpMax_;
+    
     GpuVec1i d_nnzPerCol_;
 
     std::vector<double> profItems_;

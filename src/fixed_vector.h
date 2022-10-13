@@ -329,7 +329,7 @@ public:
 
     HostAsyncVec() noexcept
     { 
-        CUDA_CHECK(cudaHostAlloc((void**)&values_, sizeof(T) * N, cudaHostAllocMapped));
+        CUDA_CHECK(cudaHostAlloc((void**)&values_, sizeof(T) * N, cudaHostAllocDefault));
     }
 
     ~HostAsyncVec() noexcept 
@@ -339,6 +339,9 @@ public:
 
     T operator[](int idx) noexcept { return values_[idx]; }
     T operator[](int idx) const noexcept { return values_[idx]; }
+    T operator*() const noexcept { return *values_; }
+
+    T* values() const noexcept { return values_;  }
 
     void download(T* d_src, const cudaStream_t stream = 0) 
     {
@@ -350,7 +353,7 @@ private:
     T* values_;
 };
 
-using hAsyncScalarVec = HostAsyncVec<Scalar, 1>;
+using hAsyncScalar = HostAsyncVec<Scalar, 1>;
 using hAsyncVec2 = HostAsyncVec<Scalar, 2>;
 using hAsyncVec3 = HostAsyncVec<Scalar, 3>;
 using hAsyncVec4 = HostAsyncVec<Scalar, 4>;

@@ -126,11 +126,12 @@ void VertexSet<T, EstimateType>::generateEstimateData()
 }
 
 template <typename T, typename EstimateType>
-void VertexSet<T, EstimateType>::mapEstimateData(Scalar* d_dataPtr, const cudaStream_t& stream)
+void VertexSet<T, EstimateType>::mapEstimateData(Scalar* d_dataPtr, const CudaDeviceInfo& deviceInfo)
 {
     // upload to the device
     d_estimate.map(estimates.size(), d_dataPtr);
-    d_estimate.uploadAsync(estimates.data(), stream);
+    d_estimate.uploadAsync(estimates.data(), deviceInfo.stream);
+    gpu::recordEvent(deviceInfo);
 }
 
 template <typename T, typename EstimateType>
@@ -549,7 +550,7 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
 
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
-    const GraphOptimisationOptions& options, cudaStream_t stream, int* edge2HData)
+    const GraphOptimisationOptions& options, const CudaDeviceInfo& deviceInfo, int* edge2HData)
 {
     // buffers filled by the gpu kernels.
     d_errors.resize(activeEdgeSize_);
@@ -570,7 +571,10 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     // The main "mega" buffer which contains all of the data used
     // in optimising the graph - transferring one large buffer async
     // is far more optimal than transferring multiple smaller buffers
-    d_dataBuffer.assignAsync(totalBufferSize_, arena.data(), stream);
+    d_dataBuffer.assignAsync(totalBufferSize_, arena.data(), deviceInfo.stream);
+
+    // alos start recording an event so we can sync before using this data
+    gpu::recordEvent(deviceInfo);
 
     d_edgeFlags.offset(d_dataBuffer, edgeFlags->size(), edgeFlags->bufferOffset());
     d_edge2PL.offset(d_dataBuffer, edge2PL->size(), edge2PL->bufferOffset());

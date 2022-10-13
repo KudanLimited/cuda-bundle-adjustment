@@ -19,12 +19,14 @@ void CudaDevice::init()
 #ifndef USE_ZERO_COPY
     for (int i = 0; i < streams_.size(); ++i)
     {
-        CUDA_CHECK(cudaStreamCreateWithFlags(&streams_[i], cudaStreamNonBlocking));
+        CUDA_CHECK(cudaStreamCreate(&streams_[i]));
     }
     for (int i = 0; i < events_.size(); ++i)
     {
         CUDA_CHECK(cudaEventCreate(&events_[i]));
     }
+    CUDA_CHECK(cudaEventCreate(&timeStart));
+    CUDA_CHECK(cudaEventCreate(&timeStop));
 #else
     // Set flag to enable zero copy access
     cudaSetDeviceFlags(cudaDeviceMapHost);
@@ -48,6 +50,8 @@ void CudaDevice::destroy()
     {
         CUDA_CHECK(cudaEventDestroy(events_[i]));
     }
+    CUDA_CHECK(cudaEventDestroy(timeStart));
+    CUDA_CHECK(cudaEventDestroy(timeStop));
 }
 
 CudaDevice::~CudaDevice() { destroy(); }
@@ -274,6 +278,16 @@ inline int CudaDevice::findCudaDevice()
         minor);
 
     return devID;
+}
+
+void CudaDevice::startTimingEvent() const noexcept { CUDA_CHECK(cudaEventRecord(timeStart)); }
+double CudaDevice::stopTimingEvent() const noexcept
+{
+    float timeTaken;
+    CUDA_CHECK(cudaEventRecord(timeStop));
+    CUDA_CHECK(cudaEventSynchronize(timeStop));
+    CUDA_CHECK(cudaEventElapsedTime(&timeTaken, timeStart, timeStop));
+    return static_cast<double>(timeTaken);
 }
 
 } // namespace cugo
