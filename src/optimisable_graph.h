@@ -271,7 +271,7 @@ public:
      * @brief Maps the specified data onto the device allocated space
      * @param d_dataPtr A pointer to the data that will be uploaded
      */
-    void mapEstimateData(Scalar* d_dataPtr, const cudaStream_t& stream = 0);
+    void mapEstimateData(Scalar* d_dataPtr, const CudaDeviceInfo& deviceInfo);
 
     /**
      * @brief Copy the estimate from the device to the host estimate container.
@@ -545,7 +545,7 @@ public:
      * @param options A @see GraphOptimisationOptions object
      */
     virtual void
-    mapDevice(const GraphOptimisationOptions& options, cudaStream_t stream, int* edge2HData = nullptr) = 0;
+    mapDevice(const GraphOptimisationOptions& options, const CudaDeviceInfo& deviceInfo, int* edge2HData = nullptr) = 0;
 
     /**
      * @brief Clear the device side containers in this set. Note: This does not deallocate device
@@ -745,7 +745,9 @@ public:
         const GraphOptimisationOptions& options) override;
 
     void mapDevice(
-        const GraphOptimisationOptions& options, cudaStream_t stream, int* edge2HData = nullptr) override;
+        const GraphOptimisationOptions& options,
+        const CudaDeviceInfo& deviceInfo,
+        int* edge2HData = nullptr) override;
 
     void clearDevice() noexcept override;
 

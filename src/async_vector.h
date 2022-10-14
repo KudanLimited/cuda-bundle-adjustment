@@ -125,7 +125,11 @@ public:
         {
             size_ = rhs.size_;
             capacity_ = rhs.capacity_;
+#ifndef USE_ZERO_COPY
+            CUDA_CHECK(cudaHostAlloc(&data_, sizeof(T) * capacity_, cudaHostAllocDefault));
+#else
             CUDA_CHECK(cudaHostAlloc(&data_, sizeof(T) * capacity_, cudaHostAllocMapped));
+#endif
             memcpy(data_, rhs.data_, sizeof(T) * size_);
         }
         return *this;
@@ -160,7 +164,11 @@ private:
             size_ = 0;
             data_ = nullptr;
         }
+#ifndef USE_ZERO_COPY
+        CUDA_CHECK(cudaHostAlloc(&data_, sizeof(T) * size, cudaHostAllocDefault));
+#else
         CUDA_CHECK(cudaHostAlloc(&data_, sizeof(T) * size, cudaHostAllocMapped));
+#endif
         capacity_ = size;
     }
 

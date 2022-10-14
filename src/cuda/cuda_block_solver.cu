@@ -856,6 +856,16 @@ __device__ int reduce_sum(cg::thread_group group, Scalar* temp, Scalar val)
     return val;
 }
 
+__device__ void warpReduce(volatile Scalar* data, int tid)
+{
+    data[tid] += data[tid + 32];
+    data[tid] += data[tid + 16];
+    data[tid] += data[tid + 8];
+    data[tid] += data[tid + 4];
+    data[tid] += data[tid + 2];
+    data[tid] += data[tid + 1];
+}
+
 __device__ void parallelReduction(
     Scalar* __restrict__ cache,
     const int sharedIdx,
@@ -866,13 +876,18 @@ __device__ void parallelReduction(
     cache[sharedIdx] = value;
     __syncthreads();
 
-    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1)
+    for (int stride = blockDim.x / 2; stride > 32; stride >>= 1)
     {
-        if (sharedIdx < stride && sharedIdx + stride < size)
+        if (sharedIdx < stride)
         {
             cache[sharedIdx] += cache[sharedIdx + stride];
         }
         __syncthreads();
+    }
+
+    if (sharedIdx < 32)
+    {
+        warpReduce(cache, sharedIdx);
     }
 
     if (sharedIdx == 0)
@@ -1132,7 +1147,7 @@ template <int DIM>
 __global__ void maxDiagonalKernel(int size, const Scalar* __restrict__ D, Scalar* __restrict__ maxD)
 {
     const int sharedIdx = threadIdx.x;
-    __shared__ Scalar cache[BLOCK_MAX_DIAGONAL];
+    extern __shared__ Scalar cache[];
 
     Scalar maxVal = 0;
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += gridDim.x * blockDim.x)
@@ -1146,7 +1161,7 @@ __global__ void maxDiagonalKernel(int size, const Scalar* __restrict__ D, Scalar
     cache[sharedIdx] = maxVal;
     __syncthreads();
 
-    for (int stride = BLOCK_MAX_DIAGONAL / 2; stride > 0; stride >>= 1)
+    for (int stride = blockIdx.x / 2; stride > 0; stride >>= 1)
     {
         if (sharedIdx < stride)
         {
@@ -1456,6 +1471,24 @@ __global__ void setRowIndKernel(
 ////////////////////////////////////////////////////////////////////////////////////
 
 void waitForKernelCompletion() { CUDA_CHECK(cudaDeviceSynchronize()); }
+
+void recordEvent(const CudaDeviceInfo& info)
+{
+    CUDA_CHECK(cudaEventRecord(info.event, info.stream));
+}
+
+void calculateOccupancy(int size, void* kernelFunc, int& outputBlockSize, int& outputGridSize)
+{
+    int minGridSize;
+    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &outputBlockSize, kernelFunc);
+    outputGridSize = divUp(size, outputBlockSize);
+    if (outputGridSize < minGridSize)
+    {
+        outputGridSize = minGridSize;
+    }
+}
+       
+void waitForEvent(const cudaEvent_t event) { CUDA_CHECK(cudaEventSynchronize(event)); }
 
 void exclusiveScan(const int* src, int* dst, int size)
 {
@@ -1771,35 +1804,40 @@ void constructQuadraticForm_<3>(
 }
 
 template <typename T, int DIM>
-Scalar
-maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* maxD, const cudaStream_t& stream)
+Scalar maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* d_maxD, Scalar * h_tmpMax, const CudaDeviceInfo& deviceInfo)
 {
-    constexpr int block = BLOCK_MAX_DIAGONAL;
-    constexpr int grid = 4;
     const int size = D.size() * DIM;
+    int gridSize;
+    int blockSize;
+    calculateOccupancy(size, (void*)maxDiagonalKernel<DIM>, blockSize, gridSize);
+    
+    int sharedBytes = sizeof(Scalar) * blockSize;
 
-    maxDiagonalKernel<DIM><<<grid, block, 0, stream>>>(size, D.values(), maxD);
-    CUDA_CHECK(cudaGetLastError());
+    maxDiagonalKernel<DIM><<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(size, D.values(), d_maxD);
+    
+    CUDA_CHECK(cudaMemcpyAsync(h_tmpMax, d_maxD, sizeof(Scalar) * gridSize, cudaMemcpyDeviceToHost, deviceInfo.stream));
 
-    Scalar tmpMax[grid];
-    CUDA_CHECK(cudaMemcpy(tmpMax, maxD, sizeof(Scalar) * grid, cudaMemcpyDeviceToHost));
-
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
+    
     Scalar maxv = 0;
-    for (int i = 0; i < grid; i++)
+    for (int i = 0; i < gridSize; i++)
     {
-        maxv = std::max(maxv, tmpMax[i]);
+        maxv = std::max(maxv, h_tmpMax[i]);
     }
     return maxv;
 }
 
-Scalar maxDiagonal(const GpuPxPBlockVec& Hpp, Scalar* maxD, const cudaStream_t& stream)
+Scalar maxDiagonal(
+    const GpuPxPBlockVec& Hpp, Scalar* d_maxD, Scalar* h_tmpMax, const CudaDeviceInfo& deviceInfo)
 {
-    return maxDiagonal_(Hpp, maxD, stream);
+    return maxDiagonal_(Hpp, d_maxD, h_tmpMax, deviceInfo);
 }
 
-Scalar maxDiagonal(const GpuLxLBlockVec& Hll, Scalar* maxD, const cudaStream_t& stream)
+Scalar maxDiagonal(
+    const GpuLxLBlockVec& Hll, Scalar* d_maxD, Scalar* h_tmpMax, const CudaDeviceInfo& deviceInfo)
 {
-    return maxDiagonal_(Hll, maxD, stream);
+    return maxDiagonal_(Hll, d_maxD, h_tmpMax, deviceInfo);
 }
 
 template <typename T, int DIM>
@@ -1807,57 +1845,60 @@ void addLambda_(
     DeviceBlockVector<T, DIM, DIM>& D,
     Scalar lambda,
     DeviceBlockVector<T, DIM, 1>& backup,
-    const cudaStream_t& stream)
+    const CudaDeviceInfo& deviceInfo)
 {
     const int size = D.size() * DIM;
 
-    int minGridSize;
+    int gridSize;
     int blockSize;
-    cudaOccupancyMaxPotentialBlockSize(
-        &minGridSize, &blockSize, (void*)addLambdaKernel<DIM>);
-    const int gridSize = divUp(size, blockSize);
-    addLambdaKernel<DIM><<<gridSize, blockSize, 0, stream>>>(size, D.values(), lambda, backup.values());
+    calculateOccupancy(size, (void*)addLambdaKernel<DIM>, blockSize, gridSize);
+    
+    addLambdaKernel<DIM><<<gridSize, blockSize, 0, deviceInfo.stream>>>(size, D.values(), lambda, backup.values());
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
 }
 
 void addLambda(
-    GpuPxPBlockVec& Hpp, Scalar lambda, GpuPx1BlockVec& backup, const cudaStream_t& stream)
+    GpuPxPBlockVec& Hpp, Scalar lambda, GpuPx1BlockVec& backup, const CudaDeviceInfo& deviceInfo)
 {
-    addLambda_(Hpp, lambda, backup, stream);
+    addLambda_(Hpp, lambda, backup, deviceInfo);
 }
 
 void addLambda(
-    GpuLxLBlockVec& Hll, Scalar lambda, GpuLx1BlockVec& backup, const cudaStream_t& stream)
+    GpuLxLBlockVec& Hll, Scalar lambda, GpuLx1BlockVec& backup, const CudaDeviceInfo& deviceInfo)
 {
-    addLambda_(Hll, lambda, backup, stream);
+    addLambda_(Hll, lambda, backup, deviceInfo);
 }
 
 template <typename T, int DIM>
 void restoreDiagonal_(
     DeviceBlockVector<T, DIM, DIM>& D,
     const DeviceBlockVector<T, DIM, 1>& backup,
-    const cudaStream_t& stream)
+    const CudaDeviceInfo& deviceInfo)
 {
     const int size = D.size() * DIM;
-    
-    int minGridSize;
+    int gridSize;
     int blockSize;
-    cudaOccupancyMaxPotentialBlockSize(
-        &minGridSize, &blockSize, (void*)restoreDiagonalKernel<DIM>);
-    const int gridSize = divUp(size, blockSize);
+    calculateOccupancy(size, (void*)restoreDiagonalKernel<DIM>, blockSize, gridSize);
 
-    restoreDiagonalKernel<DIM><<<gridSize, blockSize, 0, stream>>>(size, D.values(), backup.values());
+    restoreDiagonalKernel<DIM>
+        <<<gridSize, blockSize, 0, deviceInfo.stream>>>(size, D.values(), backup.values());
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
 }
 
-void restoreDiagonal(GpuPxPBlockVec& Hpp, const GpuPx1BlockVec& backup, const cudaStream_t& stream)
+void restoreDiagonal(
+    GpuPxPBlockVec& Hpp, const GpuPx1BlockVec& backup, const CudaDeviceInfo& deviceInfo)
 {
-    restoreDiagonal_(Hpp, backup, stream);
+    restoreDiagonal_(Hpp, backup, deviceInfo);
 }
 
-void restoreDiagonal(GpuLxLBlockVec& Hll, const GpuLx1BlockVec& backup, const cudaStream_t& stream)
+void restoreDiagonal(
+    GpuLxLBlockVec& Hll, const GpuLx1BlockVec& backup, const CudaDeviceInfo& deviceInfo)
 {
-    restoreDiagonal_(Hll, backup, stream);
+    restoreDiagonal_(Hll, backup, deviceInfo);
 }
 
 void computeBschure(
@@ -1964,37 +2005,46 @@ void schurComplementPost(
     CUDA_CHECK(cudaGetLastError());
 }
 
-void updatePoses(const GpuPx1BlockVec& xp, GpuVecSe3d& estimate, const cudaStream_t& stream)
+void updatePoses(const GpuPx1BlockVec& xp, GpuVecSe3d& estimate, const CudaDeviceInfo& deviceInfo)
 {
-    int minGridSize;
+    int gridSize;
     int blockSize;
-    cudaOccupancyMaxPotentialBlockSize(
-        &minGridSize, &blockSize, (void*)updatePosesKernel);
-    const int gridSize = divUp(xp.size(), blockSize);
-
-    updatePosesKernel<<<gridSize, blockSize, 0, stream>>>(xp.size(), xp, estimate);
+    calculateOccupancy(xp.size(), (void*)updatePosesKernel, blockSize, gridSize);
+   
+    updatePosesKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(xp.size(), xp, estimate);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
 }
 
-void updateLandmarks(const GpuLx1BlockVec& xl, GpuVec3d& estimate, const cudaStream_t& stream)
+void updateLandmarks(const GpuLx1BlockVec& xl, GpuVec3d& estimate, const CudaDeviceInfo& deviceInfo)
 {
-    int minGridSize;
+    int gridSize;
     int blockSize;
-    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, (void*)updateLandmarksKernel);
-    const int gridSize = divUp(xl.size(), blockSize);
+    calculateOccupancy(xl.size(), (void*)updateLandmarksKernel, blockSize, gridSize);
 
-    updateLandmarksKernel<<<gridSize, blockSize, 0, stream>>>(xl.size(), xl, estimate);
+    updateLandmarksKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(xl.size(), xl, estimate);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
 }
 
-void computeScale(const GpuVec1d& x, const GpuVec1d& b, Scalar* scale, Scalar lambda)
+void computeScale(
+    const GpuVec1d& x,
+    const GpuVec1d& b,
+    Scalar* scale,
+    Scalar lambda,
+    const CudaDeviceInfo& deviceInfo)
 {
     const int block = BLOCK_COMPUTE_SCALE;
     const int grid = 4;
 
     CUDA_CHECK(cudaMemset(scale, 0, sizeof(Scalar)));
-    computeScaleKernel<<<grid, block>>>(x, b, scale, lambda, x.ssize());
+
+    computeScaleKernel<<<grid, block, 0, deviceInfo.stream>>>(x, b, scale, lambda, x.ssize());
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -2446,23 +2496,23 @@ Scalar computeActiveErrors_Plane(
     const int nomegas = omegas.ssize();
     const int block = BLOCK_ACTIVE_ERRORS;
     
-    int minGridSize;
+    int gridSize;
     int blockSize;
-    cudaOccupancyMaxPotentialBlockSize(
-        &minGridSize, &blockSize, (void*)computeActiveErrorsKernel_Plane);
-    const int gridSize = divUp(nedges, blockSize);
+    calculateOccupancy(nedges, (void*)computeActiveErrorsKernel_Plane, blockSize, gridSize);
 
     const int sharedBytes = blockSize * sizeof(Scalar);
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     computeActiveErrorsKernel_Plane<<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
         nedges, nomegas, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
-    CUDA_CHECK(cudaGetLastError());
+    
+    hAsyncScalar h_chi;
+    h_chi.download(chi, deviceInfo.stream);
 
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-    return h_chi;
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
+    
+    return *h_chi;
 }
 
 void constructQuadraticForm_Plane(
@@ -2483,11 +2533,9 @@ void constructQuadraticForm_Plane(
     const int nedges = errors.ssize();
     const int nomegas = omegas.ssize();
 
-    int minGridSize;
+    int gridSize;
     int blockSize;
-    cudaOccupancyMaxPotentialBlockSize(
-        &minGridSize, &blockSize, (void*)constructQuadraticFormKernel_Plane<1>);
-    const int gridSize = divUp(nedges, blockSize);
+    calculateOccupancy(nedges, (void*)constructQuadraticFormKernel_Plane<1>, blockSize, gridSize);
 
     constructQuadraticFormKernel_Plane<1><<<gridSize, blockSize, 0, deviceInfo.stream>>>(
         nedges,

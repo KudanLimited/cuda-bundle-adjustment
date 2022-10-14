@@ -235,7 +235,7 @@ public:
      *
      * @param rhs A device memory pointer to copy the data to.
      */
-    void copyToAsync(T* rhs, int stream = 0) const
+    void copyToAsync(T* rhs, const cudaStream_t stream) const
     {
         CUDA_CHECK(
             cudaMemcpyAsync(rhs, data_, sizeof(T) * size_, cudaMemcpyDeviceToDevice, stream));

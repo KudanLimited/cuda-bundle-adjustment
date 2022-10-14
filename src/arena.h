@@ -127,7 +127,7 @@ public:
     {
         std::size_t totalSize = size * sizeof(T);
         // TODO: readjust the arena size if the capacity is reached - this will also
-        // require re-adjusting the alreay allocated memory pools with the new mem
+        // require re-adjusting the already allocated memory pools with the new mem
         // address (the tricky bit). Will probably need to add some sort of linked-list
         // method to the memory pools. Throws an exception for now.
         if (totalSize > capacity_)
@@ -179,7 +179,11 @@ private:
     void allocatePool(size_t size, bool retain = false) noexcept
     {
         uint8_t* oldArena = arena_;
+#ifndef USE_ZERO_COPY
+        CUDA_CHECK(cudaHostAlloc(&arena_, size, cudaHostAllocDefault));
+#else
         CUDA_CHECK(cudaHostAlloc(&arena_, size, cudaHostAllocMapped));
+#endif
 
         // if stated, copy the old contents into the newly allocated space
         if (oldArena && retain)

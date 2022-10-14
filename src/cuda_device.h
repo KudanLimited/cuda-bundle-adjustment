@@ -73,6 +73,9 @@ public:
         return events_[idx];
     }
 
+    void startTimingEvent() const noexcept;
+    double stopTimingEvent() const noexcept;
+
 
 private:
     int ConvertSMVer2Cores(int major, int minor);
@@ -97,6 +100,11 @@ private:
 
     /// Properties of the GPU that will be used.
     cudaDeviceProp deviceProp_;
+
+    /// for timing events
+    cudaEvent_t timeStart;
+    cudaEvent_t timeStop;
+
 };
 
 } // namespace cugo
