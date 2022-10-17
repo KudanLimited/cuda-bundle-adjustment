@@ -88,6 +88,7 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
         
             const double Fhat = solver_->computeErrors(edgeSets, vertexSets);
             const double scale = solver_->computeScale(lambda) + 1e-3;
+            const double Fdiff = Fhat - F;
             rho = success ? (F - Fhat) / scale : -1.0;
 
             if (rho > 0)
@@ -103,7 +104,7 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
                 nu *= 2.0;
                 solver_->restoreDiagonal();
                 solver_->pop();
-                if (!std::isfinite(lambda))
+                if (!std::isfinite(lambda) || Fdiff < 1e-4)
                 {
                     break;
                 }
@@ -127,7 +128,7 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
                 q);
         }
 
-        if (q == maxq || rho < 1e-4 || !std::isfinite(lambda))
+        if (q == maxq || rho < 1e-6 || !std::isfinite(lambda))
         {
             break;
         }
