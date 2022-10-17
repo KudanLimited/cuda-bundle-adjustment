@@ -54,7 +54,6 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
     double lambda = 0.0;
     double F = 0.0;
 
-
     // Levenberg-Marquardt iteration
     for (int iteration = 0; iteration < niterations; iteration++)
     {
@@ -93,7 +92,7 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
 
             if (rho > 0)
             {
-                lambda *= clamp(attenuation(rho), 1.0 / 3, 2.0 / 3);
+                lambda *= clamp(attenuation(rho), 1.0 / 3.0, 2.0 / 3.0);
                 nu = 2.0;
                 F = Fhat;
                 break;
@@ -104,6 +103,10 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
                 nu *= 2.0;
                 solver_->restoreDiagonal();
                 solver_->pop();
+                if (!std::isfinite(lambda))
+                {
+                    break;
+                }
             }
         }
 
@@ -114,13 +117,14 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
         {
             printf(
                 "iteration= %i;   time(ms): %.4f   chi2= %f;   lambda= %f   rho= "
-                "%f	   nedges= %i\n",
+                "%f	   nedges= %i    levenberg iterations = %i\n",
                 iteration,
                 timeTaken,
                 F,
                 lambda,
                 rho,
-                solver_->nedges());
+                solver_->nedges(),
+                q);
         }
 
         if (q == maxq || rho < 1e-4 || !std::isfinite(lambda))
