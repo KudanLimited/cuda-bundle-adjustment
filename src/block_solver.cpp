@@ -17,6 +17,8 @@ void BlockSolver::initialize(
     assert(edgeSets.size() > 0);
     assert(vertexSets.size() > 0);
 
+    cudaDevice_.startTimingEvent();
+
     // prepare the solver for a fresh initialisation
     clear();
 
@@ -135,12 +137,16 @@ void BlockSolver::initialize(
             linearSolver_ = std::make_unique<DenseLinearSolver>();
         }
     }
+
+    profItems_[PROF_ITEM_INITIALIZE] = cudaDevice_.stopTimingEvent();
 }
 
 void BlockSolver::buildStructure(
     const EdgeSetVec& edgeSets, 
     const VertexSetVec& vertexSets)
 {
+    cudaDevice_.startTimingEvent();
+
     // allocate device buffers
     d_x_.resize(numP_ * PDIM + numL_ * LDIM);
     d_b_.resize(numP_ * PDIM + numL_ * LDIM);
@@ -220,12 +226,16 @@ void BlockSolver::buildStructure(
         DenseLinearSolver* denseLinearSolver = static_cast<DenseLinearSolver*>(linearSolver_.get());
         denseLinearSolver->initialize(Hpp_);
     }
+
+    profItems_[PROF_ITEM_BUILD_STRUCTURE] = cudaDevice_.stopTimingEvent();
 }
 
 double BlockSolver::computeErrors(
     const EdgeSetVec& edgeSets,
     const VertexSetVec& vertexSets)
 {
+    cudaDevice_.startTimingEvent();
+
     Scalar accumChi = 0;
 
     for (BaseEdgeSet* edgeSet : edgeSets)
@@ -238,6 +248,8 @@ double BlockSolver::computeErrors(
         accumChi += chi;
     }
 
+    profItems_[PROF_ITEM_COMPUTE_ERROR] = cudaDevice_.stopTimingEvent();
+    
     return accumChi;
 }
 
@@ -251,6 +263,8 @@ void BlockSolver::buildSystem(
     // coefficient matrix are divided into blocks, and each block is calculated
     // | Hpp  Hpl ||Δxp| = |-bp|
     // | HplT Hll ||Δxl|   |-bl|
+
+    cudaDevice_.startTimingEvent();
 
     d_Hpp_.fillZero();
     d_bp_.fillZero();
@@ -271,6 +285,7 @@ void BlockSolver::buildSystem(
             vertexSets, d_Hpp_, d_bp_, d_Hll_, d_bl_, d_Hpl_, cudaDevice_.getStreamAndEvent(0));
     }
 
+    profItems_[PROF_ITEM_BUILD_SYSTEM] = cudaDevice_.stopTimingEvent();
 }
 
 double BlockSolver::maxDiagonal()
@@ -306,6 +321,8 @@ void BlockSolver::restoreDiagonal()
 
 bool BlockSolver::solve()
 {
+    cudaDevice_.startTimingEvent();
+
     if (!doSchur_)
     {
         const bool success = linearSolver_->solve(d_Hpp_.values(), d_bp_.values(), d_xp_.values());
@@ -313,6 +330,8 @@ bool BlockSolver::solve()
         {
             return false;
         }
+
+        profItems_[PROF_ITEM_SOLVE_HPP] = cudaDevice_.stopTimingEvent();
         return true;
     }
 
@@ -334,12 +353,16 @@ bool BlockSolver::solve()
     // Solve linear equation about Δxl
     // Hll*Δxl = -bl - HplT*Δxp
     gpu::schurComplementPost(d_invHll_, d_bl_, d_Hpl_, d_xp_, d_xl_);
-   
+    
+    profItems_[PROF_ITEM_SCHUR_COMPLEMENT] = cudaDevice_.stopTimingEvent();
+
     return true;
 }
 
 void BlockSolver::update(const VertexSetVec& vertexSets)
 {
+    cudaDevice_.startTimingEvent();
+
     for (BaseVertexSet* vertexSet : vertexSets)
     {
         if (!vertexSet->isMarginilised())
@@ -357,6 +380,8 @@ void BlockSolver::update(const VertexSetVec& vertexSets)
             gpu::updateLandmarks(d_xl_, estimateData, cudaDevice_.getStreamAndEvent(2));
         }
     }
+
+    profItems_[PROF_ITEM_UPDATE] = cudaDevice_.stopTimingEvent();
 }
 
 double BlockSolver::computeScale(double lambda)
@@ -416,7 +441,7 @@ void BlockSolver::clear() noexcept
 
 void BlockSolver::getTimeProfile(TimeProfile& prof) const
 {
-    static const char* profileItemString[PROF_ITEM_NUM] = {
+    static const char* profileItemString[PROF_ITEM_COUNT] = {
         "0: Initialize Optimizer",
         "1: Build Structure",
         "2: Compute Error",
@@ -424,11 +449,11 @@ void BlockSolver::getTimeProfile(TimeProfile& prof) const
         "4: Schur Complement",
         "5: Symbolic Decomposition",
         "6: Numerical Decomposition",
-        "7: Hpp linear solver (only for non-landmark optimistaion runs)",
-        "8: Update Solution"};
+        "7: Update Solution",
+        "8: Hpp linear solver"};
 
     prof.clear();
-    for (int i = 0; i < PROF_ITEM_NUM; i++)
+    for (int i = 0; i < PROF_ITEM_COUNT; i++)
     {
         prof[profileItemString[i]] = profItems_[i];
     }

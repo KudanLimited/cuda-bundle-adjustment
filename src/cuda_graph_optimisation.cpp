@@ -54,7 +54,6 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
     double lambda = 0.0;
     double F = 0.0;
 
-
     // Levenberg-Marquardt iteration
     for (int iteration = 0; iteration < niterations; iteration++)
     {
@@ -89,11 +88,12 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
         
             const double Fhat = solver_->computeErrors(edgeSets, vertexSets);
             const double scale = solver_->computeScale(lambda) + 1e-3;
+            const double Fdiff = Fhat - F;
             rho = success ? (F - Fhat) / scale : -1.0;
 
             if (rho > 0)
             {
-                lambda *= clamp(attenuation(rho), 1.0 / 3, 2.0 / 3);
+                lambda *= clamp(attenuation(rho), 1.0 / 3.0, 2.0 / 3.0);
                 nu = 2.0;
                 F = Fhat;
                 break;
@@ -104,6 +104,10 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
                 nu *= 2.0;
                 solver_->restoreDiagonal();
                 solver_->pop();
+                if (!std::isfinite(lambda) || Fdiff < 1e-4)
+                {
+                    break;
+                }
             }
         }
 
@@ -114,16 +118,27 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
         {
             printf(
                 "iteration= %i;   time(ms): %.4f   chi2= %f;   lambda= %f   rho= "
-                "%f	   nedges= %i\n",
+                "%f	   nedges= %i    levenberg iterations = %i\n",
                 iteration,
                 timeTaken,
                 F,
                 lambda,
                 rho,
-                solver_->nedges());
+                solver_->nedges(),
+                q);
         }
 
-        if (q == maxq || rho < 1e-4 || !std::isfinite(lambda))
+        if (shouldProfile_)
+        {
+            TimeProfile profile;
+            solver_->getTimeProfile(profile);
+            for (const auto& [name, time] : profile)
+            {
+                printf("%s:  %f\n", name.c_str(), time);
+            }
+        }
+
+        if (q == maxq || rho < 1e-6 || !std::isfinite(lambda))
         {
             break;
         }

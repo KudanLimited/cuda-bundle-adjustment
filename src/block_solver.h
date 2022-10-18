@@ -35,7 +35,7 @@ public:
         PROF_ITEM_DECOMP_NUMERICAL,
         PROF_ITEM_UPDATE,
         PROF_ITEM_SOLVE_HPP,
-        PROF_ITEM_NUM
+        PROF_ITEM_COUNT
     };
 
     static constexpr int HBLOCKPOS_ARENA_SIZE = 100000000;
@@ -244,7 +244,7 @@ private:
     
     GpuVec1i d_nnzPerCol_;
 
-    std::vector<double> profItems_;
+    std::array<double, PROF_ITEM_COUNT> profItems_ = {0.0};
 };
 
 } // namespace cugo

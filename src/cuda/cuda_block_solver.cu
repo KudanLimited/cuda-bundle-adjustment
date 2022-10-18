@@ -17,6 +17,7 @@ limitations under the License.
 #include "cuda_block_solver.h"
 
 #include <cooperative_groups.h>
+#include <cooperative_groups/reduce.h>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <thrust/device_ptr.h>
@@ -839,60 +840,128 @@ __device__ inline Vec3i makeVec3i(int i, int j, int k)
     return vec;
 }
 
-__device__ int reduce_sum(cg::thread_group group, Scalar* temp, Scalar val)
-{
-    int lane = group.thread_rank();
+// ============================================================================================================
+// grid-stride parallel reduction (old method)
 
-    for (int i = group.size() / 2; i > 0; i /= 2)
-    {
-        temp[lane] = val;
-        group.sync();
-        if (lane < i)
-        {
-            val += temp[lane + 1];
-        }
-        group.sync();
-    }
-    return val;
-}
-
-__device__ void warpReduce(volatile Scalar* data, int tid)
-{
-    data[tid] += data[tid + 32];
-    data[tid] += data[tid + 16];
-    data[tid] += data[tid + 8];
-    data[tid] += data[tid + 4];
-    data[tid] += data[tid + 2];
-    data[tid] += data[tid + 1];
-}
-
-__device__ void parallelReduction(
+__device__ void parallelReductionAndAdd(
     Scalar* __restrict__ cache,
-    const int sharedIdx,
+    const int blockSize,
+    const int tid,
     const Scalar value,
-    const int size,
     Scalar* accumValue)
 {
-    cache[sharedIdx] = value;
+    cache[tid] = value;
     __syncthreads();
 
-    for (int stride = blockDim.x / 2; stride > 32; stride >>= 1)
+    for (int stride = blockSize / 2; stride > 0; stride >>= 1)
     {
-        if (sharedIdx < stride)
+        if (tid < stride)
         {
-            cache[sharedIdx] += cache[sharedIdx + stride];
+            cache[tid] += cache[tid + stride];
         }
         __syncthreads();
     }
 
-    if (sharedIdx < 32)
-    {
-        warpReduce(cache, sharedIdx);
-    }
-
-    if (sharedIdx == 0)
+    if (tid == 0)
     {
         atomicAdd(accumValue, cache[0]);
+    }
+}
+
+// ======================================================================================
+// co-operative groups and parallel reduction
+
+template <typename KernelFunction, typename... KernelParameters>
+inline void cooperativeLaunch(
+    const KernelFunction& kernel_function,
+    const cudaStream_t streamId,
+    const int gridSize,
+    const int blockSize,
+    const int sharedBytes,
+    KernelParameters... parameters)
+{
+    void* argumentsPtrs[sizeof...(KernelParameters)];
+    auto argIdx = 0;
+
+    detail::for_each_argument_address(
+        [&](void* x) { argumentsPtrs[argIdx++] = x; }, parameters...);
+
+    cudaLaunchCooperativeKernel<KernelFunction>(
+        &kernel_function,
+        gridSize,
+        blockSize,
+        argumentsPtrs,
+        sharedBytes,
+        streamId);
+}
+
+__device__ void reduceBlock(double* sdata, const cg::thread_block& cta)
+{
+    const int tid = cta.thread_rank();
+    cg::thread_block_tile<32> tile32 = cg::tiled_partition<32>(cta);
+
+    sdata[tid] = cg::reduce(tile32, sdata[tid], cg::plus<double>());
+    cg::sync(cta);
+
+    double accum = 0.0;
+    if (cta.thread_rank() == 0)
+    {
+        for (int i = 0; i < blockDim.x; i += tile32.size())
+        {
+            accum += sdata[i];
+        }
+        sdata[0] = accum;
+    }
+    cg::sync(cta);
+}
+
+__device__ void parallelReductionAndAddCooperative(
+    cg::thread_block block,
+    Scalar* __restrict__ cache,
+    const int blockSize,
+    const int tid,
+    const Scalar value,
+    Scalar* accumValue)
+{
+    Scalar sum = value;
+    cache[tid] = sum;
+    cg::sync(block);
+
+    if ((blockSize >= 512) && (tid < 256))
+    {
+        cache[tid] = sum = sum + cache[tid + 256];
+    }
+    cg::sync(block);
+
+    if ((blockSize >= 256) && (tid < 128))
+    {
+        cache[tid] = sum = sum + cache[tid + 128];
+    }
+    cg::sync(block);
+
+    if ((blockSize >= 128) && (tid < 64))
+    {
+        cache[tid] = sum = sum + cache[tid + 64];
+    }
+    cg::sync(block);
+
+    cg::thread_block_tile<32> tile32 = cg::tiled_partition<32>(block);
+    if (block.thread_rank() < 32)
+    {
+        if (blockSize >= 64)
+        {
+            sum += cache[tid + 32];
+        }
+        for (int offset = tile32.size() / 2; offset > 0; offset /= 2)
+        {
+            sum += tile32.shfl_down(sum, offset);
+        }
+    }
+
+    // write result for this block to global mem
+    if (block.thread_rank() == 0)
+    {
+        atomicAdd(accumValue, sum);
     }
 }
 
@@ -1144,7 +1213,7 @@ __global__ void constructQuadraticFormKernel(
 }
 
 template <int DIM>
-__global__ void maxDiagonalKernel(int size, const Scalar* __restrict__ D, Scalar* __restrict__ maxD)
+__global__ void maxDiagonalKernel(int size, int blockSize, const Scalar* __restrict__ D, Scalar* __restrict__ maxD)
 {
     const int sharedIdx = threadIdx.x;
     extern __shared__ Scalar cache[];
@@ -1161,7 +1230,7 @@ __global__ void maxDiagonalKernel(int size, const Scalar* __restrict__ D, Scalar
     cache[sharedIdx] = maxVal;
     __syncthreads();
 
-    for (int stride = blockIdx.x / 2; stride > 0; stride >>= 1)
+    for (int stride = blockSize / 2; stride > 0; stride >>= 1)
     {
         if (sharedIdx < stride)
         {
@@ -1238,7 +1307,7 @@ __global__ void computeBschureKernel(
 }
 
 __global__ void initializeHschurKernel(
-    int rows, PxPBlockPtr Hpp, PxPBlockPtr Hsc, const int* __restrict__ HscRowPtr)
+    int rows, PxPBlockPtr Hpp, PxPBlockPtr Hsc, const int* HscRowPtr)
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= rows)
@@ -1250,7 +1319,7 @@ __global__ void initializeHschurKernel(
 
 __global__ void computeHschureKernel(
     int size,
-    const Vec3i* __restrict__ mulBlockIds,
+    const Vec3i* mulBlockIds,
     PxLBlockPtr Hpl_invHll,
     PxLBlockPtr Hpl,
     PxPBlockPtr Hschur)
@@ -1274,8 +1343,8 @@ __global__ void findHschureMulBlockIndicesKernel(
     const int* __restrict__ HplRowInd,
     const int* __restrict__ HscRowPtr,
     const int* __restrict__ HscColInd,
-    Vec3i* __restrict__ mulBlockIds,
-    int* __restrict__ nindices)
+    Vec3i*  mulBlockIds,
+    int* nindices)
 {
     const int colId = blockIdx.x * blockDim.x + threadIdx.x;
     if (colId >= cols)
@@ -1305,7 +1374,7 @@ __global__ void permuteNnzPerRowKernel(
     int size,
     const int* __restrict__ srcRowPtr,
     const int* __restrict__ P,
-    int* __restrict__ nnzPerRow)
+    int*  nnzPerRow)
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= size)
@@ -1320,9 +1389,9 @@ __global__ void permuteColIndKernel(
     const int* __restrict__ srcRowPtr,
     const int* __restrict__ srcColInd,
     const int* __restrict__ P,
-    int* __restrict__ dstColInd,
-    int* __restrict__ dstMap,
-    int* __restrict__ nnzPerRow)
+    int*  dstColInd,
+    int*  dstMap,
+    int*  nnzPerRow)
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= size)
@@ -1397,10 +1466,12 @@ __global__ void computeScaleKernel(
     const Scalar* __restrict__ b,
     Scalar* __restrict__ scale,
     Scalar lambda,
-    int size)
+    int size,
+    int blockSize)
 {
-    const int sharedIdx = threadIdx.x;
-    __shared__ Scalar cache[BLOCK_COMPUTE_SCALE];
+    cg::thread_block block = cg::this_thread_block();
+    const int tid = threadIdx.x;
+    extern __shared__ Scalar cache[];
 
     Scalar sum = 0;
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += gridDim.x * blockDim.x)
@@ -1408,22 +1479,7 @@ __global__ void computeScaleKernel(
         sum += x[i] * (lambda * x[i] + b[i]);
     }
 
-    cache[sharedIdx] = sum;
-    __syncthreads();
-
-    for (int stride = BLOCK_COMPUTE_SCALE / 2; stride > 0; stride >>= 1)
-    {
-        if (sharedIdx < stride)
-        {
-            cache[sharedIdx] += cache[sharedIdx + stride];
-        }
-        __syncthreads();
-    }
-
-    if (sharedIdx == 0)
-    {
-        atomicAdd(scale, cache[0]);
-    }
+    parallelReductionAndAdd(cache, blockSize, tid, sum, scale);
 }
 
 __global__ void convertBSRToCSRKernel(
@@ -1810,10 +1866,10 @@ Scalar maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* d_maxD, Sca
     int gridSize;
     int blockSize;
     calculateOccupancy(size, (void*)maxDiagonalKernel<DIM>, blockSize, gridSize);
-    
+
     int sharedBytes = sizeof(Scalar) * blockSize;
 
-    maxDiagonalKernel<DIM><<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(size, D.values(), d_maxD);
+    maxDiagonalKernel<DIM><<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(size, blockSize, D.values(), d_maxD);
     
     CUDA_CHECK(cudaMemcpyAsync(h_tmpMax, d_maxD, sizeof(Scalar) * gridSize, cudaMemcpyDeviceToHost, deviceInfo.stream));
 
@@ -2036,12 +2092,13 @@ void computeScale(
     Scalar lambda,
     const CudaDeviceInfo& deviceInfo)
 {
-    const int block = BLOCK_COMPUTE_SCALE;
-    const int grid = 4;
+    const int blockSize = 1024;
+    const int gridSize = 4;
+    const int sharedBytes = blockSize * sizeof(Scalar);
 
     CUDA_CHECK(cudaMemset(scale, 0, sizeof(Scalar)));
 
-    computeScaleKernel<<<grid, block, 0, deviceInfo.stream>>>(x, b, scale, lambda, x.ssize());
+    computeScaleKernel<<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(x, b, scale, lambda, x.ssize(), blockSize);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
     CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
@@ -2275,6 +2332,7 @@ __global__ void computeActiveErrorsKernel_Line(
 __global__ void computeActiveErrorsKernel_Plane(
     int nedges,
     int nomegas,
+    int blockSize,
     const Se3D* poseEstimate,
     const PointToPlaneMatch<double>* measurements,
     const Scalar* omegas,
@@ -2284,10 +2342,14 @@ __global__ void computeActiveErrorsKernel_Plane(
     Scalar* chi)
 {
     Scalar sumchi = 0;
-    const int sharedIdx = threadIdx.x;
+    
     extern __shared__ Scalar cache[];
 
-    for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
+    const int tid = threadIdx.x;
+    const int gridSize = blockSize * gridDim.x;
+    int iE = blockIdx.x * blockDim.x + threadIdx.x;
+
+    while (iE < nedges)
     {
         const Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
         const int iP = edge2PL[iE][0];
@@ -2301,9 +2363,11 @@ __global__ void computeActiveErrorsKernel_Plane(
         Scalar error = signedDistance(Pw, measurement.normal, measurement.originDistance);
         errors[iE] = error;
         sumchi += (errors[iE] * errors[iE]) * omega;
-    }
 
-    parallelReduction(cache, sharedIdx, sumchi, nedges, chi);
+        iE += gridSize;
+    } 
+   
+    parallelReductionAndAdd(cache, blockSize, tid, sumchi, chi);
 }
 
 template <int MDIM>
@@ -2494,21 +2558,24 @@ Scalar computeActiveErrors_Plane(
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
-    const int block = BLOCK_ACTIVE_ERRORS;
     
-    int gridSize;
-    int blockSize;
-    calculateOccupancy(nedges, (void*)computeActiveErrorsKernel_Plane, blockSize, gridSize);
-
+    // Using a fixed thread number here as otherwise if the occupancy is
+    // calculated at runtime based on the system, this will lead to
+    // inconsistent results from the kernel. Maybe due to shared buffer
+    // issues at larger block size (more shared memory used / less iterations
+    // of the kernel)
+    const int blockSize = 512;
+    const int gridSize = divUp(nedges, blockSize);
     const int sharedBytes = blockSize * sizeof(Scalar);
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     computeActiveErrorsKernel_Plane<<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
-        nedges, nomegas, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
-    
+        nedges, nomegas, blockSize, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
+  
     hAsyncScalar h_chi;
     h_chi.download(chi, deviceInfo.stream);
 
+    CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
     CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
     

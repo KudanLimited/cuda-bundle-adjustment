@@ -189,6 +189,13 @@ public:
      * @param status If true, then the optimiser will output infornmation for each iteration.
      */
     virtual void setVerbose(bool status) = 0;
+
+    /**
+    * @brief Specify whether profile details for each element of the optimisation should
+    * be printed to stdout
+    * @param If true, profile details will be outputted.
+    */
+    virtual void setProfile(bool status) = 0;
 };
 
 /** @brief Implementation of CudaGraphOptimisation.
@@ -240,14 +247,9 @@ public:
     void clearEdgeSets() override;
     void clearVertexSets() override;
     void setVerbose(bool status) override { verbose = status; }
+    void setProfile(bool status) override { shouldProfile_ = status; }
 
 private:
-    /**
-     * @brief Initialise the CUDA backend. This will check that the system
-     * has the required compute capability and initialise the cuda streams
-     *
-     */
-    void initCuda();
 
     static inline double attenuation(double x) { return 1 - std::pow(2 * x - 1, 3); }
     static inline double clamp(double v, double lo, double hi)
@@ -257,6 +259,7 @@ private:
 
 private:
     bool verbose = false;
+    bool shouldProfile_ = false;
 
     /// option settings for this optimiser instance
     GraphOptimisationOptions options;

@@ -29,6 +29,21 @@ namespace cugo
 namespace gpu
 {
 
+// needs moving to its own file
+namespace detail
+{
+
+template <class F, class... Args>
+F for_each_argument_address(F f, Args&&... args)
+{
+    (f((void*)&std::forward<Args>(args)), ...);
+    return f;
+}
+
+
+} // namespace detail
+
+
 template <int N>
 using Vecxd = Vec<Scalar, N>;
 
