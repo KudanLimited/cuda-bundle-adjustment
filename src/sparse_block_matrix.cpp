@@ -24,12 +24,12 @@ namespace cugo
 {
 void HplSparseBlockMatrix::constructFromBlockPos(std::vector<HplBlockPos>& blockpos)
 {
-    Eigen::VectorXi& bcolPtr = outerIndices_;
-    Eigen::VectorXi& browInd = innerIndices_;
-    Eigen::VectorXi nnzPerCol;
+    async_vector<int>& bcolPtr = outerIndices_;
+    async_vector<int>& browInd = innerIndices_;
+    async_vector<int> nnzPerCol;
 
     nnzPerCol.resize(bcols_);
-    nnzPerCol.setZero();
+    nnzPerCol.zero();
 
     std::sort(
         std::begin(blockpos),
@@ -66,12 +66,11 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
         int row, col;
     };
 
-    Eigen::VectorXi& browPtr_ = outerIndices_;
-    Eigen::VectorXi& bcolInd_ = innerIndices_;
+    async_vector<int>& browPtr_ = outerIndices_;
+    async_vector<int>& bcolInd_ = innerIndices_;
 
     std::vector<uint8_t> map(brows_ * bcols_, 0);
     std::vector<int> indices;
-    indices.reserve(10000);
 
     std::vector<BlockPos> blockpos;
     blockpos.reserve(brows_ * bcols_);
@@ -127,7 +126,7 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
 
     // set rowPtr
     nnzPerRow_.resize(brows_);
-    nnzPerRow_.setZero();
+    nnzPerRow_.zero();
     for (int i = 0; i < nblocks_; i++)
     {
         nnzPerRow_[blockpos[i].row]++;
@@ -158,15 +157,15 @@ void HschurSparseBlockMatrix::convertBSRToCSR()
     const int nnz = nnzSymm();
     const int drows = rows();
 
-    Eigen::VectorXi& browPtr_ = outerIndices_;
-    Eigen::VectorXi& bcolInd_ = innerIndices_;
+    async_vector<int>& browPtr_ = outerIndices_;
+    async_vector<int>& bcolInd_ = innerIndices_;
 
     rowPtr_.resize(drows + 1);
     colInd_.resize(nnz);
     BSR2CSR_.resize(nnz);
 
     nnzPerRow_.resize(drows);
-    nnzPerRow_.setZero();
+    nnzPerRow_.zero();
 
     for (int blockRowId = 0; blockRowId < brows_; blockRowId++)
     {

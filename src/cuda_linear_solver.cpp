@@ -23,7 +23,7 @@ limitations under the License.
 
 namespace cugo
 {
-void HscSparseLinearSolver::initialize(HschurSparseBlockMatrix& Hsc)
+void HscSparseLinearSolver::initialize(HschurSparseBlockMatrix& Hsc, cudaStream_t stream)
 {
     const int size = Hsc.rows();
     const int nnz = Hsc.nnzSymm();
@@ -33,10 +33,10 @@ void HscSparseLinearSolver::initialize(HschurSparseBlockMatrix& Hsc)
     // set permutation
     P_.resize(size);
     cholesky_.reordering(size, nnz, Hsc.rowPtr(), Hsc.colInd(), P_.data());
-    cholesky_.setPermutaion(size, P_.data());
+    cholesky_.setPermutaion(size, P_.data(), stream);
 
     // analyze
-    cholesky_.analyze(nnz, Hsc.rowPtr(), Hsc.colInd());
+    cholesky_.analyze(nnz, Hsc.rowPtr(), Hsc.colInd(), stream);
 }
 
 bool HscSparseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x)
@@ -80,13 +80,13 @@ bool HppSparseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* 
     return true;
 }
 
-void DenseLinearSolver::initialize(HppSparseBlockMatrix& Hpp)
+void DenseLinearSolver::initialize(HppSparseBlockMatrix& Hpp, cudaStream_t stream)
 {
     const int size = Hpp.rows();
     const int nnz = Hpp.nnzSymm();
 
     cholesky_.resize(size);
-    cholesky_.allocate(nnz, Hpp.rowPtr(), Hpp.colInd());
+    cholesky_.allocate(nnz, Hpp.rowPtr(), Hpp.colInd(), stream);
 }
 
 bool DenseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x)

@@ -19,7 +19,6 @@ limitations under the License.
 #include "constants.h"
 #include "async_vector.h"
 
-#include <Eigen/Core>
 #include <vector>
 
 namespace cugo
@@ -42,7 +41,6 @@ public:
 
     void resize(int brows, int bcols)
     {
-        clear();
         brows_ = brows;
         bcols_ = bcols;
         outerSize_ = ORDER == ROW_MAJOR ? brows : bcols;
@@ -68,7 +66,7 @@ public:
     int cols() const { return bcols_ * BLOCK_COLS; }
 
 protected:
-    Eigen::VectorXi outerIndices_, innerIndices_;
+    async_vector<int> outerIndices_, innerIndices_;
     int brows_, bcols_, nblocks_, outerSize_, innerSize_;
 };
 
@@ -97,16 +95,9 @@ public:
     int nnzSymm() const { return (2 * nblocks_ - brows_) * BLOCK_AREA; }
     int nmulBlocks() const { return nmultiplies_; }
 
-    virtual void clear() override
-    {
-        nmultiplies_ = 0;
-        nblocks_ = 0;
-    }
-
-
 private:
     int nmultiplies_;
-    Eigen::VectorXi rowPtr_, colInd_, nnzPerRow_, BSR2CSR_;
+    async_vector<int> rowPtr_, colInd_, nnzPerRow_, BSR2CSR_;
 };
 
 using HschurSparseBlockMatrix = PoseSparseBlockMatrix;

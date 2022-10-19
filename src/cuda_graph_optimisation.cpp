@@ -128,6 +128,16 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
                 q);
         }
 
+        if (shouldProfile_)
+        {
+            TimeProfile profile;
+            solver_->getTimeProfile(profile);
+            for (const auto& [name, time] : profile)
+            {
+                printf("%s:  %f\n", name.c_str(), time);
+            }
+        }
+
         if (q == maxq || rho < 1e-6 || !std::isfinite(lambda))
         {
             break;
