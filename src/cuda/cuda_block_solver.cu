@@ -2562,7 +2562,8 @@ Scalar computeActiveErrors_Plane(
     // Using a fixed thread number here as otherwise if the occupancy is
     // calculated at runtime based on the system, this will lead to
     // inconsistent results from the kernel. Maybe due to shared buffer
-    // issues.
+    // issues at larger block size (more shared memory used / less iterations
+    // of the kernel)
     const int blockSize = 512;
     const int gridSize = divUp(nedges, blockSize);
     const int sharedBytes = blockSize * sizeof(Scalar);
