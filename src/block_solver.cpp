@@ -219,12 +219,12 @@ void BlockSolver::buildStructure(
             static_cast<HscSparseLinearSolver*>(linearSolver_.get());
 
         // analyze pattern of Hschur matrix (symbolic decomposition)
-        sparseLinearSolver->initialize(Hsc_);
+        sparseLinearSolver->initialize(Hsc_, cudaDevice_.getStream(2));
     }
     else
     {
         DenseLinearSolver* denseLinearSolver = static_cast<DenseLinearSolver*>(linearSolver_.get());
-        denseLinearSolver->initialize(Hpp_);
+        denseLinearSolver->initialize(Hpp_, cudaDevice_.getStream(2));
     }
 
     profItems_[PROF_ITEM_BUILD_STRUCTURE] = cudaDevice_.stopTimingEvent();

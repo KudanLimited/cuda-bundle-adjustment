@@ -57,9 +57,9 @@ public:
 
     void resize(int size);
 
-    void setPermutaion(int size, const int* P);
+    void setPermutaion(int size, const int* P, cudaStream_t stream = 0);
 
-    void analyze(int nnz, const int* csrRowPtr, const int* csrColInd);
+    void analyze(int nnz, const int* csrRowPtr, const int* csrColInd, cudaStream_t stream = 0);
 
     void factorize(const T* d_A);
 
@@ -71,7 +71,7 @@ public:
 
     Info info() const;
 
-    void downloadCSR(int* csrRowPtr, int* csrColInd);
+    void downloadCSR(int* csrRowPtr, int* csrColInd, cudaStream_t stream = 0);
 
 private:
     SparseSquareMatrixCSR<T> Acsr;
@@ -134,7 +134,7 @@ public:
 
     void resize(int size);
 
-    void allocate(int nnz, const int* csrRowPtr, const int* csrColInd);
+    void allocate(int nnz, const int* csrRowPtr, const int* csrColInd, cudaStream_t stream = 0);
 
     void factorize(const T* d_A);
 

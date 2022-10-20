@@ -195,7 +195,7 @@ void CuSparseCholeskySolver<T>::resize(int size)
 }
 
 template <typename T>
-void CuSparseCholeskySolver<T>::setPermutaion(int size, const int* P)
+void CuSparseCholeskySolver<T>::setPermutaion(int size, const int* P, cudaStream_t stream)
 {
     h_PT.resize(size);
     for (int i = 0; i < size; i++)
@@ -203,13 +203,14 @@ void CuSparseCholeskySolver<T>::setPermutaion(int size, const int* P)
         h_PT[P[i]] = i;
     }
 
-    d_P.assign(size, P);
-    d_PT.assign(size, h_PT.data());
+    d_P.assignAsync(size, P, stream);
+    d_PT.assignAsync(size, h_PT.data(), stream);
     doOrdering = true;
 }
 
 template <typename T>
-void CuSparseCholeskySolver<T>::analyze(int nnz, const int* csrRowPtr, const int* csrColInd)
+void CuSparseCholeskySolver<T>::analyze(
+    int nnz, const int* csrRowPtr, const int* csrColInd, cudaStream_t stream)
 {
     const int size = Acsr.size();
     Acsr.resizeNonZeros(nnz);
@@ -234,7 +235,7 @@ void CuSparseCholeskySolver<T>::analyze(int nnz, const int* csrRowPtr, const int
     }
     else
     {
-        Acsr.upload(nullptr, csrRowPtr, csrColInd);
+        Acsr.uploadAsync(nullptr, csrRowPtr, csrColInd, stream);
     }
 
     cholesky.analyze(Acsr);
@@ -301,9 +302,9 @@ typename CuSparseCholeskySolver<T>::Info CuSparseCholeskySolver<T>::info() const
 }
 
 template <typename T>
-void CuSparseCholeskySolver<T>::downloadCSR(int* csrRowPtr, int* csrColInd)
+void CuSparseCholeskySolver<T>::downloadCSR(int* csrRowPtr, int* csrColInd, cudaStream_t stream)
 {
-    Acsr.download(nullptr, csrRowPtr, csrColInd);
+    Acsr.downloadAsync(nullptr, csrRowPtr, csrColInd, stream);
 }
 
 /**********************************************************************************************************
@@ -539,10 +540,10 @@ void CuDenseCholeskySolver<T>::resize(int size)
 }
 
 template <typename T>
-void CuDenseCholeskySolver<T>::allocate(int nnz, const int* csrRowPtr, const int* csrColInd)
+void CuDenseCholeskySolver<T>::allocate(int nnz, const int* csrRowPtr, const int* csrColInd, cudaStream_t stream)
 {
     Acsr.resizeNonZeros(nnz);
-    Acsr.upload(nullptr, csrRowPtr, csrColInd);
+    Acsr.uploadAsync(nullptr, csrRowPtr, csrColInd, stream);
     cholesky.allocateBuffer(Acsr, Adense);
 }
 
