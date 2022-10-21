@@ -210,7 +210,7 @@ void CuSparseCholeskySolver<T>::setPermutaion(int size, const int* P, cudaStream
 
 template <typename T>
 void CuSparseCholeskySolver<T>::analyze(
-    int nnz, const int* csrRowPtr, const int* csrColInd, cudaStream_t stream)
+    int nnz, const int* csrRowPtr, const int* csrColInd, const CudaDeviceInfo& deviceInfo)
 {
     const int size = Acsr.size();
     Acsr.resizeNonZeros(nnz);
@@ -231,11 +231,12 @@ void CuSparseCholeskySolver<T>::analyze(
             Acsr.rowPtr(),
             Acsr.colInd(),
             d_map,
-            d_nnzPerRow);
+            d_nnzPerRow,
+            deviceInfo);
     }
     else
     {
-        Acsr.uploadAsync(nullptr, csrRowPtr, csrColInd, stream);
+        Acsr.uploadAsync(nullptr, csrRowPtr, csrColInd, deviceInfo.stream);
     }
 
     cholesky.analyze(Acsr);

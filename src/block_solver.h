@@ -239,8 +239,10 @@ private:
 
     /// temporary buffers
     DeviceBuffer<Scalar> d_chi_;
-    HostAsyncVec<Scalar, 40> h_tmpMax_;
-    DeviceBuffer<Scalar> d_tmpMax_;
+    HostAsyncVec<Scalar, 40> h_tmpMax_hpp_;
+    HostAsyncVec<Scalar, 40> h_tmpMax_hll_;
+    DeviceBuffer<Scalar> d_tmpMax_hpp_;
+    DeviceBuffer<Scalar> d_tmpMax_hll_;
     
     GpuVec1i d_nnzPerCol_;
 

@@ -43,7 +43,7 @@ public:
     using PermutationMatrix = Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic>;
     using Cholesky = CuSparseCholeskySolver<Scalar>;
 
-    void initialize(HschurSparseBlockMatrix& Hsc, cudaStream_t stream);
+    void initialize(HschurSparseBlockMatrix& Hsc, const CudaDeviceInfo& deviceInfo);
 
     bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) override;
 
@@ -58,7 +58,7 @@ class HppSparseLinearSolver : public LinearSolver
 public:
     using Cholesky = CuSparseCholeskySolver<Scalar>;
 
-    void initialize(HppSparseBlockMatrix& Hpp);
+    void initialize(HppSparseBlockMatrix& Hpp, const CudaDeviceInfo& deviceInfo);
 
     bool solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x) override;
 

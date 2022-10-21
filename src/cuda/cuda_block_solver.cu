@@ -1027,27 +1027,31 @@ public:
     Scalar deltaSq_;
 };
 
+// buffer used for creating the robust kernel function
+__managed__ __align__(16) char rkBuffer[128];
+__managed__ RobustKernelFunc* robustKernelFunc = nullptr;
+
 // required to create virtual functions on the device
-__global__ void createRkFunction(RobustKernelFunc** function, const RobustKernelType type, const Scalar* delta)
+__global__ void createRkFunctionKernel(const RobustKernelType type, const Scalar* delta)
 {
     if (threadIdx.x == 0 && blockIdx.x == 0)
     {
         switch (type) 
         {
             case RobustKernelType::None:
-                (*function) = new RobustKernelFunc(delta[0]);
+                robustKernelFunc = new (rkBuffer) RobustKernelFunc(delta[0]);
                 break;
-            case RobustKernelType::Turkey:
-                (*function) = new RobustKernelTurkey(delta[0]);
+            case RobustKernelType::Tukey:
+                robustKernelFunc = new (rkBuffer) RobustKernelTurkey(delta[0]);
                 break;
             case RobustKernelType::Cauchy:
-                (*function) = new RobustKernelCauchy(delta[0]);
+                robustKernelFunc = new (rkBuffer) RobustKernelCauchy(delta[0]);
                 break;
         }
     }
 }
 
-__global__ void deleteRkFunction(RobustKernelFunc** function) { delete *function; }
+__global__ void deleteRkFunctionKernel() { delete robustKernelFunc; }
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Kernel functions
@@ -1058,6 +1062,7 @@ __global__ void computeActiveErrorsKernel(
     int nedges,
     int nomegas,
     int ncameras,
+    int blockSize,
     const Se3D* se3,
     const Vec3d* Xws,
     const Vecxd<MDIM>* measurements,
@@ -1065,7 +1070,6 @@ __global__ void computeActiveErrorsKernel(
     const Vec2i* edge2PL,
     const Vec5d* cameras,
     const Scalar errorThreshold,
-    RobustKernelFunc const* const* __restrict__ robustKernel,
     Vecxd<MDIM>* errors,
     int* outliers,
     Vec3d* Xcs,
@@ -1073,11 +1077,14 @@ __global__ void computeActiveErrorsKernel(
 {
     using Vecmd = Vecxd<MDIM>;
     
-    const int sharedIdx = threadIdx.x;
-    __shared__ Scalar cache[BLOCK_ACTIVE_ERRORS];
+    const int tid = threadIdx.x;
+    extern __shared__ Scalar cache[];
 
+    int iE = blockIdx.x * blockDim.x + threadIdx.x;
+    const int gridSize = gridDim.x * blockDim.x;
     Scalar sumchi = 0;
-    for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
+
+    while (iE < nedges)
     {
         const Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
         const int iP = edge2PL[iE][0];
@@ -1106,39 +1113,17 @@ __global__ void computeActiveErrorsKernel(
 
         errors[iE] = error;
         Xcs[iE] = Xc;
-        const Scalar chi2 = (*robustKernel)->robustify(omega * squaredNorm(error));
+        const Scalar chi2 = robustKernelFunc->robustify(omega * squaredNorm(error));
         sumchi += chi2;
 
         if (errorThreshold > 0.0 && chi2 > errorThreshold)
         {
             outliers[iE] = 1;
         }
+        iE += gridSize;
     }
 
-    /* extern __shared__ Scalar cache[];
-    auto group = cg::this_thread_block();
-    auto tileIdx = group.thread_rank() / 32;
-    Scalar* tileCache = &cache[32 * tileIdx];
-
-    auto tile32 = cg::tiled_partition(group, 32);
-    Scalar tile_chi = reduce_sum(tile32, tileCache, sumchi);
-
-    if (tile32.thread_rank() == 0)
-    {
-        atomicAdd(chi, tile_chi);
-    }*/
-    cache[sharedIdx] = sumchi;
-    __syncthreads();
-
-    for (int stride = BLOCK_ACTIVE_ERRORS / 2; stride > 0; stride >>= 1)
-    {
-        if (sharedIdx < stride)
-            cache[sharedIdx] += cache[sharedIdx + stride];
-        __syncthreads();
-    }
-
-    if (sharedIdx == 0)
-        atomicAdd(chi, cache[0]);
+    parallelReductionAndAdd(cache, blockSize, tid, sumchi, chi);
 }
 
 template <int MDIM>
@@ -1154,7 +1139,6 @@ __global__ void constructQuadraticFormKernel(
     const int* edge2Hpl,
     const uint8_t* flags,
     const Vec5d* cameras,
-    RobustKernelFunc const* const* __restrict__ robustKernel,
     PxPBlockPtr Hpp,
     Px1BlockPtr bp,
     LxLBlockPtr Hll,
@@ -1181,7 +1165,7 @@ __global__ void constructQuadraticFormKernel(
     const Vec5d& camera = (ncameras > 1) ? cameras[iE] : cameras[0];
 
     const Scalar e = squaredNorm(error) * omega;
-    const Scalar rho1 = (*robustKernel)->derivative(e);
+    const Scalar rho1 = robustKernelFunc->derivative(e);
     const Scalar rhoOmega = omega * rho1;
 
     // compute Jacobians
@@ -1546,6 +1530,16 @@ void calculateOccupancy(int size, void* kernelFunc, int& outputBlockSize, int& o
        
 void waitForEvent(const cudaEvent_t event) { CUDA_CHECK(cudaEventSynchronize(event)); }
 
+void createRkFunction(RobustKernelType type, const GpuVec<Scalar>& d_delta)
+{
+    createRkFunctionKernel<<<1, 1>>>(type, d_delta.data());
+}
+
+void deleteRkFunction()
+{ 
+    deleteRkFunctionKernel<<<1, 1>>>(); 
+}
+
 void exclusiveScan(const int* src, int* dst, int size)
 {
     auto ptrSrc = thrust::device_pointer_cast(src);
@@ -1558,11 +1552,14 @@ void buildHplStructure(
     GpuHplBlockMat& Hpl,
     GpuVec1i& indexPL,
     GpuVec1i& nnzPerCol,
-    cudaStream_t stream)
+    const CudaDeviceInfo& deviceInfo1,
+    const CudaDeviceInfo& deviceInfo2)
 {
     const int nblocks = Hpl.nnz();
-    const int block = 1024;
-    const int grid = divUp(nblocks, block);
+    int blockSize;
+    int gridSize;
+    calculateOccupancy(nblocks, (void*)nnzPerColKernel, blockSize, gridSize);
+
     int* colPtr = Hpl.outerIndices();
     int* rowInd = Hpl.innerIndices();
 
@@ -1570,24 +1567,35 @@ void buildHplStructure(
     thrust::sort(ptrBlockPos, ptrBlockPos + nblocks, LessColId());
 
     CUDA_CHECK(cudaMemset(nnzPerCol, 0, sizeof(int) * (Hpl.cols() + 1)));
-    nnzPerColKernel<<<grid, block, 0, stream>>>(blockpos, nblocks, nnzPerCol);
+    nnzPerColKernel<<<gridSize, blockSize, 0, deviceInfo1.stream>>>(blockpos, nblocks, nnzPerCol);
+    CUDA_CHECK(cudaEventRecord(deviceInfo1.event, deviceInfo1.stream));
+
+    setRowIndKernel<<<gridSize, blockSize, 0 , deviceInfo2.stream>>>(blockpos, nblocks, rowInd, indexPL);
+    CUDA_CHECK(cudaEventRecord(deviceInfo2.event, deviceInfo2.stream));
+
+    CUDA_CHECK(cudaEventRecord(deviceInfo1.event, deviceInfo1.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo1.event));
+
     exclusiveScan(nnzPerCol, colPtr, Hpl.cols() + 1);
-    setRowIndKernel<<<grid, block, 0 ,stream>>>(blockpos, nblocks, rowInd, indexPL);
+
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo2.event));
+    CUDA_CHECK(cudaGetLastError());
 }
 
 void findHschureMulBlockIndices(
     const GpuHplBlockMat& Hpl,
     const GpuHscBlockMat& Hsc,
     GpuVec3i& mulBlockIds,
-    cudaStream_t stream)
+    const CudaDeviceInfo& deviceInfo)
 {
-    const int block = 1024;
-    const int grid = 16;
+    int blockSize;
+    int gridSize;
+    calculateOccupancy(Hpl.cols(), (void*)nnzPerColKernel, blockSize, gridSize);
 
     DeviceBuffer<int> nindices(1);
     nindices.fillZero();
 
-    findHschureMulBlockIndicesKernel<<<grid, block, 0, stream>>>(
+    findHschureMulBlockIndicesKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(
         Hpl.cols(),
         Hpl.outerIndices(),
         Hpl.innerIndices(),
@@ -1595,10 +1603,13 @@ void findHschureMulBlockIndices(
         Hsc.innerIndices(),
         mulBlockIds,
         nindices);
-    CUDA_CHECK(cudaGetLastError());
-
+    
     auto ptrSrc = thrust::device_pointer_cast(mulBlockIds.data());
     thrust::sort(ptrSrc, ptrSrc + mulBlockIds.size(), LessRowId());
+
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
+    CUDA_CHECK(cudaGetLastError());
 }
 
 template <int M>
@@ -1638,13 +1649,10 @@ Scalar computeActiveErrors_<2>(
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
-    const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = 16;
-    const int sharedBytes = block * sizeof(Scalar);
 
-    RobustKernelFunc** d_function;
-    cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
-    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
+    const int blockSize = 64;
+    const int gridSize = divUp(nedges, blockSize);
+    const int sharedBytes = blockSize * sizeof(Scalar);
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     if (errorThreshold > 0.0)
@@ -1652,10 +1660,11 @@ Scalar computeActiveErrors_<2>(
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
 
-    computeActiveErrorsKernel<2><<<grid, block, 0, deviceInfo.stream>>>(
+    computeActiveErrorsKernel<2><<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
         nedges,
         nomegas,
         ncameras,
+        blockSize,
         poseEstimate,
         landmarkEstimate,
         measurements,
@@ -1663,19 +1672,19 @@ Scalar computeActiveErrors_<2>(
         edge2PL,
         cameras,
         errorThreshold,
-        d_function,
         errors,
         outliers,
         Xcs,
         chi);
-    CUDA_CHECK(cudaGetLastError());
    
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
+    hAsyncScalar h_chi;
+    h_chi.download(chi, deviceInfo.stream);
 
-    deleteRkFunction<<<1, 1>>>(d_function);
-    
-    return h_chi;
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
+
+    return *h_chi;
 }
 
 template <>
@@ -1697,13 +1706,10 @@ Scalar computeActiveErrors_<3>(
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
-    const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = divUp(nedges, block);
-    const int sharedBytes = block * sizeof(Scalar);
 
-    RobustKernelFunc** d_function;
-    cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
-    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
+    const int blockSize = 64;
+    const int gridSize = divUp(nedges, blockSize);
+    const int sharedBytes = blockSize * sizeof(Scalar);
 
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     if (errorThreshold > 0.0)
@@ -1711,10 +1717,11 @@ Scalar computeActiveErrors_<3>(
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
 
-    computeActiveErrorsKernel<3><<<grid, block, 0, deviceInfo.stream>>>(
+    computeActiveErrorsKernel<3><<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
         nedges,
         nomegas,
         ncameras,
+        blockSize,
         poseEstimate,
         landmarkEstimate,
         measurements,
@@ -1722,19 +1729,19 @@ Scalar computeActiveErrors_<3>(
         edge2PL,
         cameras,
         errorThreshold,
-        d_function,
         errors,
         outliers,
         Xcs,
         chi);
-    CUDA_CHECK(cudaGetLastError());
     
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
+    hAsyncScalar h_chi;
+    h_chi.download(chi, deviceInfo.stream);
 
-    deleteRkFunction<<<1, 1>>>(d_function);
-    
-    return h_chi;
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
+
+    return *h_chi;
 }
 
 template <int M>
@@ -1781,10 +1788,6 @@ void constructQuadraticForm_<2>(
     const int block = 512;
     const int grid = divUp(nedges, block);
 
-    RobustKernelFunc** d_function;
-    cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
-    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
-
     constructQuadraticFormKernel<2><<<grid, block, 0, deviceInfo.stream>>>(
         nedges,
         nomegas,
@@ -1797,15 +1800,12 @@ void constructQuadraticForm_<2>(
         edge2Hpl,
         flags,
         cameras,
-        d_function,
         Hpp,
         bp,
         Hll,
         bl,
         Hpl);
     CUDA_CHECK(cudaGetLastError());
-
-    deleteRkFunction<<<1, 1>>>(d_function);
 }
 
 template <>
@@ -1832,10 +1832,6 @@ void constructQuadraticForm_<3>(
     const int block = 512;
     const int grid = divUp(nedges, block);
 
-    RobustKernelFunc** d_function;
-    cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
-    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
-
     constructQuadraticFormKernel<3><<<grid, block, 0, deviceInfo.stream>>>(
         nedges,
         nomegas,
@@ -1848,15 +1844,12 @@ void constructQuadraticForm_<3>(
         edge2Hpl,
         flags,
         cameras,
-        d_function,
         Hpp,
         bp,
         Hll,
         bl,
         Hpl);
     CUDA_CHECK(cudaGetLastError());
-
-    deleteRkFunction<<<1, 1>>>((RobustKernelFunc**)d_function);
 }
 
 template <typename T, int DIM>
@@ -1866,6 +1859,7 @@ Scalar maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* d_maxD, Sca
     int gridSize;
     int blockSize;
     calculateOccupancy(size, (void*)maxDiagonalKernel<DIM>, blockSize, gridSize);
+    gridSize = 4;
 
     int sharedBytes = sizeof(Scalar) * blockSize;
 
@@ -1965,16 +1959,19 @@ void computeBschure(
     GpuPx1BlockVec& bsc,
     GpuLxLBlockVec& invHll,
     GpuPxLBlockVec& Hpl_invHll,
-    const cudaStream_t& stream)
+    const CudaDeviceInfo& deviceInfo)
 {
     const int cols = Hll.size();
-    const int block = 256;
-    const int grid = divUp(cols, block);
+    int blockSize;
+    int gridSize;
+    calculateOccupancy(cols, (void*)computeBschureKernel, blockSize, gridSize);
 
     bp.copyTo(bsc);
-    computeBschureKernel<<<grid, block, 0, stream>>>(
+    computeBschureKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(
         cols, Hll, invHll, bl, Hpl, Hpl.outerIndices(), Hpl.innerIndices(), bsc, Hpl_invHll);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
 }
 
 void computeHschure(
@@ -1983,16 +1980,27 @@ void computeHschure(
     const GpuHplBlockMat& Hpl,
     const GpuVec3i& mulBlockIds,
     GpuHscBlockMat& Hsc,
-    const cudaStream_t& stream)
+    const CudaDeviceInfo& deviceInfo)
 {
     const int nmulBlocks = mulBlockIds.ssize();
-    const int block = 256;
-    const int grid1 = divUp(Hsc.rows(), block);
-    const int grid2 = divUp(nmulBlocks, block);
 
+    int blockSize;
+    int gridSize;
+    calculateOccupancy(Hsc.rows(), (void*)initializeHschurKernel, blockSize, gridSize);
+   
     Hsc.fillZero();
-    initializeHschurKernel<<<grid1, block, 0, stream>>>(Hsc.rows(), Hpp, Hsc, Hsc.outerIndices());
-    computeHschureKernel<<<grid2, block, 0, stream>>>(nmulBlocks, mulBlockIds, Hpl_invHll, Hpl, Hsc);
+    initializeHschurKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(Hsc.rows(), Hpp, Hsc, Hsc.outerIndices());
+
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
+
+    calculateOccupancy(nmulBlocks, (void*)computeHschureKernel, blockSize, gridSize);
+
+    computeHschureKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(
+        nmulBlocks, mulBlockIds, Hpl_invHll, Hpl, Hsc);
+
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
     CUDA_CHECK(cudaGetLastError());
 }
 
@@ -2000,12 +2008,18 @@ void convertHschureBSRToCSR(
     const GpuHscBlockMat& HscBSR,
     const GpuVec1i& BSR2CSR,
     GpuVec1d& HscCSR,
-    const cudaStream_t& stream)
+    const CudaDeviceInfo& deviceInfo)
 {
     const int size = HscCSR.ssize();
-    const int block = 1024;
-    const int grid = divUp(size, block);
-    convertBSRToCSRKernel<<<grid, block, 0, stream>>>(size, HscBSR.values(), HscCSR, BSR2CSR);
+    int blockSize;
+    int gridSize;
+    calculateOccupancy(size, (void*)convertBSRToCSRKernel, blockSize, gridSize);
+
+    convertBSRToCSRKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(size, HscBSR.values(), HscCSR, BSR2CSR);
+
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
+    CUDA_CHECK(cudaGetLastError());
 }
 
 void convertHppBSRToCSR(const GpuHppBlockMat& HppBSR, const GpuVec1i& BSR2CSR, GpuVec1d& HppCSR)
@@ -2025,17 +2039,31 @@ void twistCSR(
     int* dstRowPtr,
     int* dstColInd,
     int* dstMap,
-    int* nnzPerRow)
+    int* nnzPerRow,
+    const CudaDeviceInfo& deviceInfo)
 {
-    const int block = 512;
-    const int grid = divUp(size, block);
+    int blockSize;
+    int gridSize;
+    calculateOccupancy(size, (void*)permuteNnzPerRowKernel, blockSize, gridSize);
 
-    permuteNnzPerRowKernel<<<grid, block>>>(size, srcRowPtr, P, nnzPerRow);
+    // permute rows
+    permuteNnzPerRowKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(size, srcRowPtr, P, nnzPerRow);
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
+
     exclusiveScan(nnzPerRow, dstRowPtr, size + 1);
+
     CUDA_CHECK(
         cudaMemcpy(nnzPerRow, dstRowPtr, sizeof(int) * (size + 1), cudaMemcpyDeviceToDevice));
-    permuteColIndKernel<<<grid, block>>>(
+
+    // permute cols
+    calculateOccupancy(size, (void*)permuteColIndKernel, blockSize, gridSize);
+    permuteColIndKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(
         size, srcRowPtr, srcColInd, P, dstColInd, dstMap, nnzPerRow);
+    
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
+    CUDA_CHECK(cudaGetLastError());
 }
 
 void permute(int size, const Scalar* src, Scalar* dst, const int* P)
@@ -2051,13 +2079,18 @@ void schurComplementPost(
     const GpuLx1BlockVec& bl,
     const GpuHplBlockMat& Hpl,
     const GpuPx1BlockVec& xp,
-    GpuLx1BlockVec& xl)
+    GpuLx1BlockVec& xl,
+    const CudaDeviceInfo& deviceInfo)
 {
-    const int block = 1024;
-    const int grid = divUp(Hpl.cols(), block);
+    int blockSize;
+    int gridSize;
+    calculateOccupancy(Hpl.cols(), (void*)schurComplementPostKernel, blockSize, gridSize);
 
-    schurComplementPostKernel<<<grid, block>>>(
+    schurComplementPostKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(
         Hpl.cols(), invHll, bl, Hpl, Hpl.outerIndices(), Hpl.innerIndices(), xp, xl);
+
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
     CUDA_CHECK(cudaGetLastError());
 }
 
@@ -2229,7 +2262,6 @@ __global__ void computeActiveErrorsKernel_DepthBa(
     const Vec2i* edge2PL,
     const Vec5d* cameras,
     const Scalar errorThreshold,
-    RobustKernelFunc const* const* __restrict__ robustKernel,
     Vec3d* errors,
     int* outliers,
     Vec3d* Xcs,
@@ -2264,7 +2296,7 @@ __global__ void computeActiveErrorsKernel_DepthBa(
         errors[iE] = error;
         Xcs[iE] = Xc;
 
-        const Scalar chi2 = (*robustKernel)->robustify(omega * squaredNorm(error));
+        const Scalar chi2 = robustKernelFunc->robustify(omega * squaredNorm(error));
         sumchi += chi2;
         if (errorThreshold > 0.0 && chi2 > errorThreshold)
         {
@@ -2482,10 +2514,6 @@ Scalar computeActiveErrors_DepthBa(
     const int block = BLOCK_ACTIVE_ERRORS;
     const int grid = 16;
 
-    RobustKernelFunc** d_function;
-    cudaMalloc(&d_function, sizeof(RobustKernelFunc**));
-    createRkFunction<<<1, 1>>>(d_function, robustKernel.type, robustKernel.d_delta.data());
-
     if (errorThreshold > 0.0)
     {
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
@@ -2503,7 +2531,6 @@ Scalar computeActiveErrors_DepthBa(
         edge2PL,
         cameras,
         errorThreshold,
-        d_function,
         errors,
         outliers,
         Xcs,
@@ -2512,9 +2539,7 @@ Scalar computeActiveErrors_DepthBa(
     
     Scalar h_chi = 0;
     CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-
-    deleteRkFunction<<<1, 1>>>((RobustKernelFunc**)d_function);
-    
+  
     return h_chi;
 }
 

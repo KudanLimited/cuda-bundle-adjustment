@@ -59,7 +59,7 @@ public:
 
     void setPermutaion(int size, const int* P, cudaStream_t stream = 0);
 
-    void analyze(int nnz, const int* csrRowPtr, const int* csrColInd, cudaStream_t stream = 0);
+    void analyze(int nnz, const int* csrRowPtr, const int* csrColInd, const CudaDeviceInfo& deviceInfo);
 
     void factorize(const T* d_A);
 

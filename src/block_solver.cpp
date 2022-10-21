@@ -162,7 +162,12 @@ void BlockSolver::buildStructure(
         // build Hpl block matrix structure
         d_HplBlockPos_.assignAsync(nVertexBlockPos, HplblockPos_.data(), cudaDevice_.getStream(3));
         gpu::buildHplStructure(
-            d_HplBlockPos_, d_Hpl_, d_edge2Hpl_, d_nnzPerCol_, cudaDevice_.getStream(3));
+            d_HplBlockPos_,
+            d_Hpl_,
+            d_edge2Hpl_,
+            d_nnzPerCol_,
+            cudaDevice_.getStreamAndEvent(3),
+            cudaDevice_.getStreamAndEvent(4));
 
         // build host Hschur sparse block matrix structure
         Hsc_.resize(numP_, numP_);
@@ -185,12 +190,13 @@ void BlockSolver::buildStructure(
 
         d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
         gpu::findHschureMulBlockIndices(
-            d_Hpl_, d_Hsc_, d_HscMulBlockIds_);
+            d_Hpl_, d_Hsc_, d_HscMulBlockIds_, cudaDevice_.getStreamAndEvent(3));
 
         d_bsc_.resize(numP_);
         d_Hpl_invHll_.resize(nVertexBlockPos);
         d_HllBackup_.resize(numL_);
         d_invHll_.resize(numL_);
+        d_tmpMax_hll_.resize(40);
 
         d_xl_.map(numL_, d_x_.data() + numP_ * PDIM);
         d_bl_.map(numL_, d_b_.data() + numP_ * PDIM);
@@ -211,15 +217,15 @@ void BlockSolver::buildStructure(
 
     d_HppBackup_.resize(numP_);
     d_chi_.resize(1);
-    d_tmpMax_.resize(40);
-
+    d_tmpMax_hpp_.resize(40);
+   
     if (doSchur_)
     {
         HscSparseLinearSolver* sparseLinearSolver =
             static_cast<HscSparseLinearSolver*>(linearSolver_.get());
 
         // analyze pattern of Hschur matrix (symbolic decomposition)
-        sparseLinearSolver->initialize(Hsc_, cudaDevice_.getStream(2));
+        sparseLinearSolver->initialize(Hsc_, cudaDevice_.getStreamAndEvent(2));
     }
     else
     {
@@ -237,14 +243,15 @@ double BlockSolver::computeErrors(
     cudaDevice_.startTimingEvent();
 
     Scalar accumChi = 0;
-
+    uint8_t streamId = 0;
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
         if (!edgeSet->nedges())
         {
             continue;
         }
-        const Scalar chi = edgeSet->computeError(vertexSets, d_chi_, cudaDevice_.getStreamAndEvent(0));
+        const Scalar chi = edgeSet->computeError(vertexSets, d_chi_, cudaDevice_.getStreamAndEvent(streamId++));
+        assert(streamId < CudaDevice::MaxStreamCount);
         accumChi += chi;
     }
 
@@ -291,11 +298,11 @@ void BlockSolver::buildSystem(
 double BlockSolver::maxDiagonal()
 {
     const Scalar maxP = gpu::maxDiagonal(
-        d_Hpp_, d_tmpMax_.data(), h_tmpMax_.values(), cudaDevice_.getStreamAndEvent(0));
+        d_Hpp_, d_tmpMax_hpp_.data(), h_tmpMax_hpp_.values(), cudaDevice_.getStreamAndEvent(0));
     if (doSchur_)
     {
         const Scalar maxL = gpu::maxDiagonal(
-            d_Hll_, d_tmpMax_.data(), h_tmpMax_.values(), cudaDevice_.getStreamAndEvent(1));
+            d_Hll_, d_tmpMax_hll_.data(), h_tmpMax_hll_.values(), cudaDevice_.getStreamAndEvent(1));
         return std::max(maxP, maxL);
     }
     return maxP;
@@ -338,12 +345,21 @@ bool BlockSolver::solve()
     // Schur complement
     // bSc = -bp + Hpl*Hll^-1*bl
     // HSc = Hpp - Hpl*Hll^-1*HplT
-    gpu::computeBschure(d_bp_, d_Hpl_, d_Hll_, d_bl_, d_bsc_, d_invHll_, d_Hpl_invHll_);
-    gpu::computeHschure(d_Hpp_, d_Hpl_invHll_, d_Hpl_, d_HscMulBlockIds_, d_Hsc_);
+    gpu::computeBschure(
+        d_bp_,
+        d_Hpl_,
+        d_Hll_,
+        d_bl_,
+        d_bsc_,
+        d_invHll_,
+        d_Hpl_invHll_,
+        cudaDevice_.getStreamAndEvent(3));
+    gpu::computeHschure(
+        d_Hpp_, d_Hpl_invHll_, d_Hpl_, d_HscMulBlockIds_, d_Hsc_, cudaDevice_.getStreamAndEvent(3));
 
     // Solve linear equation about Δxp
     // HSc*Δxp = bp
-    gpu::convertHschureBSRToCSR(d_Hsc_, d_BSR2CSR_, d_HscCSR_);
+    gpu::convertHschureBSRToCSR(d_Hsc_, d_BSR2CSR_, d_HscCSR_, cudaDevice_.getStreamAndEvent(3));
     const bool success = linearSolver_->solve(d_HscCSR_, d_bsc_.values(), d_xp_.values());
     if (!success)
     {
@@ -352,7 +368,8 @@ bool BlockSolver::solve()
 
     // Solve linear equation about Δxl
     // Hll*Δxl = -bl - HplT*Δxp
-    gpu::schurComplementPost(d_invHll_, d_bl_, d_Hpl_, d_xp_, d_xl_);
+    gpu::schurComplementPost(
+        d_invHll_, d_bl_, d_Hpl_, d_xp_, d_xl_, cudaDevice_.getStreamAndEvent(3));
     
     profItems_[PROF_ITEM_SCHUR_COMPLEMENT] = cudaDevice_.stopTimingEvent();
 

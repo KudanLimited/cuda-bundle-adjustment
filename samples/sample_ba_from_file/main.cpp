@@ -162,6 +162,7 @@ static cugo::CudaGraphOptimisation::Ptr readGraph(const std::string& filename)
     // read camera parameters
     optimizer->addEdgeSet<cugo::MonoEdgeSet>(monoEdgeSet);
     optimizer->addEdgeSet<cugo::StereoEdgeSet>(stereoEdgeSet);
+    stereoEdgeSet->setRobustKernel(cugo::RobustKernelType::None, 1.0);
 
     // "warm-up" to avoid overhead
     optimizer->initialize();
