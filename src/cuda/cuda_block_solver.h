@@ -21,11 +21,12 @@ limitations under the License.
 #include "fixed_vector.h"
 #include "graph_optimisation_options.h"
 #include "measurements.h"
-#include "robust_kernel.h"
 #include "cuda_device.h"
+#include "robust_kernel.h"
 
 namespace cugo
 {
+
 namespace gpu
 {
 
@@ -57,18 +58,23 @@ void recordEvent(const CudaDeviceInfo& info);
 
 void waitForEvent(const cudaEvent_t event);
 
+void createRkFunction(RobustKernelType type, const GpuVec<Scalar>& d_delta);
+
+void deleteRkFunction();
+
 void buildHplStructure(
     GpuVec3i& blockpos,
     GpuHplBlockMat& Hpl,
     GpuVec1i& indexPL,
     GpuVec1i& nnzPerCol,
-    cudaStream_t stream = 0);
+    const CudaDeviceInfo& deviceInfo1,
+    const CudaDeviceInfo& deviceInfo2);
 
 void findHschureMulBlockIndices(
     const GpuHplBlockMat& Hpl,
     const GpuHscBlockMat& Hsc,
     GpuVec3i& mulBlockIds,
-    cudaStream_t stream = 0);
+    const CudaDeviceInfo& deviceInfo);
 
 Scalar maxDiagonal(
     const GpuPxPBlockVec& Hpp, Scalar* d_maxD, Scalar* h_tmpMax, const CudaDeviceInfo& deviceInfo);
@@ -93,7 +99,7 @@ void computeBschure(
     GpuPx1BlockVec& bsc,
     GpuLxLBlockVec& invHll,
     GpuPxLBlockVec& Hpl_invHll,
-    const cudaStream_t& stream = 0);
+    const CudaDeviceInfo& deviceInfo);
 
 void computeHschure(
     const GpuPxPBlockVec& Hpp,
@@ -101,13 +107,13 @@ void computeHschure(
     const GpuHplBlockMat& Hpl,
     const GpuVec3i& mulBlockIds,
     GpuHscBlockMat& Hsc,
-    const cudaStream_t& stream = 0);
+    const CudaDeviceInfo& deviceInfo);
 
 void convertHschureBSRToCSR(
     const GpuHscBlockMat& HscBSR,
     const GpuVec1i& BSR2CSR,
     GpuVec1d& HscCSR,
-    const cudaStream_t& stream = 0);
+    const CudaDeviceInfo& deviceInfo);
 
 void convertHppBSRToCSR(const GpuHppBlockMat& HppBSR, const GpuVec1i& BSR2CSR, GpuVec1d& HppCSR);
 
@@ -120,7 +126,8 @@ void twistCSR(
     int* dstRowPtr,
     int* dstColInd,
     int* dstMap,
-    int* nnzPerRow);
+    int* nnzPerRow,
+    const CudaDeviceInfo& deviceInfo);
 
 void permute(int size, const Scalar* src, Scalar* dst, const int* P);
 
@@ -129,7 +136,8 @@ void schurComplementPost(
     const GpuLx1BlockVec& bl,
     const GpuHplBlockMat& Hpl,
     const GpuPx1BlockVec& xp,
-    GpuLx1BlockVec& xl);
+    GpuLx1BlockVec& xl,
+    const CudaDeviceInfo& deviceInfo);
 
 void updatePoses(const GpuPx1BlockVec& xp, GpuVecSe3d& estimate, const CudaDeviceInfo& deviceInfo);
 

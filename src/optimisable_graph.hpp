@@ -370,14 +370,7 @@ template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::setRobustKernel(
     const RobustKernelType type, Scalar delta) noexcept
 {
-    this->kernel.type = type;
-    this->kernel.delta = delta;
-}
-
-template <int DIM, typename E, typename... VertexTypes>
-RobustKernel& EdgeSet<DIM, E, VertexTypes...>::robustKernel() noexcept
-{
-    return kernel;
+    kernel.create(type, delta);
 }
 
 template <int DIM, typename E, typename... VertexTypes>
@@ -559,8 +552,6 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     if (outlierThreshold > 0.0)
     {
         d_outliers.resize(activeEdgeSize_);
-        // upload the robust kernel delta value
-        kernel.d_delta.assign(1, &kernel.delta);
     }
     if (edge2HData)
     {

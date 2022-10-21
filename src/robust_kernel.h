@@ -3,6 +3,8 @@
 #include "scalar.h"
 #include "device_matrix.h"
 
+#include <cassert>
+
 namespace cugo
 {
 
@@ -10,20 +12,25 @@ enum class RobustKernelType
 {
     None,
     Cauchy,
-    Turkey
+    Tukey
 };
 
 /**
  * @brief Robust kernel paramters.
  */
-struct RobustKernel
+class RobustKernel
 {
-    RobustKernel() : type(RobustKernelType::None), delta(1.0) {}
-    RobustKernel(const RobustKernelType t, Scalar d) : type(t), delta(d) {}
+public:
 
-    RobustKernelType type;
-    Scalar delta;
-    GpuVec<Scalar> d_delta;
+    RobustKernel();
+    ~RobustKernel();
+
+    void create(const RobustKernelType type, const Scalar delta);
+
+private:
+
+    GpuVec<Scalar> d_delta_;
+    bool isInit_;
 };
 
 } // namespace cugo

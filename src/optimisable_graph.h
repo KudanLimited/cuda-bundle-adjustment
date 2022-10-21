@@ -571,13 +571,6 @@ public:
     virtual void setRobustKernel(const RobustKernelType type, Scalar delta) noexcept = 0;
 
     /**
-     * @brief Get the Robust Kernel associated with this set.
-     * @return A pointer to the RobustKernel class associated with this set. If not set, will be
-     * nullptr.
-     */
-    virtual RobustKernel& robustKernel() noexcept = 0;
-
-    /**
      * @brief Sets the information for this edge set.
      * Note: option @p perEdgeInformation must be false when using this function
      */
@@ -690,7 +683,6 @@ public:
     const EdgeContainer& get() noexcept;
     const int dim() const noexcept override;
     void setRobustKernel(const RobustKernelType type, Scalar delta) noexcept override;
-    RobustKernel& robustKernel() noexcept override;
     void clearEdges() noexcept override;
     void setInformation(const Information info) noexcept override;
     Information getInformation() noexcept override;
@@ -719,7 +711,7 @@ protected:
     EdgeContainer edges;
     /// The number of active edges (has a non-fixed vertex)
     size_t activeEdgeSize_;
-    /// The robust kernal associated with this edge set. Defaults to None.
+    /// The robust kernal parameters associated with this edge set.
     RobustKernel kernel;
     /// The threshold in which an error is considered a outlier
     Scalar outlierThreshold;

@@ -23,7 +23,8 @@ limitations under the License.
 
 namespace cugo
 {
-void HscSparseLinearSolver::initialize(HschurSparseBlockMatrix& Hsc, cudaStream_t stream)
+void HscSparseLinearSolver::initialize(
+    HschurSparseBlockMatrix& Hsc, const CudaDeviceInfo& deviceInfo)
 {
     const int size = Hsc.rows();
     const int nnz = Hsc.nnzSymm();
@@ -33,10 +34,10 @@ void HscSparseLinearSolver::initialize(HschurSparseBlockMatrix& Hsc, cudaStream_
     // set permutation
     P_.resize(size);
     cholesky_.reordering(size, nnz, Hsc.rowPtr(), Hsc.colInd(), P_.data());
-    cholesky_.setPermutaion(size, P_.data(), stream);
+    cholesky_.setPermutaion(size, P_.data(), deviceInfo.stream);
 
     // analyze
-    cholesky_.analyze(nnz, Hsc.rowPtr(), Hsc.colInd(), stream);
+    cholesky_.analyze(nnz, Hsc.rowPtr(), Hsc.colInd(), deviceInfo);
 }
 
 bool HscSparseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x)
@@ -54,7 +55,7 @@ bool HscSparseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* 
     return true;
 }
 
-void HppSparseLinearSolver::initialize(HppSparseBlockMatrix& Hpp)
+void HppSparseLinearSolver::initialize(HppSparseBlockMatrix& Hpp, const CudaDeviceInfo& deviceInfo)
 {
     const int size = Hpp.rows();
     const int nnz = Hpp.nnzSymm();
@@ -62,7 +63,7 @@ void HppSparseLinearSolver::initialize(HppSparseBlockMatrix& Hpp)
     cholesky_.resize(size);
 
     // analyze
-    cholesky_.analyze(nnz, Hpp.rowPtr(), Hpp.colInd());
+    cholesky_.analyze(nnz, Hpp.rowPtr(), Hpp.colInd(), deviceInfo);
 }
 
 bool HppSparseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x)
