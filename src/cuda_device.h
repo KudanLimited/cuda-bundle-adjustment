@@ -27,7 +27,7 @@ public:
     static constexpr int MaxEventCount = 8;
 
     using StreamContainer = std::array<cudaStream_t, MaxStreamCount>;
-    using EventContainer = std::array<cudaEvent_t, MaxStreamCount>;
+    using EventContainer = std::array<cudaEvent_t, MaxEventCount>;
 
     CudaDevice() { init(); }
     ~CudaDevice();

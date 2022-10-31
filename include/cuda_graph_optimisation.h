@@ -218,6 +218,7 @@ public:
     bool addEdgeSet(T* edgeSet)
     {
         assert(edgeSet != nullptr);
+        edgeSet->getRobustKernel().setDeviceInfo(cudaDevice_.getStreamAndEvent(0));
         edgeSets.push_back(edgeSet);
         return true;
     }
