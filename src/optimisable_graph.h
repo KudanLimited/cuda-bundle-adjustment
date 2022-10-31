@@ -570,6 +570,8 @@ public:
      */
     virtual void setRobustKernel(const RobustKernelType type, Scalar delta) noexcept = 0;
 
+    virtual RobustKernel& getRobustKernel() noexcept = 0;
+
     /**
      * @brief Sets the information for this edge set.
      * Note: option @p perEdgeInformation must be false when using this function
@@ -683,6 +685,7 @@ public:
     const EdgeContainer& get() noexcept;
     const int dim() const noexcept override;
     void setRobustKernel(const RobustKernelType type, Scalar delta) noexcept override;
+    RobustKernel& getRobustKernel() noexcept;
     void clearEdges() noexcept override;
     void setInformation(const Information info) noexcept override;
     Information getInformation() noexcept override;

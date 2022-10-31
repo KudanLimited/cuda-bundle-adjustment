@@ -58,9 +58,8 @@ void recordEvent(const CudaDeviceInfo& info);
 
 void waitForEvent(const cudaEvent_t event);
 
-void createRkFunction(RobustKernelType type, const GpuVec<Scalar>& d_delta);
-
-void deleteRkFunction();
+void createRkFunction(
+    RobustKernelType type, const GpuVec<Scalar>& d_delta, const CudaDeviceInfo& deviceInfo);
 
 void buildHplStructure(
     GpuVec3i& blockpos,

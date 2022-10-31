@@ -374,6 +374,12 @@ void EdgeSet<DIM, E, VertexTypes...>::setRobustKernel(
 }
 
 template <int DIM, typename E, typename... VertexTypes>
+RobustKernel& EdgeSet<DIM, E, VertexTypes...>::getRobustKernel() noexcept
+{
+    return kernel;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::setOutlierThreshold(const Scalar errorThreshold) noexcept
 {
     this->outlierThreshold = errorThreshold;

@@ -1530,14 +1530,12 @@ void calculateOccupancy(int size, void* kernelFunc, int& outputBlockSize, int& o
        
 void waitForEvent(const cudaEvent_t event) { CUDA_CHECK(cudaEventSynchronize(event)); }
 
-void createRkFunction(RobustKernelType type, const GpuVec<Scalar>& d_delta)
+void createRkFunction(
+    RobustKernelType type, const GpuVec<Scalar>& d_delta, const CudaDeviceInfo& deviceInfo)
 {
-    createRkFunctionKernel<<<1, 1>>>(type, d_delta.data());
-}
-
-void deleteRkFunction()
-{ 
-    deleteRkFunctionKernel<<<1, 1>>>(); 
+    createRkFunctionKernel<<<1, 1, 0, deviceInfo.stream>>>(type, d_delta.data());
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
 }
 
 void exclusiveScan(const int* src, int* dst, int size)

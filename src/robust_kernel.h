@@ -2,6 +2,7 @@
 
 #include "scalar.h"
 #include "device_matrix.h"
+#include "cuda_device.h"
 
 #include <cassert>
 
@@ -21,16 +22,16 @@ enum class RobustKernelType
 class RobustKernel
 {
 public:
-
     RobustKernel();
     ~RobustKernel();
 
     void create(const RobustKernelType type, const Scalar delta);
+    void setDeviceInfo(const CudaDeviceInfo& deviceInfo);
 
 private:
+    CudaDeviceInfo deviceInfo_;
 
     GpuVec<Scalar> d_delta_;
-    bool isInit_;
 };
 
 } // namespace cugo
