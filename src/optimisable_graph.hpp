@@ -314,6 +314,18 @@ Camera& Edge<DIM, E, VertexTypes...>::getCamera() noexcept
     return camera_;
 }
 
+template <int DIM, typename E, typename... VertexTypes>
+void Edge<DIM, E, VertexTypes...>::inactivate() noexcept
+{
+    isActive_ = false;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+void Edge<DIM, E, VertexTypes...>::setActive() noexcept
+{
+    isActive_ = true;
+}
+
 // EdgeSet functions
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::addEdge(BaseEdge* edge)
@@ -487,7 +499,7 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
     edgeFlags = arena.allocate<uint8_t>(activeEdgeSize_);
     omegas = arena.allocate<Scalar>(omegaSize);
     cameras = arena.allocate<Vec5d>(cameraSize);
-
+    
     if (!options.perEdgeInformation)
     {
         omegas->push_back(ScalarCast(info_));
@@ -521,11 +533,12 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
                     edge->getVertex(0)->isFixed(), edge->getVertex(1)->isFixed()));
                 isActive = true;
             }
+            // if both vertices contribute to the optimistaion graph for this edge, then these will be
+            // used in the Hpl matrix.
             if (doSchur && !edge->getVertex(0)->isFixed() && !edge->getVertex(1)->isFixed())
             {
                 hBlockPosArena.push_back({vec[0], vec[1], edgeId});
             }
-            
         }
 
         if (isActive)
@@ -553,12 +566,12 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     // buffers filled by the gpu kernels.
     d_errors.resize(activeEdgeSize_);
     d_Xcs.resize(activeEdgeSize_);
+    d_chiValues.resize(activeEdgeSize_);
 
     d_outlierThreshold.assign(1, &outlierThreshold);
-    if (outlierThreshold > 0.0)
-    {
-        d_outliers.resize(activeEdgeSize_);
-    }
+    d_outliers.resize(activeEdgeSize_);
+    d_outliers.fillZero();
+
     if (edge2HData)
     {
         d_edge2Hpl.map(activeEdgeSize_, edge2HData);
@@ -577,30 +590,38 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
 }
 
 template <int DIM, typename E, typename... VertexTypes>
-void EdgeSet<DIM, E, VertexTypes...>::updateEdges() noexcept
+void EdgeSet<DIM, E, VertexTypes...>::updateEdges(const CudaDeviceInfo& deviceInfo) noexcept
 {
-    std::vector<int> edgeOutliers;
-    std::vector<BaseEdge*> edgesToRemove;
+    if (!edges.size())
+    {
+        return;
+    }
 
     if (outlierThreshold > 0.0)
     {
-        edgeOutliers.resize(activeEdgeSize_);
-        d_outliers.download(edgeOutliers.data());
+        const size_t nedges = edges.size();
+        gpu::computeOutliers(nedges, outlierThreshold, d_chiValues, d_outliers, deviceInfo);
+        
+        std::vector<BaseEdge*> edgesToRemove;
+        edgeOutliers_.resize(activeEdgeSize_);
+        d_outliers.download(edgeOutliers_.data());
         
         size_t idx = 0;
-        assert(edgeOutliers.size() == edges.size());
+        uint32_t outlierCount = 0;
+
         for (BaseEdge* edge : edges)
         {
-            if (edgeOutliers[idx++])
+            if (edgeOutliers_[idx++])
             {
                 edgesToRemove.emplace_back(edge);
             }
+            // delete any edge outliers
+            for (BaseEdge* edge : edgesToRemove)
+            {
+                removeEdge(edge);
+            }
         }
-        // delete any edge outliers
-        for (BaseEdge* edge : edgesToRemove)
-        {
-            removeEdge(edge);
-        }
+  
     }
 }
    

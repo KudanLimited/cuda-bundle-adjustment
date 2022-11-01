@@ -413,7 +413,7 @@ void BlockSolver::updateEdges(const EdgeSetVec& edgeSets)
 { 
     for (const auto& edgeSet : edgeSets)
     {
-        edgeSet->updateEdges();
+        edgeSet->updateEdges(cudaDevice_.getStreamAndEvent(0));
     }
 }
 

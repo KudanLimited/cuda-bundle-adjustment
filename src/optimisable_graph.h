@@ -397,6 +397,16 @@ public:
      * @return The camera parameters used by this edge.
      */
     virtual Camera& getCamera() noexcept = 0;
+
+    /**
+    * @brief Inactivates an edge removing it from the optimisation.
+    */ 
+    virtual void inactivate() noexcept = 0;
+
+    /**
+    * @brief Sets the edge as active in the optimisation process.
+    */
+    virtual void setActive() noexcept = 0;
 };
 
 /**
@@ -435,7 +445,7 @@ public:
         return static_cast<VertexNthType<N>*>(vertices[N]);
     }
 
-    Edge() : measurement(Measurement()) {}
+    Edge() : measurement(Measurement()), isActive_(true) {}
     virtual ~Edge() {}
 
     // virtual functions
@@ -447,6 +457,8 @@ public:
     Information getInformation() noexcept override;
     void setCamera(const Camera& camera) noexcept override;
     Camera& getCamera() noexcept override;
+    void inactivate() noexcept override;
+    void setActive() noexcept override;
 
     // non-virtual functions
     template <std::size_t... Ints>
@@ -471,6 +483,9 @@ protected:
     Camera camera_;
     /// The vertex types for the edge
     BaseVertex* vertices[VertexSize];
+    /// Specifies whether this edge is active in the optimisation procee
+    /// or not.
+    bool isActive_;
 };
 
 
@@ -562,7 +577,7 @@ public:
     * @brief If the outlier threshold is greater than zero, then any edge outliers determined by the 
     * @p computeErrors kernel, will be removed from the edge container.
     */
-    virtual void updateEdges() noexcept = 0;
+    virtual void updateEdges(const CudaDeviceInfo& deviceInfo) noexcept = 0;
 
     /**
      * @brief Set the Robust Kernel associated with this set (applied to all edges)
@@ -681,7 +696,7 @@ public:
     void removeEdge(BaseEdge* edge) override;
     size_t nedges() const noexcept override;
     size_t nActiveEdges() const noexcept override;
-    void updateEdges() noexcept override;
+    void updateEdges(const CudaDeviceInfo& deviceInfo) noexcept override;
     const EdgeContainer& get() noexcept;
     const int dim() const noexcept override;
     void setRobustKernel(const RobustKernelType type, Scalar delta) noexcept override;
@@ -726,6 +741,8 @@ protected:
     /// The camera params which which will be applied to all edges in this set. This is only used if
     /// option @p perEdgeCamera is false.
     Camera camera_;
+    /// Used to download outlier data from device to the host. 
+    async_vector<int> edgeOutliers_;
 
 public:
     // device side
@@ -768,6 +785,7 @@ protected:
     GpuVec1i d_edge2Hpl;
     DeviceBuffer<Scalar> d_outlierThreshold;
     GpuVec1i d_outliers;
+    GpuVec<Scalar> d_chiValues;
 };
 
 

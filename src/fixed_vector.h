@@ -357,6 +357,7 @@ using hAsyncScalar = HostAsyncVec<Scalar, 1>;
 using hAsyncVec2 = HostAsyncVec<Scalar, 2>;
 using hAsyncVec3 = HostAsyncVec<Scalar, 3>;
 using hAsyncVec4 = HostAsyncVec<Scalar, 4>;
+using hAsyncInt = HostAsyncVec<int, 1>;
 
 
 } // namespace cugo

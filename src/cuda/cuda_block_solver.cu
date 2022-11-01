@@ -1062,21 +1062,63 @@ __global__ void computeActiveErrorsKernel(
     int nedges,
     int nomegas,
     int ncameras,
-    int blockSize,
     const Se3D* se3,
     const Vec3d* Xws,
     const Vecxd<MDIM>* measurements,
     const Scalar* omegas,
     const Vec2i* edge2PL,
     const Vec5d* cameras,
-    const Scalar errorThreshold,
+    const int* outliers,
     Vecxd<MDIM>* errors,
-    int* outliers,
     Vec3d* Xcs,
-    Scalar* chi)
+    Scalar* chiValues)
 {
     using Vecmd = Vecxd<MDIM>;
-    
+    int iE = blockIdx.x * blockDim.x + threadIdx.x;
+    if (iE >= nedges)
+    {
+        return;
+    }
+
+    const Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
+    const int iP = edge2PL[iE][0];
+    const int iL = edge2PL[iE][1];
+
+    const QuatD& q = se3[iP].r;
+    const Vec3d& t = se3[iP].t;
+    const Vec3d& Xw = Xws[iL];
+    const Vecmd& measurement = measurements[iE];
+    const Vec5d& camera = (ncameras > 1) ? cameras[iE] : cameras[0];
+
+    // project world to camera
+    Vec3d Xc;
+    projectW2C(q, t, Xw, Xc);
+
+    // project camera to image
+    Vecmd proj;
+    projectC2I(Xc, camera, proj);
+
+    // compute residual
+    Vecmd error;
+    for (int i = 0; i < MDIM; i++)
+    {
+        error[i] = proj[i] - measurement[i];
+    }
+
+    // outputs
+    errors[iE] = error;
+    Xcs[iE] = Xc;
+    chiValues[iE] = robustKernelFunc->robustify(omega * squaredNorm(error));
+}
+
+__global__ void computeChiValueKernel(
+    int nedges,
+    int blockSize,
+    const Scalar* chiValues,
+    const int* outliers,
+    Scalar* totalChi
+    )
+{
     const int tid = threadIdx.x;
     extern __shared__ Scalar cache[];
 
@@ -1086,44 +1128,28 @@ __global__ void computeActiveErrorsKernel(
 
     while (iE < nedges)
     {
-        const Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
-        const int iP = edge2PL[iE][0];
-        const int iL = edge2PL[iE][1];
-
-        const QuatD& q = se3[iP].r;
-        const Vec3d& t = se3[iP].t;
-        const Vec3d& Xw = Xws[iL];
-        const Vecmd& measurement = measurements[iE];
-        const Vec5d& camera = (ncameras > 1) ? cameras[iE] : cameras[0];
-
-        // project world to camera
-        Vec3d Xc;
-        projectW2C(q, t, Xw, Xc);
-
-        // project camera to image
-        Vecmd proj;
-        projectC2I(Xc, camera, proj);
-
-        // compute residual
-        Vecmd error;
-        for (int i = 0; i < MDIM; i++)
-        {
-            error[i] = proj[i] - measurement[i];
-        }
-
-        errors[iE] = error;
-        Xcs[iE] = Xc;
-        const Scalar chi2 = robustKernelFunc->robustify(omega * squaredNorm(error));
-        sumchi += chi2;
-
-        if (errorThreshold > 0.0 && chi2 > errorThreshold)
-        {
-            outliers[iE] = 1;
-        }
+        sumchi += chiValues[iE];
         iE += gridSize;
     }
 
-    parallelReductionAndAdd(cache, blockSize, tid, sumchi, chi);
+    parallelReductionAndAdd(cache, blockSize, tid, sumchi, totalChi);
+}
+
+__global__ void computeOutliersKernel(
+    int nedges, const Scalar errorThreshold, const Scalar* chiValues, int* outliers)
+{
+    int iE = blockIdx.x * blockDim.x + threadIdx.x;
+    if (iE >= nedges)
+    {
+        return;
+    }
+
+    const Scalar chi2 = chiValues[iE];
+
+    if (chi2 > errorThreshold)
+    {
+        outliers[iE] = 1;
+    }
 }
 
 template <int MDIM>
@@ -1610,6 +1636,19 @@ void findHschureMulBlockIndices(
     CUDA_CHECK(cudaGetLastError());
 }
 
+void computeOutliers(int nedges, const Scalar errorThreshold, const Scalar* chiValues, int* outliers, const CudaDeviceInfo& deviceInfo) 
+{
+    int gridSize;
+    int blockSize;
+    calculateOccupancy(nedges, (void*)computeOutliersKernel, blockSize, gridSize);
+    computeOutliersKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(
+        nedges, errorThreshold, chiValues, outliers);
+    
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
+    CUDA_CHECK(cudaGetLastError());
+}
+
 template <int M>
 Scalar computeActiveErrors_(
     const GpuVecSe3d& poseEstimate,
@@ -1618,11 +1657,11 @@ Scalar computeActiveErrors_(
     const GpuVec1d& omegas,
     const GpuVec2i& edge2PL,
     const GpuVec5d& cameras,
-    const Scalar errorThreshold,
     const RobustKernel& robustKernel,
     GpuVecxd<M>& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
+    Scalar* chiValues,
     Scalar* chi,
     const CudaDeviceInfo& deviceInfo)
 {
@@ -1636,11 +1675,11 @@ Scalar computeActiveErrors_<2>(
     const GpuVec1d& omegas,
     const GpuVec2i& edge2PL,
     const GpuVec5d& cameras,
-    const Scalar errorThreshold,
     const RobustKernel& robustKernel,
     GpuVecxd<2>& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
+    Scalar* chiValues,
     Scalar* chi,
     const CudaDeviceInfo& deviceInfo)
 {
@@ -1648,33 +1687,34 @@ Scalar computeActiveErrors_<2>(
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
 
-    const int blockSize = 64;
-    const int gridSize = divUp(nedges, blockSize);
-    const int sharedBytes = blockSize * sizeof(Scalar);
+    int blockSize;
+    int gridSize;
+    calculateOccupancy(nedges, (void*)computeActiveErrorsKernel<2>, blockSize, gridSize);
 
-    CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-    if (errorThreshold > 0.0)
-    {
-        CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
-    }
-
-    computeActiveErrorsKernel<2><<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
+    computeActiveErrorsKernel<2><<<gridSize, blockSize, 0, deviceInfo.stream>>>(
         nedges,
         nomegas,
         ncameras,
-        blockSize,
         poseEstimate,
         landmarkEstimate,
         measurements,
         omegas,
         edge2PL,
         cameras,
-        errorThreshold,
-        errors,
         outliers,
+        errors,
         Xcs,
-        chi);
-   
+        chiValues);
+
+    blockSize = 1024;
+    gridSize = divUp(nedges, blockSize);
+    const int sharedBytes = blockSize * sizeof(Scalar);
+
+    CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
+
+    computeChiValueKernel<<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
+        nedges, blockSize, chiValues, outliers, chi);
+
     hAsyncScalar h_chi;
     h_chi.download(chi, deviceInfo.stream);
 
@@ -1693,11 +1733,11 @@ Scalar computeActiveErrors_<3>(
     const GpuVec1d& omegas,
     const GpuVec2i& edge2PL,
     const GpuVec5d& cameras,
-    const Scalar errorThreshold,
     const RobustKernel& robustKernel,
     GpuVecxd<3>& errors,
     GpuVec1i& outliers,
     GpuVec3d& Xcs,
+    Scalar* chiValues,
     Scalar* chi,
     const CudaDeviceInfo& deviceInfo)
 {
@@ -1705,32 +1745,33 @@ Scalar computeActiveErrors_<3>(
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
 
-    const int blockSize = 64;
-    const int gridSize = divUp(nedges, blockSize);
-    const int sharedBytes = blockSize * sizeof(Scalar);
-
-    CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-    if (errorThreshold > 0.0)
-    {
-        CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
-    }
-
-    computeActiveErrorsKernel<3><<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
+    int blockSize;
+    int gridSize;
+    calculateOccupancy(nedges, (void*)computeActiveErrorsKernel<3>, blockSize, gridSize);
+  
+     computeActiveErrorsKernel<3><<<gridSize, blockSize, 0, deviceInfo.stream>>>(
         nedges,
-        nomegas,
+         nomegas,
         ncameras,
-        blockSize,
         poseEstimate,
         landmarkEstimate,
         measurements,
         omegas,
         edge2PL,
         cameras,
-        errorThreshold,
-        errors,
         outliers,
+        errors,
         Xcs,
-        chi);
+        chiValues);
+
+    blockSize = 1024;
+    gridSize = divUp(nedges, blockSize);
+    const int sharedBytes = blockSize * sizeof(Scalar);
+
+    CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
+
+    computeChiValueKernel<<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
+        nedges, blockSize, chiValues, outliers, chi);
     
     hAsyncScalar h_chi;
     h_chi.download(chi, deviceInfo.stream);
