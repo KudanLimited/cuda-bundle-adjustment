@@ -14,43 +14,62 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef __MACRO_H__
-#define __MACRO_H__
+#pragma once
 
 #include <cstdio>
+#include <cassert>
 
 #define CUDA_CHECK(err)                                                                            \
     do                                                                                             \
     {                                                                                              \
         if (err != cudaSuccess)                                                                    \
         {                                                                                          \
-            printf(                                                                                \
+            fprintf(stderr,                                                                        \
                 "[CUDA Error] %s (code: %d) at %s:%d\n",                                           \
                 cudaGetErrorString(err),                                                           \
                 err,                                                                               \
                 __FILE__,                                                                          \
                 __LINE__);                                                                         \
+            throw(err);                                                                               \
         }                                                                                          \
     } while (0)
+    
+    
 
 #define CHECK_CUSPARSE(func)                                                                       \
     {                                                                                              \
         cusparseStatus_t status = (func);                                                          \
         if (status != CUSPARSE_STATUS_SUCCESS)                                                     \
         {                                                                                          \
-            printf("CUSPARSE API failed with error (%d) at line %d\n", status, __LINE__);          \
+            fprintf(stderr, "CUSPARSE API failed with error (%d) at line %d\n", status, __LINE__); \
+            throw(status);                                                                      \
         }                                                                                          \
-    }
+    }                                                                                              
+   
 
 #define CHECK_CUSOLVER(func)                                                                       \
     {                                                                                              \
         cusolverStatus_t status = (func);                                                          \
         if (status != CUSOLVER_STATUS_SUCCESS)                                                     \
         {                                                                                          \
-            printf("CUSOLVER API failed with error (%d) at line %d\n", status, __LINE__);          \
+            fprintf(stderr, "CUSOLVER API failed with error (%d) at line %d\n", status, __LINE__); \
+            throw(status);                                                                     \
         }                                                                                          \
-    }
+    }                                                                                              
 
+
+#if __has_builtin(__builtin_expect)
+#ifdef __cplusplus
+#define CUGO_LIKELY(exp) (__builtin_expect(!!(exp), true))
+#define CUGO_UNLIKELY(exp) (__builtin_expect(!!(exp), false))
+#else
+#define CUGO_LIKELY(exp) (__builtin_expect(!!(exp), 1))
+#define CUGO_UNLIKELY(exp) (__builtin_expect(!!(exp), 0))
+#endif
+#else
+#define CUGO_LIKELY(exp) (!!(exp))
+#define CUGO_UNLIKELY(exp) (!!(exp))
+#endif
 
 #ifdef _WIN32
     #ifdef __GNUC__
@@ -67,5 +86,3 @@ limitations under the License.
 #endif
 
 
-
-#endif // !__MACRO_H__

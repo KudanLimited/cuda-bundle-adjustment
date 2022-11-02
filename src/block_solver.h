@@ -43,8 +43,8 @@ public:
     static constexpr int LANDMARK_VERTEX_RESERVE_SIZE = 20000;
 
     BlockSolver() = delete;
-    BlockSolver(GraphOptimisationOptions& options, CudaDevice& cudaDevice) : options(options), cudaDevice_(cudaDevice), doSchur_(false), nedges_(0) {}
-
+    BlockSolver(GraphOptimisationOptions& options, CudaDevice& cudaDevice);
+    
     /**
      * @brief Initialise the block solver. This will clear the old estimate values (if an
      * optimisation has already been carried out.)
@@ -63,6 +63,8 @@ public:
     void buildStructure(
         const EdgeSetVec& edgeSets,
         const VertexSetVec& vertexSets);
+
+    void updateEstimates(const VertexSetVec& vertexSets);
 
     /**
      * @brief Compute the error of the graph.
@@ -182,7 +184,8 @@ private:
     std::vector<BaseVertex*> verticesP_;
     std::vector<BaseVertex*> verticesL_;
 
-    async_vector<HplBlockPos> HplblockPos_;
+    std::vector<HplBlockPos> HplblockPos_;
+    size_t hplblockPosSize_ = 0;
 
     /// active sizes only for pose and landmark
     size_t numP_ = 0;

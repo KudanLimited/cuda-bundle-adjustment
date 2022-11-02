@@ -72,7 +72,7 @@ protected:
 
 struct HplBlockPos
 {
-    int row, col, id;
+    uint32_t row, col, id;
 };
 
 class HplSparseBlockMatrix : public SparseBlockMatrix<PDIM, LDIM, COL_MAJOR>

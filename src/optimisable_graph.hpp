@@ -57,7 +57,7 @@ int Vertex<T, Marginilised>::getId() const noexcept
 }
 
 template <typename T, bool Marginilised>
-int Vertex<T, Marginilised>::getIndex() const noexcept
+uint32_t Vertex<T, Marginilised>::getIndex() const noexcept
 {
     return idx;
 }
@@ -82,26 +82,22 @@ void Vertex<T, Marginilised>::clearEdges() noexcept
 
 // VertexSet functions
 template <typename T, typename EstimateType>
-void VertexSet<T, EstimateType>::generateEstimateData()
+void VertexSet<T, EstimateType>::generateVertexData()
 {
     int count = 0;
     std::vector<T*> fixedVertices;
     std::vector<size_t> fixedIds;
 
     vertices.reserve(vertexMap.size());
-    estimates.reserve(vertexMap.size());
     estimateVertexIds.reserve(vertexMap.size());
 
     for (const auto& [id, vertex] : vertexMap)
     {
         assert(vertex != nullptr);
-        if (!vertex->isFixed())
+        if (CUGO_LIKELY(!vertex->isFixed()))
         {
             vertex->setIndex(count++);
             vertices.push_back(vertex);
-
-            EstimateType estimate = vertex->getEstimate();
-            estimates.push_back(estimate);
             estimateVertexIds.emplace_back(id);
         }
         else
@@ -118,16 +114,22 @@ void VertexSet<T, EstimateType>::generateEstimateData()
         T* vertex = fixedVertices[i];
         vertex->setIndex(count++);
         vertices.push_back(vertex);
-
-        EstimateType estimate = vertex->getEstimate();
-        estimates.push_back(DeviceType(estimate));
         estimateVertexIds.emplace_back(fixedIds[i]);
     }
 }
 
 template <typename T, typename EstimateType>
-void VertexSet<T, EstimateType>::mapEstimateData(Scalar* d_dataPtr, const CudaDeviceInfo& deviceInfo)
+void VertexSet<T, EstimateType>::generateEstimatesAndMap(
+    Scalar* d_dataPtr, const CudaDeviceInfo& deviceInfo)
 {
+    estimates.reserve(vertexMap.size());
+
+    for (const auto& vertex : vertices)
+    {
+        const EstimateType& estimate = vertex->getEstimate();
+        estimates.push_back(estimate);
+    }
+
     // upload to the device
     d_estimate.map(estimates.size(), d_dataPtr);
     d_estimate.uploadAsync(estimates.data(), deviceInfo.stream);
@@ -248,6 +250,11 @@ template <typename T, typename E>
 void VertexSet<T, E>::clearEstimates() noexcept
 {
     estimates.clear();
+}
+
+template <typename T, typename E>
+void VertexSet<T, E>::clearVertexData() noexcept
+{
     estimateVertexIds.clear();
     vertices.clear();
     activeSize = 0;
@@ -276,6 +283,12 @@ template <int DIM, typename E, typename... VertexTypes>
 bool Edge<DIM, E, VertexTypes...>::allVerticesFixed() const noexcept
 {
     return allVerticesFixedNs(std::make_index_sequence<VertexSize>());
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+bool Edge<DIM, E, VertexTypes...>::anyVerticesNotFixed() const noexcept
+{
+    return anyVerticesNotFixedNs(std::make_index_sequence<VertexSize>());
 }
 
 template <int DIM, typename E, typename... VertexTypes>
@@ -324,6 +337,12 @@ template <int DIM, typename E, typename... VertexTypes>
 void Edge<DIM, E, VertexTypes...>::setActive() noexcept
 {
     isActive_ = true;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+bool Edge<DIM, E, VertexTypes...>::isActive() const noexcept
+{
+    return isActive_;
 }
 
 // EdgeSet functions
@@ -395,6 +414,13 @@ template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::setOutlierThreshold(const Scalar errorThreshold) noexcept
 {
     this->outlierThreshold = errorThreshold;
+    d_outlierThreshold.assign(1, &outlierThreshold);
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+uint32_t EdgeSet<DIM, E, VertexTypes...>::getOutlierCount() const noexcept
+{
+    return currOutlierCount_;
 }
 
 template <int DIM, typename E, typename... VertexTypes>
@@ -407,6 +433,8 @@ template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::clearEdges() noexcept
 {
     edges.clear();
+    isDirty_ = true;
+    currOutlierCount_ = 0;
 }
 
 template <int DIM, typename E, typename... VertexTypes>
@@ -446,12 +474,7 @@ const Vec5d EdgeSet<DIM, E, VertexTypes...>::cameraToVec(const Camera& cam) noex
 }
 
 template <int DIM, typename E, typename... VertexTypes>
-void EdgeSet<DIM, E, VertexTypes...>::init(
-    async_vector<HplBlockPos>& hBlockPosArena,
-    const int edgeIdOffset,
-    cudaStream_t stream,
-    bool doSchur,
-    const GraphOptimisationOptions& options)
+void EdgeSet<DIM, E, VertexTypes...>::init(const GraphOptimisationOptions& options)
 {
     // sanity checks for options
     if (options.perEdgeInformation)
@@ -468,21 +491,19 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
     {
         if (VertexSize == 1)
         {
-            if (!edge->getVertex(0)->isFixed())
+            if (CUGO_LIKELY(!edge->getVertex(0)->isFixed()))
             {
                 ++activeEdgeSize_;
             }
         }
         else
         {
-            if (!edge->getVertex(0)->isFixed() || !edge->getVertex(1)->isFixed())
+            if (CUGO_LIKELY(!edge->getVertex(0)->isFixed() || !edge->getVertex(1)->isFixed()))
             {
                 ++activeEdgeSize_;
             }
         }
     }
-
-    int edgeId = edgeIdOffset;
 
     const size_t omegaSize = (options.perEdgeInformation) ? activeEdgeSize_ : 1;
     const size_t cameraSize = (options.perEdgeCamera) ? activeEdgeSize_ : 2;
@@ -515,7 +536,7 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
         VIndex vec;
         if (VertexSize == 1)
         {
-            if (!edge->getVertex(0)->isFixed())
+            if (CUGO_LIKELY(!edge->getVertex(0)->isFixed()))
             {
                 vec[0] = edge->getVertex(0)->getIndex();
                 edgeFlags->push_back(
@@ -525,7 +546,7 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
         }
         else
         {
-            if (!edge->getVertex(0)->isFixed() || !edge->getVertex(1)->isFixed())
+            if (CUGO_LIKELY(!edge->getVertex(0)->isFixed() || !edge->getVertex(1)->isFixed()))
             {
                 vec[0] = edge->getVertex(0)->getIndex();
                 vec[1] = edge->getVertex(1)->getIndex();
@@ -533,15 +554,9 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
                     edge->getVertex(0)->isFixed(), edge->getVertex(1)->isFixed()));
                 isActive = true;
             }
-            // if both vertices contribute to the optimistaion graph for this edge, then these will be
-            // used in the Hpl matrix.
-            if (doSchur && !edge->getVertex(0)->isFixed() && !edge->getVertex(1)->isFixed())
-            {
-                hBlockPosArena.push_back({vec[0], vec[1], edgeId});
-            }
         }
 
-        if (isActive)
+        if (CUGO_LIKELY(isActive))
         {
             measurements->push_back(*(static_cast<MeasurementType*>(edge->getMeasurement())));
             edge2PL->push_back(vec);
@@ -554,7 +569,6 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
             {
                 cameras->push_back(cameraToVec(edge->getCamera()));
             }
-            ++edgeId;
         }
     }
 }
@@ -568,7 +582,6 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     d_Xcs.resize(activeEdgeSize_);
     d_chiValues.resize(activeEdgeSize_);
 
-    d_outlierThreshold.assign(1, &outlierThreshold);
     d_outliers.resize(activeEdgeSize_);
     d_outliers.fillZero();
 
@@ -611,22 +624,65 @@ void EdgeSet<DIM, E, VertexTypes...>::updateEdges(const CudaDeviceInfo& deviceIn
 
         for (BaseEdge* edge : edges)
         {
-            if (edgeOutliers_[idx++])
+            if (CUGO_UNLIKELY(edgeOutliers_[idx++]))
             {
-                edgesToRemove.emplace_back(edge);
-            }
-            // delete any edge outliers
-            for (BaseEdge* edge : edgesToRemove)
-            {
-                removeEdge(edge);
+                edgesToRemove.push_back(edge);
+                //edge->inactivate();
+                //++outlierCount;
             }
         }
-  
+        for (BaseEdge* edge : edgesToRemove)
+        {
+            removeEdge(edge);
+        }
+        const uint32_t outliersRemovedThisFrame = (currOutlierCount_ + edgesToRemove.size()) - currOutlierCount_;
+        if (outliersRemovedThisFrame > 0)
+        {
+            // denotes that the number of active edges has changed this frame so
+            // update the appropiate buffers
+            isDirty_ = true;
+        }
+        currOutlierCount_ = currOutlierCount_ + edgesToRemove.size();
     }
 }
-   
+
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::buildHplBlockPos(
+    std::vector<HplBlockPos>& hplBlockPos, uint32_t edgeOffset) noexcept
+{
+    uint32_t edgeId = edgeOffset;
+    for (BaseEdge* edge : edges)
+    {
+        if (CUGO_UNLIKELY(!edge->isActive()))
+        {
+            ++edgeId;
+            continue;
+        }
+        if (!edge->allVerticesFixed())
+        {
+            hplBlockPos.push_back({edge->getVertex(0)->getIndex(), edge->getVertex(1)->getIndex(), edgeId});
+        }
+        if (edge->anyVerticesNotFixed())
+        {
+            ++edgeId;
+        }
+    }
+}
+
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::clearDevice() noexcept
 {
     arena.clear();
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+bool EdgeSet<DIM, E, VertexTypes...>::isDirty() noexcept
+{
+    return isDirty_;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::setDirtyState(bool state) noexcept
+{
+    isDirty_ = state;
 }

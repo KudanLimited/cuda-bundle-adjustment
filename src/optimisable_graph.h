@@ -86,7 +86,7 @@ public:
      */
     virtual bool isFixed() const noexcept = 0;
 
-    virtual int getIndex() const noexcept = 0;
+    virtual uint32_t getIndex() const noexcept = 0;
 
     virtual void setIndex(const int idx) noexcept = 0;
 
@@ -133,7 +133,7 @@ public:
     bool isFixed() const noexcept override;
     void setId(const int id) noexcept override;
     int getId() const noexcept override;
-    int getIndex() const noexcept override;
+    uint32_t getIndex() const noexcept override;
     void setIndex(const int idx) noexcept override;
     bool isMarginilised() const noexcept override;
     void clearEdges() noexcept override;
@@ -146,7 +146,7 @@ protected:
     /// ID of the vertex.
     int id;
     ///  ID of the vertex (internally used).
-    int idx;
+    uint32_t idx;
     ///  connected edges.
     EdgeContainer edges;
 };
@@ -212,6 +212,8 @@ public:
      * @brief Clears all of the vertices from the set.
      */
     virtual void clearVertices() noexcept = 0;
+
+    virtual void clearVertexData() noexcept = 0;
 };
 
 /**
@@ -263,15 +265,15 @@ public:
     // device functions
     // non-virtual functions
     /**
-     * @brief Generate the estimate data.
+     * @brief Generate the vertex data.
      */
-    void generateEstimateData();
+    void generateVertexData();
 
     /**
-     * @brief Maps the specified data onto the device allocated space
+     * @brief Builds the estimates container and ,aps the specified data onto the device allocated space
      * @param d_dataPtr A pointer to the data that will be uploaded
      */
-    void mapEstimateData(Scalar* d_dataPtr, const CudaDeviceInfo& deviceInfo);
+    void generateEstimatesAndMap(Scalar* d_dataPtr, const CudaDeviceInfo& deviceInfo);
 
     /**
      * @brief Copy the estimate from the device to the host estimate container.
@@ -309,6 +311,7 @@ public:
     int getActiveSize() const noexcept override;
     void clearEstimates() noexcept override;
     void clearVertices() noexcept override;
+    void clearVertexData() noexcept override;
 
 private:
     /// gpu hosted estimate data vec
@@ -357,10 +360,16 @@ public:
     virtual void setVertex(BaseVertex* vertex, const int index) = 0;
 
     /**
-     * @brief Check whether all vertex types are fixed.
+     * @brief Check whether **all** of the vertex types are fixed.
      * @return If all vertex types are fixed, returns true.
      */
     virtual bool allVerticesFixed() const noexcept = 0;
+
+    /**
+     * @brief Check whether any of the vertex types are **not** fixed.
+     * @return If any vertex types are **not** fixed, returns true.
+     */
+    virtual bool anyVerticesNotFixed() const noexcept = 0;
 
     /**
      * @brief Get the measurement associated with the edge.
@@ -407,6 +416,11 @@ public:
     * @brief Sets the edge as active in the optimisation process.
     */
     virtual void setActive() noexcept = 0;
+
+    /**
+    * @brief States whether this edge is active or not.
+    */
+    virtual bool isActive() const noexcept = 0;
 };
 
 /**
@@ -452,6 +466,7 @@ public:
     BaseVertex* getVertex(const int index) override;
     void setVertex(BaseVertex* vertex, const int index) override;
     bool allVerticesFixed() const noexcept override;
+    bool anyVerticesNotFixed() const noexcept override;
     int dim() const noexcept override;
     void setInformation(const Information info) noexcept override;
     Information getInformation() noexcept override;
@@ -459,13 +474,21 @@ public:
     Camera& getCamera() noexcept override;
     void inactivate() noexcept override;
     void setActive() noexcept override;
-
+    bool isActive() const noexcept override;
+    
     // non-virtual functions
     template <std::size_t... Ints>
     bool allVerticesFixedNs(std::index_sequence<Ints...>) const
     {
         bool fixed[] = {getVertexN<Ints>()->isFixed()...};
         return std::all_of(std::begin(fixed), std::end(fixed), [](bool value) { return value; });
+    }
+
+    template <std::size_t... Ints>
+    bool anyVerticesNotFixedNs(std::index_sequence<Ints...>) const
+    {
+        bool fixed[] = {getVertexN<Ints>()->isFixed()...};
+        return std::any_of(std::begin(fixed), std::end(fixed), [](bool value) { return !value; });
     }
 
     /**
@@ -538,19 +561,13 @@ public:
 
     /**
      * @brief Initialise the edge vertex set.
-     * @param hBlockPosArena If using the schur complement, this defines the memory allocation
      * poolfor the block positions.
      * @param edgeIdOffset The offset that the edge ids will begin from.
      * @param stream A CUDA stream object.
      * @param doSchur States whether this optimiser will conduct Schur complement calculations
      * @param options A @see GraphOptimisationOptions object
      */
-    virtual void init(
-        async_vector<HplBlockPos>& hBlockPosArena,
-        const int edgeIdOffset,
-        cudaStream_t stream,
-        bool doSchur,
-        const GraphOptimisationOptions& options) = 0;
+    virtual void init(const GraphOptimisationOptions& options) = 0;
 
     /**
      * @brief Maps the data derived from the @see init call to the device.
@@ -619,6 +636,8 @@ public:
     */
     virtual Scalar getOutlierThreshold() const noexcept = 0;
 
+    virtual uint32_t getOutlierCount() const noexcept = 0;
+
     // device side virtual functions
     /**
      * @brief Constructs the quadratic equation for this set.
@@ -659,6 +678,13 @@ public:
     {
         return 0;
     }
+
+    virtual void
+    buildHplBlockPos(std::vector<HplBlockPos>& hplBlockPos, uint32_t edgeOffset) noexcept = 0;
+
+    virtual bool isDirty() noexcept = 0;
+
+    virtual void setDirtyState(bool state) noexcept = 0;
 };
 
 /**
@@ -686,7 +712,9 @@ public:
         : activeEdgeSize_(0),
           outlierThreshold(0.0),
           info_(0.0),
-          totalBufferSize_(0)
+          totalBufferSize_(0),
+          currOutlierCount_(0),
+          isDirty_(true)
     {
     }
     virtual ~EdgeSet() {}
@@ -707,6 +735,11 @@ public:
     void setCamera(const Camera& camera) noexcept override;
     Camera& getCamera() noexcept override;
     Scalar getOutlierThreshold() const noexcept override;
+    uint32_t getOutlierCount() const noexcept override;
+    void buildHplBlockPos(
+        std::vector<HplBlockPos>& hplBlockPos, uint32_t edgeOffset) noexcept override;
+    bool isDirty() noexcept override;
+    void setDirtyState(bool state) noexcept override;
 
     // non-virtual functions
     /**
@@ -741,20 +774,20 @@ protected:
     /// The camera params which which will be applied to all edges in this set. This is only used if
     /// option @p perEdgeCamera is false.
     Camera camera_;
+
+    // outlier members - only used if outlier threshold is greater than zero
     /// Used to download outlier data from device to the host. 
     async_vector<int> edgeOutliers_;
+    /// The number of outliers counted last frame.
+    uint32_t currOutlierCount_;
+    bool isDirty_;
 
 public:
     // device side
     using ErrorVec = typename std::conditional<(DIM == 1), GpuVec1d, GpuVec<VecNd<DIM>>>::type;
     using MeasurementVec = GpuVec<GpuMeasurementType>;
 
-    void init(
-        async_vector<HplBlockPos>& hBlockPosArena,
-        const int edgeIdOffset,
-        cudaStream_t stream,
-        bool doSchur,
-        const GraphOptimisationOptions& options) override;
+    void init(const GraphOptimisationOptions& options) override;
 
     void mapDevice(
         const GraphOptimisationOptions& options,

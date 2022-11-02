@@ -76,22 +76,25 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
     blockpos.reserve(brows_ * bcols_);
 
     int countmul = 0;
-    for (auto v : vertices)
+    for (auto vertex : vertices)
     {
-        if (v->isFixed())
+        if (CUGO_UNLIKELY(vertex->isFixed()))
         {
             continue;
         }
 
         indices.clear();
-        for (const auto e : v->getEdges())
+        for (const auto edge : vertex->getEdges())
         {
-            const BaseVertex* vP =
-                e->getVertex(0); // Note: assuming pose vertices are in idx 0 of the array - need to
-                                 // use a better method! check if not marginilised
-            if (!vP->isFixed())
+            if (CUGO_LIKELY(edge->isActive()))
             {
-                indices.push_back(vP->getIndex());
+                // Note: assuming pose vertices are in idx 0 of the array - need to
+                // use a better method! check if not marginilised
+                const BaseVertex* vP = edge->getVertex(0);
+                if (CUGO_LIKELY(!vP->isFixed()))
+                {
+                    indices.push_back(vP->getIndex());
+                }
             }
         }
 
@@ -156,6 +159,7 @@ void HschurSparseBlockMatrix::convertBSRToCSR()
     const int PDIM = BLOCK_ROWS;
     const int nnz = nnzSymm();
     const int drows = rows();
+    assert(nnz > 0);
 
     async_vector<int>& browPtr_ = outerIndices_;
     async_vector<int>& bcolInd_ = innerIndices_;

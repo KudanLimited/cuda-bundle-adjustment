@@ -54,15 +54,12 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
     double lambda = 0.0;
     double F = 0.0;
 
+    solver_->buildStructure(edgeSets, vertexSets);
+
     // Levenberg-Marquardt iteration
     for (int iteration = 0; iteration < niterations; iteration++)
     {
         cudaDevice_.startTimingEvent();
-
-        if (iteration == 0)
-        {
-            solver_->buildStructure(edgeSets, vertexSets);
-        }
 
         const double iniF = solver_->computeErrors(edgeSets, vertexSets);
         F = iniF;
@@ -104,7 +101,7 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
                 nu *= 2.0;
                 solver_->restoreDiagonal();
                 solver_->pop();
-                if (!std::isfinite(lambda) || Fdiff < 1e-4)
+                if (!std::isfinite(lambda))
                 {
                     break;
                 }
@@ -116,16 +113,21 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
         stats_.addStat({iteration, F});
         if (verbose)
         {
-            printf(
-                "iteration= %i;   time(ms): %.4f   chi2= %f;   lambda= %f   rho= "
-                "%f	   nedges= %i    levenberg iterations = %i\n",
-                iteration,
-                timeTaken,
-                F,
-                lambda,
-                rho,
-                solver_->nedges(),
-                q);
+            uint32_t outlierCount = 0;
+            for (auto* edgeSet : edgeSets)
+            {
+                outlierCount += edgeSet->getOutlierCount();
+            }
+            printf("iteration= %i;   time(ms): %.4f   chi2= %f;   lambda= %f   rho= "
+                   "%f	   nedges= %i    levenberg iterations = %i   outliers = %d\n",
+                   iteration,
+                   timeTaken,
+                   F,
+                   lambda,
+                   rho,
+                   solver_->nedges(),
+                   q,
+                   outlierCount);
         }
 
         if (shouldProfile_)

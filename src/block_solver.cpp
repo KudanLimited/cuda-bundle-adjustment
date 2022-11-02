@@ -22,17 +22,15 @@ void BlockSolver::initialize(
     // prepare the solver for a fresh initialisation
     clear();
 
-    verticesP_.reserve(POSE_VERTEX_RESERVE_SIZE);
-    verticesL_.reserve(LANDMARK_VERTEX_RESERVE_SIZE);
-
+    // generate the vertex data
     for (BaseVertexSet* vertexSet : vertexSets)
     {
-        vertexSet->clearEstimates();
+        vertexSet->clearVertexData();
 
         if (!vertexSet->isMarginilised())
         {
             PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSet);
-            poseVertexSet->generateEstimateData();
+            poseVertexSet->generateVertexData();
             auto& setData = poseVertexSet->get();
             verticesP_.insert(verticesP_.end(), setData.begin(), setData.end());
             numP_ += vertexSet->getActiveSize();
@@ -40,36 +38,15 @@ void BlockSolver::initialize(
         else
         {
             LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSet);
-            lmVertexSet->generateEstimateData();
+            lmVertexSet->generateVertexData();
             auto& setData = lmVertexSet->get();
             verticesL_.insert(verticesL_.end(), setData.begin(), setData.end());
             numL_ += vertexSet->getActiveSize();
         }
     }
+
+    updateEstimates(vertexSets);
     
-    // upload the estimates to the device
-    int offset = 0;
-
-    d_solution_.resize(verticesL_.size() * 3 + verticesP_.size() * 7);
-    d_solutionBackup_.resize(d_solution_.size());
-
-    for (BaseVertexSet* vertexSet : vertexSets)
-    {
-        if (!vertexSet->isMarginilised())
-        {
-            PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSet);
-            poseVertexSet->mapEstimateData(d_solution_.data() + offset, cudaDevice_.getStreamAndEvent(1));
-            offset += poseVertexSet->getDeviceEstimateSize() * 7;
-        }
-        else
-        {
-            LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSet);
-            lmVertexSet->mapEstimateData(
-                d_solution_.data() + offset, cudaDevice_.getStreamAndEvent(2));
-            offset += lmVertexSet->getDeviceEstimateSize() * 3;
-        }
-    }
-
     // only perform schur if we have landmark vertices
     doSchur_ = (verticesL_.size() > 0) ? true : false;
     
@@ -77,26 +54,16 @@ void BlockSolver::initialize(
     // Note: this is dependent on the vertex data so this must be initialised first
     int edgeIdOffset = 0;
 
-    if (doSchur_)
-    {
-        HplblockPos_.reserve(HBLOCKPOS_ARENA_SIZE);
-    }
-
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
         if (!edgeSet->nedges())
         {
             continue;
         }
-
-        // clear the edges and vertices from the last run.
-        // Note: these calls do no memory de-allocating and do not
-        // destroy or touch device buffers.
+        // clear the arena edge data from the last run
         edgeSet->clearDevice();
-
-        edgeSet->init(HplblockPos_, edgeIdOffset, 0, doSchur_, options);
+        edgeSet->init(options);
         nedges_ += edgeSet->nActiveEdges();
-        edgeIdOffset += nedges_;
     }
     
     if (doSchur_)
@@ -151,49 +118,87 @@ void BlockSolver::buildStructure(
     d_x_.resize(numP_ * PDIM + numL_ * LDIM);
     d_b_.resize(numP_ * PDIM + numL_ * LDIM);
 
+    // initialise the device pose Hessian matrix -
+    // this is filled by the computation of the quadratic form
+    d_Hpp_.resize(numP_);
+    d_xp_.map(numP_, d_x_.data());
+    d_bp_.map(numP_, d_b_.data());
+
+    d_HppBackup_.resize(numP_);
+    d_chi_.resize(1);
+    d_tmpMax_hpp_.resize(40);
+
     if (doSchur_)
     {
-        size_t nVertexBlockPos = HplblockPos_.size();
-
         d_Hpl_.resize(numP_, numL_);
-        d_Hpl_.resizeNonZeros(nVertexBlockPos);
         d_nnzPerCol_.resize(numL_ + 1);
+
+        // check if we need to update the Hpl block positions -
+        // inactivation of edges due to being classed as outliers
+        // means that the structure will need rebuilding
+        uint32_t offset = 0;
+        bool rebuildBlockPos = false;
+        HplblockPos_.clear();
+        
+        for (BaseEdgeSet* edgeSet : edgeSets)
+        {
+            if (!edgeSet->nedges())
+            {
+                continue;
+            }
+            if (edgeSet->isDirty())
+            {
+                edgeSet->buildHplBlockPos(HplblockPos_, offset);
+                offset += edgeSet->nActiveEdges();
+                edgeSet->setDirtyState(false);
+                rebuildBlockPos = true;
+            }
+        }
+        
+        if (rebuildBlockPos)
+        {
+            size_t hplblockPosSize = HplblockPos_.size();
+            d_HplBlockPos_.assign(hplblockPosSize, HplblockPos_.data());
+            d_Hpl_.resizeNonZeros(hplblockPosSize);
+            gpu::buildHplStructure(
+                d_HplBlockPos_,
+                d_Hpl_,
+                d_edge2Hpl_,
+                d_nnzPerCol_,
+                cudaDevice_.getStreamAndEvent(3),
+                cudaDevice_.getStreamAndEvent(4));
+
+             // build host Hschur sparse block matrix structure
+            Hsc_.resize(numP_, numP_);
+            Hsc_.constructFromVertices(verticesL_);
+            Hsc_.convertBSRToCSR();
+
+            // initialise the device schur hessian matrix
+            d_Hsc_.resize(numP_, numP_);
+            d_Hsc_.resizeNonZeros(Hsc_.nblocks());
+            d_Hsc_.uploadAsync(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
+
+            // BSR to CSR conversion buffers
+            d_HscCSR_.resize(Hsc_.nnzSymm());
+            d_BSR2CSR_.assignAsync(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
+            d_Hpl_invHll_.resize(hplblockPosSize);
+
+            d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
+            gpu::findHschureMulBlockIndices(
+                d_Hpl_, d_Hsc_, d_HscMulBlockIds_, cudaDevice_.getStreamAndEvent(3));
+
+            HscSparseLinearSolver* sparseLinearSolver =
+                static_cast<HscSparseLinearSolver*>(linearSolver_.get());
+
+            // analyze pattern of Hschur matrix (symbolic decomposition)
+            sparseLinearSolver->initialize(Hsc_, cudaDevice_.getStreamAndEvent(2));
+        }
    
-        // build Hpl block matrix structure
-        d_HplBlockPos_.assignAsync(nVertexBlockPos, HplblockPos_.data(), cudaDevice_.getStream(3));
-        gpu::buildHplStructure(
-            d_HplBlockPos_,
-            d_Hpl_,
-            d_edge2Hpl_,
-            d_nnzPerCol_,
-            cudaDevice_.getStreamAndEvent(3),
-            cudaDevice_.getStreamAndEvent(4));
-
-        // build host Hschur sparse block matrix structure
-        Hsc_.resize(numP_, numP_);
-        Hsc_.constructFromVertices(verticesL_);
-        Hsc_.convertBSRToCSR();
-
-        // initialise the device schur hessian matrix
-        d_Hsc_.resize(numP_, numP_);
-        d_Hsc_.resizeNonZeros(Hsc_.nblocks());
-        // TODO: use async upload - need to converted Eigen::VectorXi to a pinned memory address
-        // version
-        d_Hsc_.uploadAsync(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
-
         // initialise the device landmark Hessian matrix - 
         // this is filled by the computation of the quadratic form
         d_Hll_.resize(numL_);
-       
-        d_HscCSR_.resize(Hsc_.nnzSymm());
-        d_BSR2CSR_.assignAsync(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
-
-        d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
-        gpu::findHschureMulBlockIndices(
-            d_Hpl_, d_Hsc_, d_HscMulBlockIds_, cudaDevice_.getStreamAndEvent(3));
-
+        
         d_bsc_.resize(numP_);
-        d_Hpl_invHll_.resize(nVertexBlockPos);
         d_HllBackup_.resize(numL_);
         d_invHll_.resize(numL_);
         d_tmpMax_hll_.resize(40);
@@ -206,34 +211,38 @@ void BlockSolver::buildStructure(
         Hpp_.resize(numP_, numP_);
         Hpp_.constructFromVertices(verticesP_);
         Hpp_.convertBSRToCSR();
-    }
 
-    // initialise the device pose Hessian matrix -
-    // this is filled by the computation of the quadratic form
-    d_Hpp_.resize(numP_);
-
-    d_xp_.map(numP_, d_x_.data());
-    d_bp_.map(numP_, d_b_.data());
-
-    d_HppBackup_.resize(numP_);
-    d_chi_.resize(1);
-    d_tmpMax_hpp_.resize(40);
-   
-    if (doSchur_)
-    {
-        HscSparseLinearSolver* sparseLinearSolver =
-            static_cast<HscSparseLinearSolver*>(linearSolver_.get());
-
-        // analyze pattern of Hschur matrix (symbolic decomposition)
-        sparseLinearSolver->initialize(Hsc_, cudaDevice_.getStreamAndEvent(2));
-    }
-    else
-    {
         DenseLinearSolver* denseLinearSolver = static_cast<DenseLinearSolver*>(linearSolver_.get());
         denseLinearSolver->initialize(Hpp_, cudaDevice_.getStream(2));
     }
-
+ 
     profItems_[PROF_ITEM_BUILD_STRUCTURE] = cudaDevice_.stopTimingEvent();
+}
+
+void BlockSolver::updateEstimates(const VertexSetVec& vertexSets)
+{
+    int offset = 0;
+    d_solution_.resize(verticesL_.size() * 3 + verticesP_.size() * 7);
+    d_solutionBackup_.resize(d_solution_.size());
+
+    for (BaseVertexSet* vertexSet : vertexSets)
+    {
+        vertexSet->clearEstimates();
+        if (!vertexSet->isMarginilised())
+        {
+            PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSet);
+            poseVertexSet->generateEstimatesAndMap(
+                d_solution_.data() + offset, cudaDevice_.getStreamAndEvent(1));
+            offset += poseVertexSet->getDeviceEstimateSize() * 7;
+        }
+        else
+        {
+            LandmarkVertexSet* lmVertexSet = static_cast<LandmarkVertexSet*>(vertexSet);
+            lmVertexSet->generateEstimatesAndMap(
+                d_solution_.data() + offset, cudaDevice_.getStreamAndEvent(1));
+            offset += lmVertexSet->getDeviceEstimateSize() * 3;
+        }
+    }
 }
 
 double BlockSolver::computeErrors(
@@ -475,4 +484,14 @@ void BlockSolver::getTimeProfile(TimeProfile& prof) const
         prof[profileItemString[i]] = profItems_[i];
     }
 }
+
+BlockSolver::BlockSolver(GraphOptimisationOptions& options, CudaDevice& cudaDevice)
+    : options(options), cudaDevice_(cudaDevice), doSchur_(false), nedges_(0)
+{
+    HplblockPos_.reserve(HBLOCKPOS_ARENA_SIZE);
+    verticesP_.reserve(POSE_VERTEX_RESERVE_SIZE);
+    verticesL_.reserve(LANDMARK_VERTEX_RESERVE_SIZE);
+}
+
+
 } // namespace cugo
