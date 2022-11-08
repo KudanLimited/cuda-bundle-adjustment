@@ -279,6 +279,19 @@ bool Edge<DIM, E, VertexTypes...>::allVerticesFixed() const noexcept
 }
 
 template <int DIM, typename E, typename... VertexTypes>
+bool Edge<DIM, E, VertexTypes...>::anyVerticesNotFixed() const noexcept
+{
+    return anyVerticesNotFixedNs(std::make_index_sequence<VertexSize>());
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+bool Edge<DIM, E, VertexTypes...>::allVerticesNotFixed() const noexcept
+{
+    return allVerticesNotFixedNs(std::make_index_sequence<VertexSize>());
+}
+
+
+template <int DIM, typename E, typename... VertexTypes>
 int Edge<DIM, E, VertexTypes...>::dim() const noexcept
 {
     return DIM;
@@ -434,12 +447,7 @@ const Vec5d EdgeSet<DIM, E, VertexTypes...>::cameraToVec(const Camera& cam) noex
 }
 
 template <int DIM, typename E, typename... VertexTypes>
-void EdgeSet<DIM, E, VertexTypes...>::init(
-    async_vector<HplBlockPos>& hBlockPosArena,
-    const int edgeIdOffset,
-    cudaStream_t stream,
-    bool doSchur,
-    const GraphOptimisationOptions& options)
+void EdgeSet<DIM, E, VertexTypes...>::init(const GraphOptimisationOptions& options)
 {
     // sanity checks for options
     if (options.perEdgeInformation)
@@ -469,8 +477,6 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
             }
         }
     }
-
-    int edgeId = edgeIdOffset;
 
     const size_t omegaSize = (options.perEdgeInformation) ? activeEdgeSize_ : 1;
     const size_t cameraSize = (options.perEdgeCamera) ? activeEdgeSize_ : 2;
@@ -520,12 +526,7 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
                 edgeFlags->push_back(BlockSolver::makeEdgeFlag(
                     edge->getVertex(0)->isFixed(), edge->getVertex(1)->isFixed()));
                 isActive = true;
-            }
-            if (doSchur && !edge->getVertex(0)->isFixed() && !edge->getVertex(1)->isFixed())
-            {
-                hBlockPosArena.push_back({vec[0], vec[1], edgeId});
-            }
-            
+            } 
         }
 
         if (isActive)
@@ -541,7 +542,6 @@ void EdgeSet<DIM, E, VertexTypes...>::init(
             {
                 cameras->push_back(cameraToVec(edge->getCamera()));
             }
-            ++edgeId;
         }
     }
 }
@@ -611,7 +611,28 @@ void EdgeSet<DIM, E, VertexTypes...>::updateEdges(const CudaDeviceInfo& deviceIn
         }
     }
 }
-   
+  
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::buildHplBlockPos(
+    async_vector<HplBlockPos>& hplBlockPos, int edgeOffset) noexcept
+{
+    int edgeId = edgeOffset;
+    for (BaseEdge* edge : edges)
+    {
+        if (edge->allVerticesFixed())
+        {
+            continue;
+        }
+        
+        if (edge->allVerticesNotFixed())
+        {
+            hplBlockPos.push_back(
+                {edge->getVertex(0)->getIndex(), edge->getVertex(1)->getIndex(), edgeId});
+        }
+        ++edgeId;
+    }
+}
+
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::clearDevice() noexcept
 {

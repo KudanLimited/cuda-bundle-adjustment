@@ -43,7 +43,7 @@ public:
     static constexpr int LANDMARK_VERTEX_RESERVE_SIZE = 20000;
 
     BlockSolver() = delete;
-    BlockSolver(GraphOptimisationOptions& options, CudaDevice& cudaDevice) : options(options), cudaDevice_(cudaDevice), doSchur_(false), nedges_(0) {}
+    BlockSolver(GraphOptimisationOptions& options, CudaDevice& cudaDevice);
 
     /**
      * @brief Initialise the block solver. This will clear the old estimate values (if an
