@@ -428,6 +428,8 @@ void EdgeSet<DIM, E, VertexTypes...>::clearEdges() noexcept
 {
     edges.clear();
     currOutlierCount_ = 0;
+    // Set edges state to dirty to ensure that the Hpl data is built the first time round
+    isDirty_ = true;
 }
 
 template <int DIM, typename E, typename... VertexTypes>
@@ -628,7 +630,7 @@ void EdgeSet<DIM, E, VertexTypes...>::updateEdges(const CudaDeviceInfo& deviceIn
         {
             // denotes that the number of active edges has changed this frame so
             // update the appropiate buffers
-            //isDirty_ = true;
+            isDirty_ = true;
         }
         currOutlierCount_ = outlierCount;
     }
@@ -661,6 +663,18 @@ uint32_t EdgeSet<DIM, E, VertexTypes...>::getOutlierCount() const noexcept
     return currOutlierCount_;
 }
      
+template <int DIM, typename E, typename... VertexTypes>
+bool EdgeSet<DIM, E, VertexTypes...>::isDirty() const noexcept
+{
+    return isDirty_;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+void EdgeSet<DIM, E, VertexTypes...>::setDirtyState(bool state) noexcept
+{
+    isDirty_ = state;
+}
+
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::clearDevice() noexcept
 {

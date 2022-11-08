@@ -627,6 +627,10 @@ public:
 
     virtual uint32_t getOutlierCount() const noexcept = 0;
 
+    virtual bool isDirty() const noexcept = 0;
+
+    virtual void setDirtyState(bool state) noexcept = 0;
+
     // device side virtual functions
     /**
      * @brief Constructs the quadratic equation for this set.
@@ -694,7 +698,8 @@ public:
         : activeEdgeSize_(0),
           outlierThreshold(0.0),
           info_(0.0),
-          totalBufferSize_(0)
+          totalBufferSize_(0), 
+          isDirty_(true)
     {
     }
     virtual ~EdgeSet() {}
@@ -716,6 +721,8 @@ public:
     Camera& getCamera() noexcept override;
     Scalar getOutlierThreshold() const noexcept override;
     uint32_t getOutlierCount() const noexcept override;
+    bool isDirty() const noexcept override;
+    void setDirtyState(bool state) noexcept override;
 
     // non-virtual functions
     /**
@@ -755,6 +762,8 @@ protected:
     async_vector<int> edgeOutliers_;
     /// The number of outliers counted last frame.
     uint32_t currOutlierCount_;
+    /// States whether edges have been declared inactive this run
+    bool isDirty_;
 
 public:
     // device side

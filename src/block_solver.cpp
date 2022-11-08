@@ -147,6 +147,7 @@ void BlockSolver::buildStructure(
 
     if (doSchur_)
     {
+        bool rebuildBlockPos = false;
         uint32_t offset = 0;
         HplblockPos_.clear();
 
@@ -156,50 +157,64 @@ void BlockSolver::buildStructure(
             {
                 continue;
             }
-            edgeSet->buildHplBlockPos(HplblockPos_, offset);
-            offset += edgeSet->nActiveEdges();
+            if (edgeSet->isDirty())
+            {
+                edgeSet->buildHplBlockPos(HplblockPos_, offset);
+                offset += edgeSet->nActiveEdges();
+                edgeSet->setDirtyState(false);
+                rebuildBlockPos = true;
+            }
         }
 
-        const size_t nVertexBlockPos = HplblockPos_.size();
-        d_Hpl_.resize(numP_, numL_);
-        d_Hpl_.resizeNonZeros(nVertexBlockPos);
-        d_nnzPerCol_.resize(numL_ + 1);
-   
-        // build Hpl block matrix structure
-        d_HplBlockPos_.assignAsync(nVertexBlockPos, HplblockPos_.data(), cudaDevice_.getStream(3));
-        gpu::buildHplStructure(
-            d_HplBlockPos_,
-            d_Hpl_,
-            d_edge2Hpl_,
-            d_nnzPerCol_,
-            cudaDevice_.getStreamAndEvent(3),
-            cudaDevice_.getStreamAndEvent(4));
+        if (rebuildBlockPos)
+        {
+            const size_t nVertexBlockPos = HplblockPos_.size();
+            d_Hpl_.resize(numP_, numL_);
+            d_Hpl_.resizeNonZeros(nVertexBlockPos);
+            d_nnzPerCol_.resize(numL_ + 1);
 
-        // build host Hschur sparse block matrix structure
-        Hsc_.resize(numP_, numP_);
-        Hsc_.constructFromVertices(verticesL_);
-        Hsc_.convertBSRToCSR();
+            // build Hpl block matrix structure
+            d_HplBlockPos_.assignAsync(
+                nVertexBlockPos, HplblockPos_.data(), cudaDevice_.getStream(3));
+            gpu::buildHplStructure(
+                d_HplBlockPos_,
+                d_Hpl_,
+                d_edge2Hpl_,
+                d_nnzPerCol_,
+                cudaDevice_.getStreamAndEvent(3),
+                cudaDevice_.getStreamAndEvent(4));
 
-        // initialise the device schur hessian matrix
-        d_Hsc_.resize(numP_, numP_);
-        d_Hsc_.resizeNonZeros(Hsc_.nblocks());
-        // TODO: use async upload - need to converted Eigen::VectorXi to a pinned memory address
-        // version
-        d_Hsc_.uploadAsync(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
+            // build host Hschur sparse block matrix structure
+            Hsc_.resize(numP_, numP_);
+            Hsc_.constructFromVertices(verticesL_);
+            Hsc_.convertBSRToCSR();
 
-        // initialise the device landmark Hessian matrix - 
-        // this is filled by the computation of the quadratic form
-        d_Hll_.resize(numL_);
-       
-        d_HscCSR_.resize(Hsc_.nnzSymm());
-        d_BSR2CSR_.assignAsync(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
+            // initialise the device schur hessian matrix
+            d_Hsc_.resize(numP_, numP_);
+            d_Hsc_.resizeNonZeros(Hsc_.nblocks());
+            // TODO: use async upload - need to converted Eigen::VectorXi to a pinned memory address
+            // version
+            d_Hsc_.uploadAsync(nullptr, Hsc_.outerIndices(), Hsc_.innerIndices());
 
-        d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
-        gpu::findHschureMulBlockIndices(
-            d_Hpl_, d_Hsc_, d_HscMulBlockIds_, cudaDevice_.getStreamAndEvent(3));
+            // initialise the device landmark Hessian matrix -
+            // this is filled by the computation of the quadratic form
+            d_Hll_.resize(numL_);
+
+            d_HscCSR_.resize(Hsc_.nnzSymm());
+            d_BSR2CSR_.assignAsync(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
+            d_Hpl_invHll_.resize(nVertexBlockPos);
+
+            d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
+            gpu::findHschureMulBlockIndices(
+                d_Hpl_, d_Hsc_, d_HscMulBlockIds_, cudaDevice_.getStreamAndEvent(3));
+
+            // analyze pattern of Hschur matrix (symbolic decomposition)
+            HscSparseLinearSolver* sparseLinearSolver =
+                static_cast<HscSparseLinearSolver*>(linearSolver_.get());
+            sparseLinearSolver->initialize(Hsc_, cudaDevice_.getStreamAndEvent(2));
+        }
 
         d_bsc_.resize(numP_);
-        d_Hpl_invHll_.resize(nVertexBlockPos);
         d_HllBackup_.resize(numL_);
         d_invHll_.resize(numL_);
         d_tmpMax_hll_.resize(40);
@@ -212,6 +227,9 @@ void BlockSolver::buildStructure(
         Hpp_.resize(numP_, numP_);
         Hpp_.constructFromVertices(verticesP_);
         Hpp_.convertBSRToCSR();
+
+        DenseLinearSolver* denseLinearSolver = static_cast<DenseLinearSolver*>(linearSolver_.get());
+        denseLinearSolver->initialize(Hpp_, cudaDevice_.getStream(2));
     }
 
     // initialise the device pose Hessian matrix -
@@ -224,20 +242,6 @@ void BlockSolver::buildStructure(
     d_HppBackup_.resize(numP_);
     d_chi_.resize(1);
     d_tmpMax_hpp_.resize(40);
-   
-    if (doSchur_)
-    {
-        HscSparseLinearSolver* sparseLinearSolver =
-            static_cast<HscSparseLinearSolver*>(linearSolver_.get());
-
-        // analyze pattern of Hschur matrix (symbolic decomposition)
-        sparseLinearSolver->initialize(Hsc_, cudaDevice_.getStreamAndEvent(2));
-    }
-    else
-    {
-        DenseLinearSolver* denseLinearSolver = static_cast<DenseLinearSolver*>(linearSolver_.get());
-        denseLinearSolver->initialize(Hpp_, cudaDevice_.getStream(2));
-    }
 
     profItems_[PROF_ITEM_BUILD_STRUCTURE] = cudaDevice_.stopTimingEvent();
 }
