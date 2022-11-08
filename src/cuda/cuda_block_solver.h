@@ -201,10 +201,11 @@ Scalar CUGO_API computeActiveErrors_DepthBa(
     const GpuVec5d& cameras,
     const Scalar errorThreshold,
     const RobustKernel& robustKernel,
+    const GpuVec1i& outliers,
     GpuVec3d& errors,
-    GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
+    Scalar* chiValues,
     const CudaDeviceInfo& deviceInfo);
 
 Scalar CUGO_API computeActiveErrors_Line(

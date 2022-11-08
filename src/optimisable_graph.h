@@ -699,6 +699,7 @@ public:
           outlierThreshold(0.0),
           info_(0.0),
           totalBufferSize_(0), 
+          currOutlierCount_(0),
           isDirty_(true)
     {
     }

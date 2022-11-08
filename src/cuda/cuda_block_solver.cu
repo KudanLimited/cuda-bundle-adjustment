@@ -426,8 +426,8 @@ __device__ inline void projectC2I<3>(const Vec3d& Xc, CameraParamView cam, Vec3d
 __device__ inline void camProjectDepth(const Vec3d& Xc, CameraParamView cam, Vec3d& p)
 {
     const Scalar invZ = 1.0 / Xc[2];
-    p[0] = cam.fx() * invZ * Xc[0] + cam.cx();
-    p[1] = cam.fy() * invZ * Xc[1] + cam.cy();
+    p[0] = Xc[0] * invZ * cam.fx() + cam.cx();
+    p[1] = Xc[1] * invZ * cam.fy() + cam.cy();
     p[2] = invZ;
 }
 
@@ -2309,68 +2309,44 @@ __global__ void computeActiveErrorsKernel_DepthBa(
     const Scalar* omegas,
     const Vec2i* edge2PL,
     const Vec5d* cameras,
-    const Scalar errorThreshold,
+    const int* outliers,
     Vec3d* errors,
-    int* outliers,
     Vec3d* Xcs,
-    Scalar* chi)
+    Scalar* chiValues)
 {
-    Scalar sumchi = 0;
-    for (int iE = blockIdx.x * blockDim.x + threadIdx.x; iE < nedges; iE += gridDim.x * blockDim.x)
+    int iE = blockIdx.x * blockDim.x + threadIdx.x;
+    if (iE >= nedges || outliers[iE])
     {
-        const Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
-        const int iP = edge2PL[iE][0];
-        const int iL = edge2PL[iE][1];
-
-        const QuatD& q = se3[iP].r;
-        const Vec3d& t = se3[iP].t;
-        const Vec3d& Xw = Xws[iL];
-        const Vec3d& measurement = measurements[iE];
-        const Vec5d& camera = (ncameras > 1) ? cameras[iE] : cameras[0];
-
-        // project world to camera
-        Vec3d Xc;
-        projectW2C(q, t, Xw, Xc);
-
-        // project camera to image
-        Vec3d proj;
-        camProjectDepth(Xc, camera, proj);
-
-        // compute residual
-        Vec3d error;
-        error[0] = measurement[0] - proj[0];
-        error[1] = measurement[1] - proj[1];
-        error[2] = measurement[2] - proj[2];
-        errors[iE] = error;
-        Xcs[iE] = Xc;
-
-        const Scalar chi2 = robustKernelFunc->robustify(omega * squaredNorm(error));
-        sumchi += chi2;
-        if (errorThreshold > 0.0 && chi2 > errorThreshold)
-        {
-            outliers[iE] = 1;
-        }
+        return;
     }
 
-    const int sharedIdx = threadIdx.x;
-    __shared__ Scalar cache[BLOCK_ACTIVE_ERRORS];
+    const Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
+    const int iP = edge2PL[iE][0];
+    const int iL = edge2PL[iE][1];
 
-    cache[sharedIdx] = sumchi;
-    __syncthreads();
+    const QuatD& q = se3[iP].r;
+    const Vec3d& t = se3[iP].t;
+    const Vec3d& Xw = Xws[iL];
+    const Vec3d& measurement = measurements[iE];
+    const Vec5d& camera = (ncameras > 1) ? cameras[iE] : cameras[0];
 
-    for (int stride = BLOCK_ACTIVE_ERRORS / 2; stride > 0; stride >>= 1)
-    {
-        if (sharedIdx < stride)
-        {
-            cache[sharedIdx] += cache[sharedIdx + stride];
-        }
-        __syncthreads();
-    }
+    // project world to camera
+    Vec3d Xc;
+    projectW2C(q, t, Xw, Xc);
 
-    if (sharedIdx == 0)
-    {
-        atomicAdd(chi, cache[0]);
-    }
+    // project camera to image
+    Vec3d proj;
+    camProjectDepth(Xc, camera, proj);
+
+    // compute residual
+    Vec3d error;
+    error[0] = measurement[0] - proj[0];
+    error[1] = measurement[1] - proj[1];
+    error[2] = measurement[2] - proj[2];
+    errors[iE] = error;
+    Xcs[iE] = Xc;
+
+    chiValues[iE] = robustKernelFunc->robustify(omega * squaredNorm(error));
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -2550,25 +2526,25 @@ Scalar computeActiveErrors_DepthBa(
     const GpuVec5d& cameras,
     const Scalar errorThreshold,
     const RobustKernel& robustKernel,
+    const GpuVec1i& outliers,
     GpuVec3d& errors,
-    GpuVec1i& outliers,
     GpuVec3d& Xcs,
     Scalar* chi,
+    Scalar* chiValues,
     const CudaDeviceInfo& deviceInfo)
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
-    const int block = BLOCK_ACTIVE_ERRORS;
-    const int grid = 16;
 
-    if (errorThreshold > 0.0)
-    {
-        CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
-    }
+    int blockSize;
+    int gridSize;
+    calculateOccupancy(nedges, (void*)computeActiveErrorsKernel_DepthBa, blockSize, gridSize);
+
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-    
-    computeActiveErrorsKernel_DepthBa<<<grid, block, 0, deviceInfo.stream>>>(
+    CUDA_CHECK(cudaMemset(chiValues, 0, sizeof(Scalar) * nedges));
+
+    computeActiveErrorsKernel_DepthBa<<<gridSize, blockSize, 0, deviceInfo.stream>>>(
         nedges,
         nomegas,
         ncameras,
@@ -2578,17 +2554,26 @@ Scalar computeActiveErrors_DepthBa(
         omegas,
         edge2PL,
         cameras,
-        errorThreshold,
-        errors,
         outliers,
+        errors,
         Xcs,
-        chi);
+        chiValues);
+
+    blockSize = 512;
+    gridSize = divUp(nedges, blockSize);
+    const int sharedBytes = blockSize * sizeof(Scalar);
+
+    computeChiValueKernel<<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
+        nedges, blockSize, chiValues, outliers, chi);
+
+    hAsyncScalar h_chi;
+    h_chi.download(chi, deviceInfo.stream);
+
+    CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
+    CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
     CUDA_CHECK(cudaGetLastError());
-    
-    Scalar h_chi = 0;
-    CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-  
-    return h_chi;
+
+    return *h_chi;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////

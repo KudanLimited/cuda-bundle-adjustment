@@ -194,10 +194,11 @@ public:
             d_cameras,
             outlierThreshold,
             kernel,
-            d_errors,
             d_outliers,
+            d_errors,
             d_Xcs,
             chi,
+            d_chiValues,
             deviceInfo);
     }
 
