@@ -401,6 +401,10 @@ public:
      * @return The camera parameters used by this edge.
      */
     virtual Camera& getCamera() noexcept = 0;
+
+    virtual void inactivate() noexcept = 0;
+    virtual void setActive() noexcept = 0;
+    virtual bool isActive() const noexcept = 0;
 };
 
 /**
@@ -439,7 +443,7 @@ public:
         return static_cast<VertexNthType<N>*>(vertices[N]);
     }
 
-    Edge() : measurement(Measurement()) {}
+    Edge() : measurement(Measurement()), isActive_(true) {}
     virtual ~Edge() {}
 
     // virtual functions
@@ -453,6 +457,9 @@ public:
     Information getInformation() noexcept override;
     void setCamera(const Camera& camera) noexcept override;
     Camera& getCamera() noexcept override;
+    void inactivate() noexcept override;
+    void setActive() noexcept override;
+    bool isActive() const noexcept override;
 
     // non-virtual functions
     template <std::size_t... Ints>
@@ -491,6 +498,8 @@ protected:
     Camera camera_;
     /// The vertex types for the edge
     BaseVertex* vertices[VertexSize];
+    /// States the activity of this edge - inactive edges are disregarded during graph optimistaion
+    bool isActive_;
 };
 
 
@@ -616,6 +625,8 @@ public:
     */
     virtual Scalar getOutlierThreshold() const noexcept = 0;
 
+    virtual uint32_t getOutlierCount() const noexcept = 0;
+
     // device side virtual functions
     /**
      * @brief Constructs the quadratic equation for this set.
@@ -704,6 +715,7 @@ public:
     void setCamera(const Camera& camera) noexcept override;
     Camera& getCamera() noexcept override;
     Scalar getOutlierThreshold() const noexcept override;
+    uint32_t getOutlierCount() const noexcept override;
 
     // non-virtual functions
     /**
@@ -738,6 +750,11 @@ protected:
     /// The camera params which which will be applied to all edges in this set. This is only used if
     /// option @p perEdgeCamera is false.
     Camera camera_;
+    // outlier members - only used if outlier threshold is greater than zero
+    /// Used to download outlier data from device to the host.
+    async_vector<int> edgeOutliers_;
+    /// The number of outliers counted last frame.
+    uint32_t currOutlierCount_;
 
 public:
     // device side

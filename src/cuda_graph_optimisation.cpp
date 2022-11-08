@@ -116,16 +116,22 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
         stats_.addStat({iteration, F});
         if (verbose)
         {
+            uint32_t outlierCount = 0;
+            for (auto* edgeSet : edgeSets)
+            {
+                outlierCount += edgeSet->getOutlierCount();
+            }
             printf(
                 "iteration= %i;   time(ms): %.4f   chi2= %f;   lambda= %f   rho= "
-                "%f	   nedges= %i    levenberg iterations = %i\n",
+                "%f	   nedges= %i    levenberg iterations = %i   outliers = %d\n",
                 iteration,
                 timeTaken,
                 F,
                 lambda,
                 rho,
                 solver_->nedges(),
-                q);
+                q,
+                outlierCount);
         }
 
         if (shouldProfile_)

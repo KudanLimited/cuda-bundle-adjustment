@@ -1067,6 +1067,7 @@ __global__ void computeActiveErrorsKernel(
     const Scalar* omegas,
     const Vec2i* edge2PL,
     const Vec5d* cameras,
+    const int* outliers,
     Vecxd<MDIM>* errors,
     Vec3d* Xcs,
     Scalar* chiValues)
@@ -1074,7 +1075,7 @@ __global__ void computeActiveErrorsKernel(
     using Vecmd = Vecxd<MDIM>;
 
     int iE = blockIdx.x * blockDim.x + threadIdx.x;
-    if (iE >= nedges)
+    if (iE >= nedges || outliers[iE])
     {
         return;
     }
@@ -1121,7 +1122,10 @@ __global__ void computeChiValueKernel(
 
     while (iE < nedges)
     {
-        sumchi += chiValues[iE];
+        if (!outliers[iE])
+        {
+            sumchi += chiValues[iE];
+        }
         iE += gridSize;
     }
 
@@ -1157,6 +1161,7 @@ __global__ void constructQuadraticFormKernel(
     const int* edge2Hpl,
     const uint8_t* flags,
     const Vec5d* cameras,
+    const int* outliers,
     PxPBlockPtr Hpp,
     Px1BlockPtr bp,
     LxLBlockPtr Hll,
@@ -1166,7 +1171,7 @@ __global__ void constructQuadraticFormKernel(
     using Vecmd = Vecxd<MDIM>;
 
     const int iE = blockIdx.x * blockDim.x + threadIdx.x;
-    if (iE >= nedges)
+    if (iE >= nedges || outliers[iE])
     {
         return;
     }
@@ -1701,6 +1706,7 @@ Scalar computeActiveErrors_<2>(
         omegas,
         edge2PL,
         cameras,
+        outliers,
         errors,
         Xcs,
         chiValues);
@@ -1759,6 +1765,7 @@ Scalar computeActiveErrors_<3>(
         omegas,
         edge2PL,
         cameras,
+        outliers,
         errors,
         Xcs,
         chiValues);
@@ -1791,6 +1798,7 @@ void constructQuadraticForm_(
     const GpuVec1b& flags,
     const GpuVec5d& cameras,
     const RobustKernel& robustKernel,
+    const GpuVec1i& outliers,
     GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
@@ -1811,6 +1819,7 @@ void constructQuadraticForm_<2>(
     const GpuVec1b& flags,
     const GpuVec5d& cameras,
     const RobustKernel& robustKernel,
+    const GpuVec1i& outliers,
     GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
@@ -1836,6 +1845,7 @@ void constructQuadraticForm_<2>(
         edge2Hpl,
         flags,
         cameras,
+        outliers,
         Hpp,
         bp,
         Hll,
@@ -1855,6 +1865,7 @@ void constructQuadraticForm_<3>(
     const GpuVec1b& flags,
     const GpuVec5d& cameras,
     const RobustKernel& robustKernel,
+    const GpuVec1i& outliers,
     GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,
@@ -1880,6 +1891,7 @@ void constructQuadraticForm_<3>(
         edge2Hpl,
         flags,
         cameras,
+        outliers,
         Hpp,
         bp,
         Hll,
