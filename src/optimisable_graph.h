@@ -562,7 +562,7 @@ public:
     * @brief If the outlier threshold is greater than zero, then any edge outliers determined by the 
     * @p computeErrors kernel, will be removed from the edge container.
     */
-    virtual void updateEdges() noexcept = 0;
+    virtual void updateEdges(const CudaDeviceInfo& deviceInfo) noexcept = 0;
 
     /**
      * @brief Set the Robust Kernel associated with this set (applied to all edges)
@@ -681,7 +681,7 @@ public:
     void removeEdge(BaseEdge* edge) override;
     size_t nedges() const noexcept override;
     size_t nActiveEdges() const noexcept override;
-    void updateEdges() noexcept override;
+    void updateEdges(const CudaDeviceInfo& deviceInfo) noexcept override;
     const EdgeContainer& get() noexcept;
     const int dim() const noexcept override;
     void setRobustKernel(const RobustKernelType type, Scalar delta) noexcept override;
@@ -768,6 +768,7 @@ protected:
     GpuVec1i d_edge2Hpl;
     DeviceBuffer<Scalar> d_outlierThreshold;
     GpuVec1i d_outliers;
+    GpuVec<Scalar> d_chiValues;
 };
 
 

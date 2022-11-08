@@ -55,11 +55,11 @@ public:
             d_omegas,
             d_edge2PL,
             d_cameras,
-            outlierThreshold,
             kernel,
-            d_errors,
             d_outliers,
+            d_errors,
             d_Xcs,
+            d_chiValues,
             chi,
             deviceInfo);
     }
@@ -123,11 +123,11 @@ public:
             d_omegas,
             d_edge2PL,
             d_cameras,
-            outlierThreshold,
             kernel,
-            d_errors,
             d_outliers,
+            d_errors,
             d_Xcs,
+            d_chiValues,
             chi,
             deviceInfo);
     }
