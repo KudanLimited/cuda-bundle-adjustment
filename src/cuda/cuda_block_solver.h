@@ -167,6 +167,7 @@ void CUGO_API constructQuadraticForm_(
     const GpuVec1b& flags,
     const GpuVec5d& cameras,
     const RobustKernel& robustKernel,
+    const GpuVec1i& outliers,
     GpuPxPBlockVec& Hpp,
     GpuPx1BlockVec& bp,
     GpuLxLBlockVec& Hll,

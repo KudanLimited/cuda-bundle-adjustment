@@ -76,22 +76,25 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
     blockpos.reserve(brows_ * bcols_);
 
     int countmul = 0;
-    for (auto v : vertices)
+    for (auto vertex : vertices)
     {
-        if (v->isFixed())
+        if (vertex->isFixed())
         {
             continue;
         }
 
         indices.clear();
-        for (const auto e : v->getEdges())
+        for (const auto edge : vertex->getEdges())
         {
-            const BaseVertex* vP =
-                e->getVertex(0); // Note: assuming pose vertices are in idx 0 of the array - need to
-                                 // use a better method! check if not marginilised
-            if (!vP->isFixed())
+            if (edge->isActive())
             {
-                indices.push_back(vP->getIndex());
+                const BaseVertex* vP =
+                    edge->getVertex(0); // Note: assuming pose vertices are in idx 0 of the array -
+                                        // need to use a better method! check if not marginilised
+                if (!vP->isFixed())
+                {
+                    indices.push_back(vP->getIndex());
+                }
             }
         }
 

@@ -327,6 +327,24 @@ Camera& Edge<DIM, E, VertexTypes...>::getCamera() noexcept
     return camera_;
 }
 
+template <int DIM, typename E, typename... VertexTypes>
+void Edge<DIM, E, VertexTypes...>::inactivate() noexcept
+{
+    isActive_ = false;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+void Edge<DIM, E, VertexTypes...>::setActive() noexcept
+{
+    isActive_ = true;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
+bool Edge<DIM, E, VertexTypes...>::isActive() const noexcept
+{
+    return isActive_;
+}
+
 // EdgeSet functions
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::addEdge(BaseEdge* edge)
@@ -396,6 +414,7 @@ template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::setOutlierThreshold(const Scalar errorThreshold) noexcept
 {
     this->outlierThreshold = errorThreshold;
+    d_outlierThreshold.assign(1, &outlierThreshold);
 }
 
 template <int DIM, typename E, typename... VertexTypes>
@@ -408,6 +427,7 @@ template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::clearEdges() noexcept
 {
     edges.clear();
+    currOutlierCount_ = 0;
 }
 
 template <int DIM, typename E, typename... VertexTypes>
@@ -555,7 +575,6 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     d_Xcs.resize(activeEdgeSize_);
     d_chiValues.resize(activeEdgeSize_);
 
-    d_outlierThreshold.assign(1, &outlierThreshold);
     d_outliers.resize(activeEdgeSize_);
     d_outliers.fillZero();
 
@@ -589,26 +608,29 @@ void EdgeSet<DIM, E, VertexTypes...>::updateEdges(const CudaDeviceInfo& deviceIn
         const size_t nedges = edges.size();
         gpu::computeOutliers(nedges, outlierThreshold, d_chiValues, d_outliers, deviceInfo);
         
-        std::vector<int> edgeOutliers;
-        std::vector<BaseEdge*> edgesToRemove;
-        edgeOutliers.resize(activeEdgeSize_);
-
-        d_outliers.download(edgeOutliers.data());
+        edgeOutliers_.resize(activeEdgeSize_);
+        d_outliers.download(edgeOutliers_.data());
         
         size_t idx = 0;
-        assert(edgeOutliers.size() == edges.size());
+        uint32_t outlierCount = 0;
+
+        assert(edgeOutliers_.size() == edges.size());
         for (BaseEdge* edge : edges)
         {
-            if (edgeOutliers[idx++])
+            if (edgeOutliers_[idx++])
             {
-                edgesToRemove.emplace_back(edge);
+                edge->inactivate();
+                outlierCount++;
             }
         }
-        // delete any edge outliers
-        for (BaseEdge* edge : edgesToRemove)
+        const uint32_t outliersRemovedThisFrame = outlierCount - currOutlierCount_;
+        if (outliersRemovedThisFrame > 0)
         {
-            removeEdge(edge);
+            // denotes that the number of active edges has changed this frame so
+            // update the appropiate buffers
+            //isDirty_ = true;
         }
+        currOutlierCount_ = outlierCount;
     }
 }
   
@@ -624,7 +646,7 @@ void EdgeSet<DIM, E, VertexTypes...>::buildHplBlockPos(
             continue;
         }
         
-        if (edge->allVerticesNotFixed())
+        if (edge->isActive() && edge->allVerticesNotFixed())
         {
             hplBlockPos.push_back(
                 {edge->getVertex(0)->getIndex(), edge->getVertex(1)->getIndex(), edgeId});
@@ -633,6 +655,12 @@ void EdgeSet<DIM, E, VertexTypes...>::buildHplBlockPos(
     }
 }
 
+template <int DIM, typename E, typename... VertexTypes>
+uint32_t EdgeSet<DIM, E, VertexTypes...>::getOutlierCount() const noexcept
+{
+    return currOutlierCount_;
+}
+     
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::clearDevice() noexcept
 {
