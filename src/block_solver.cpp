@@ -9,6 +9,14 @@
 namespace cugo
 {
 
+BlockSolver::BlockSolver(GraphOptimisationOptions& options, CudaDevice& cudaDevice)
+    : options(options), cudaDevice_(cudaDevice), doSchur_(false), nedges_(0)
+{ 
+    HplblockPos_.reserve(HBLOCKPOS_ARENA_SIZE); 
+    verticesP_.reserve(POSE_VERTEX_RESERVE_SIZE);
+    verticesL_.reserve(LANDMARK_VERTEX_RESERVE_SIZE);
+}
+
 void BlockSolver::initialize(
     const EdgeSetVec& edgeSets,
     const VertexSetVec& vertexSets)
@@ -21,9 +29,6 @@ void BlockSolver::initialize(
 
     // prepare the solver for a fresh initialisation
     clear();
-
-    verticesP_.reserve(POSE_VERTEX_RESERVE_SIZE);
-    verticesL_.reserve(LANDMARK_VERTEX_RESERVE_SIZE);
 
     for (BaseVertexSet* vertexSet : vertexSets)
     {
@@ -73,15 +78,6 @@ void BlockSolver::initialize(
     // only perform schur if we have landmark vertices
     doSchur_ = (verticesL_.size() > 0) ? true : false;
     
-    // setup the edge set estimation data, indices and flags on the host
-    // Note: this is dependent on the vertex data so this must be initialised first
-    int edgeIdOffset = 0;
-
-    if (doSchur_)
-    {
-        HplblockPos_.reserve(HBLOCKPOS_ARENA_SIZE);
-    }
-
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
         if (!edgeSet->nedges())
@@ -93,10 +89,8 @@ void BlockSolver::initialize(
         // Note: these calls do no memory de-allocating and do not
         // destroy or touch device buffers.
         edgeSet->clearDevice();
-
-        edgeSet->init(HplblockPos_, edgeIdOffset, 0, doSchur_, options);
+        edgeSet->init(options);
         nedges_ += edgeSet->nActiveEdges();
-        edgeIdOffset += nedges_;
     }
     
     if (doSchur_)
@@ -153,8 +147,20 @@ void BlockSolver::buildStructure(
 
     if (doSchur_)
     {
-        size_t nVertexBlockPos = HplblockPos_.size();
+        uint32_t offset = 0;
+        HplblockPos_.clear();
 
+        for (BaseEdgeSet* edgeSet : edgeSets)
+        {
+            if (!edgeSet->nedges())
+            {
+                continue;
+            }
+            edgeSet->buildHplBlockPos(HplblockPos_, offset);
+            offset += edgeSet->nActiveEdges();
+        }
+
+        const size_t nVertexBlockPos = HplblockPos_.size();
         d_Hpl_.resize(numP_, numL_);
         d_Hpl_.resizeNonZeros(nVertexBlockPos);
         d_nnzPerCol_.resize(numL_ + 1);

@@ -362,6 +362,10 @@ public:
      */
     virtual bool allVerticesFixed() const noexcept = 0;
 
+    virtual bool anyVerticesNotFixed() const noexcept = 0;
+
+    virtual bool allVerticesNotFixed() const noexcept = 0;
+
     /**
      * @brief Get the measurement associated with the edge.
      * @return Returns the measurment as a void pointer.
@@ -442,6 +446,8 @@ public:
     BaseVertex* getVertex(const int index) override;
     void setVertex(BaseVertex* vertex, const int index) override;
     bool allVerticesFixed() const noexcept override;
+    bool anyVerticesNotFixed() const noexcept override;
+    bool allVerticesNotFixed() const noexcept override;
     int dim() const noexcept override;
     void setInformation(const Information info) noexcept override;
     Information getInformation() noexcept override;
@@ -454,6 +460,20 @@ public:
     {
         bool fixed[] = {getVertexN<Ints>()->isFixed()...};
         return std::all_of(std::begin(fixed), std::end(fixed), [](bool value) { return value; });
+    }
+
+    template <std::size_t... Ints>
+    bool anyVerticesNotFixedNs(std::index_sequence<Ints...>) const
+    {
+        bool fixed[] = {getVertexN<Ints>()->isFixed()...};
+        return std::any_of(std::begin(fixed), std::end(fixed), [](bool value) { return !value; });
+    }
+
+    template <std::size_t... Ints>
+    bool allVerticesNotFixedNs(std::index_sequence<Ints...>) const
+    {
+        bool fixed[] = {getVertexN<Ints>()->isFixed()...};
+        return std::all_of(std::begin(fixed), std::end(fixed), [](bool value) { return !value; });
     }
 
     /**
@@ -523,19 +543,9 @@ public:
 
     /**
      * @brief Initialise the edge vertex set.
-     * @param hBlockPosArena If using the schur complement, this defines the memory allocation
-     * poolfor the block positions.
-     * @param edgeIdOffset The offset that the edge ids will begin from.
-     * @param stream A CUDA stream object.
-     * @param doSchur States whether this optimiser will conduct Schur complement calculations
      * @param options A @see GraphOptimisationOptions object
      */
-    virtual void init(
-        async_vector<HplBlockPos>& hBlockPosArena,
-        const int edgeIdOffset,
-        cudaStream_t stream,
-        bool doSchur,
-        const GraphOptimisationOptions& options) = 0;
+    virtual void init(const GraphOptimisationOptions& options) = 0;
 
     /**
      * @brief Maps the data derived from the @see init call to the device.
@@ -547,6 +557,8 @@ public:
     virtual void
     mapDevice(const GraphOptimisationOptions& options, const CudaDeviceInfo& deviceInfo, int* edge2HData = nullptr) = 0;
 
+    virtual void buildHplBlockPos(
+        async_vector<HplBlockPos>& hplBlockPos, int edgeOffset) noexcept = 0;
     /**
      * @brief Clear the device side containers in this set. Note: This does not deallocate device
      * memory.
@@ -732,12 +744,9 @@ public:
     using ErrorVec = typename std::conditional<(DIM == 1), GpuVec1d, GpuVec<VecNd<DIM>>>::type;
     using MeasurementVec = GpuVec<GpuMeasurementType>;
 
-    void init(
-        async_vector<HplBlockPos>& hBlockPosArena,
-        const int edgeIdOffset,
-        cudaStream_t stream,
-        bool doSchur,
-        const GraphOptimisationOptions& options) override;
+    void init(const GraphOptimisationOptions& options) override;
+
+    void buildHplBlockPos(async_vector<HplBlockPos>& hplBlockPos, int edgeOffset) noexcept override;
 
     void mapDevice(
         const GraphOptimisationOptions& options,
