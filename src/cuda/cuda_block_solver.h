@@ -149,6 +149,13 @@ void computeScale(
     Scalar lambda,
     const CudaDeviceInfo& deviceInfo);
 
+void computeOutliers(
+    int nedges,
+    const Scalar errorTheshold,
+    const Scalar* chiValues,
+    int* outliers,
+    const CudaDeviceInfo& deviceInfo);
+
 template <int M>
 void CUGO_API constructQuadraticForm_(
     const GpuVec3d& Xcs,
@@ -167,19 +174,20 @@ void CUGO_API constructQuadraticForm_(
     GpuHplBlockMat& Hpl,
     const CudaDeviceInfo& deviceInfo);
 
+
 template <int M>
-Scalar CUGO_API computeActiveErrors_(
+Scalar computeActiveErrors_(
     const GpuVecSe3d& poseEstimate,
     const GpuVec3d& landmarkEstimate,
     const GpuVecxd<M>& measurements,
     const GpuVec1d& omegas,
     const GpuVec2i& edge2PL,
     const GpuVec5d& cameras,
-    const Scalar errorThreshold,
     const RobustKernel& robustKernel,
+    const GpuVec1i& outliers,
     GpuVecxd<M>& errors,
-    GpuVec1i& outliers,
     GpuVec3d& Xcs,
+    Scalar* chiValues,
     Scalar* chi,
     const CudaDeviceInfo& deviceInfo);
 

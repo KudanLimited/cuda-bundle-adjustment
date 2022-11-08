@@ -553,12 +553,12 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
     // buffers filled by the gpu kernels.
     d_errors.resize(activeEdgeSize_);
     d_Xcs.resize(activeEdgeSize_);
+    d_chiValues.resize(activeEdgeSize_);
 
     d_outlierThreshold.assign(1, &outlierThreshold);
-    if (outlierThreshold > 0.0)
-    {
-        d_outliers.resize(activeEdgeSize_);
-    }
+    d_outliers.resize(activeEdgeSize_);
+    d_outliers.fillZero();
+
     if (edge2HData)
     {
         d_edge2Hpl.map(activeEdgeSize_, edge2HData);
@@ -577,14 +577,22 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
 }
 
 template <int DIM, typename E, typename... VertexTypes>
-void EdgeSet<DIM, E, VertexTypes...>::updateEdges() noexcept
+void EdgeSet<DIM, E, VertexTypes...>::updateEdges(const CudaDeviceInfo& deviceInfo) noexcept
 {
-    std::vector<int> edgeOutliers;
-    std::vector<BaseEdge*> edgesToRemove;
+    if (!edges.size())
+    {
+        return;
+    }
 
     if (outlierThreshold > 0.0)
     {
+        const size_t nedges = edges.size();
+        gpu::computeOutliers(nedges, outlierThreshold, d_chiValues, d_outliers, deviceInfo);
+        
+        std::vector<int> edgeOutliers;
+        std::vector<BaseEdge*> edgesToRemove;
         edgeOutliers.resize(activeEdgeSize_);
+
         d_outliers.download(edgeOutliers.data());
         
         size_t idx = 0;
