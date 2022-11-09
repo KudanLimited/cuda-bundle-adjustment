@@ -18,6 +18,8 @@ limitations under the License.
 
 #include <cstdio>
 
+#define HOST_DEVICE_INLINE __host__ __device__ inline
+
 #define CUDA_CHECK(err)                                                                            \
     do                                                                                             \
     {                                                                                              \

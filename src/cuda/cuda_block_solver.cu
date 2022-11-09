@@ -2238,8 +2238,8 @@ computeJacobians_Line(const Se3D& est, const PointToLineMatch<double>& measureme
     Vec3d Pw;
     se3MulVec(est, measurement.pointP, Pw);
 
-    Vec3d A = Pw - measurement.start();
-    Vec3d B = Pw - measurement.end();
+    Vec3d A = Pw; //-measurement.start();
+    Vec3d B = Pw; //-measurement.end();
 
     Vec3d crossAB;
     cross(A, B, crossAB);
@@ -2478,8 +2478,7 @@ __global__ void constructQuadraticFormKernel_Plane(
     const PointToPlaneMatch<double> measurement = measurements[iE];
 
     const Se3D rt = se3[iP];
-    Vec1d error;
-    error[0] = errors[iE];
+    const Scalar error = errors[iE];
 
     // compute Jacobians
     Matx<Scalar, MDIM, PDIM> JP = computeJacobians_Plane(rt, measurement);
@@ -2489,7 +2488,7 @@ __global__ void constructQuadraticFormKernel_Plane(
         // Hpp += JPT*Ω*JP
         MatTMulMat<PDIM, MDIM, PDIM, ACCUM_ATOMIC>(JP.data, JP.data, Hpp.at(iP), omega);
         // bp -= JPT*Ω*r
-        MatTMulVec<PDIM, MDIM, DEACCUM_ATOMIC>(JP.data, error.data, bp.at(iP), omega);
+        MatTMulVec<PDIM, MDIM, DEACCUM_ATOMIC>(JP.data, &error, bp.at(iP), omega);
     }
 }
 
@@ -2521,8 +2520,7 @@ __global__ void constructQuadraticFormKernel_Line(
     const PointToLineMatch<double> measurement = measurements[iE];
 
     const Se3D& rt = se3[iP];
-    Vec1d error;
-    error[0] = errors[iE];
+    Scalar error = errors[iE];
 
     // compute Jacobians
     Matx<Scalar, 1, PDIM> JP = computeJacobians_Line(rt, measurement);
@@ -2533,7 +2531,7 @@ __global__ void constructQuadraticFormKernel_Line(
         MatTMulMat<PDIM, MDIM, PDIM, ACCUM_ATOMIC>(JP.data, JP.data, Hpp.at(iP), omega);
 
         // bp += = JPT*Ω*r
-        MatTMulVec<PDIM, MDIM, DEACCUM_ATOMIC>(JP.data, error.data, bp.at(iP), omega);
+        MatTMulVec<PDIM, MDIM, DEACCUM_ATOMIC>(JP.data, &error, bp.at(iP), omega);
     }
 }
 

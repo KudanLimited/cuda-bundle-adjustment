@@ -16,7 +16,7 @@ public:
     /**
      Start/End of the line, shorthanded to a/b to make the maths easier.
      */
-    Vec3 a, b;
+    Vec3d a, b;
 
     /**
      Distance between a, b.
@@ -24,36 +24,40 @@ public:
     ScalarType length;
 
     /// A matched point, in platform coordinates.
-    Vec3 pointP;
+    Vec3d pointP;
 
-    HOST_DEVICE PointToLineMatch() {};
+    HOST_DEVICE_INLINE PointToLineMatch() {};
 
     /**
      Constructor.
      @param start the first point which the line passes through.
      @param finish the second point which the line passes through.
      */
-    HOST_DEVICE PointToLineMatch(const Vec3& start, const Vec3& finish) : a(start), b(finish)
+    HOST_DEVICE_INLINE PointToLineMatch(const Vec3d& start, const Vec3d& finish) : a(start), b(finish)
     {
-        this->length = norm(a - b);
+        Vec3d dist;
+        dist.x = a.x - b.x;
+        dist.y = a.y - b.y;
+        dist.z = a.z - b.z;
+        this->length = norm(dist);
     }
 
     /**
      @return the starting point with which the line was constructed.
      */
-    HOST_DEVICE Vec3 start() const { return a; }
+    HOST_DEVICE_INLINE Vec3d start() const { return a; }
 
     /**
      @return the end point with which the line was constructed.
      */
-    HOST_DEVICE Vec3 end() const { return b; }
+    HOST_DEVICE_INLINE Vec3d end() const { return b; }
 
-    HOST_DEVICE ScalarType normSquared(const Vec3& r)
+    HOST_DEVICE_INLINE ScalarType normSquared(const Vec3d& r)
     {
         return r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
     }
 
-    HOST_DEVICE ScalarType norm(const Vec3& r) { return std::sqrt(normSquared(r)); }
+    HOST_DEVICE_INLINE ScalarType norm(const Vec3d& r) { return std::sqrt(normSquared(r)); }
 };
 
 template <typename Scalar>
@@ -65,14 +69,14 @@ public:
      Used as part of G2O edge initialisation.
      If at all possible, call one of the other constructors.
      */
-    HOST_DEVICE PointToPlaneMatch() {};
+    HOST_DEVICE_INLINE PointToPlaneMatch() {};
 
     /**
      Construct a plane from a unit normal and plane offset.
      @param norm a unit normal (length 1).
      @param offset the plane offset.
      */
-    HOST_DEVICE PointToPlaneMatch(const Vec3& norm, Scalar offset, const Vec3& pointP)
+    HOST_DEVICE_INLINE PointToPlaneMatch(const Vec3d& norm, Scalar offset, const Vec3d& pointP)
     {
         normal = norm;
         originDistance = offset;
@@ -83,7 +87,7 @@ public:
      The plane's normal.
      NOTE: The Plane functions assume this is normalised!
      */
-    Vec3 normal;
+    Vec3d normal;
 
     /**
      (Signed) distance of the plane from the origin
@@ -93,7 +97,7 @@ public:
      */
     Scalar originDistance;
 
-    Vec3 pointP;
+    Vec3d pointP;
 };
 
 
