@@ -17,6 +17,7 @@ limitations under the License.
 #pragma once
 
 #include "scalar.h"
+#include "macro.h"
 
 #include <cassert>
 #include <cstdint>
@@ -24,130 +25,317 @@ limitations under the License.
 
 namespace cugo
 {
-#define HOST_DEVICE __host__ __device__ inline
 
 template <typename T, int N>
 struct Vec
 {
-    HOST_DEVICE Vec() {}
-    HOST_DEVICE Vec(const T* values) noexcept
+    constexpr static size_t Size = N;
+
+    HOST_DEVICE_INLINE Vec() {}
+    HOST_DEVICE_INLINE Vec(const T* values) noexcept
     {
-        #pragma unroll
-        for (int i = 0; i < N; i++)
+#pragma unroll
+        for (int i = 0; i < Size; i++)
         {
             data[i] = values[i];
         }
     }
 
     template <typename U>
-    HOST_DEVICE Vec(const U* values) noexcept 
+    HOST_DEVICE_INLINE Vec(const U* values) noexcept
     {
-        #pragma unroll
-        for (int i = 0; i < N; i++)
+#pragma unroll
+        for (int i = 0; i < Size; i++)
         {
             data[i] = T(values[i]);
         }
     }
 
-    HOST_DEVICE Vec(const Vec<T, N>& vec) noexcept
+    HOST_DEVICE_INLINE Vec(const Vec<T, N>& vec) noexcept
     {
-        #pragma unroll
-        for (int i = 0; i < N; i++)
+#pragma unroll
+        for (int i = 0; i < Size; i++)
         {
             data[i] = vec[i];
         }
     }
 
-    HOST_DEVICE Vec(const T& x, const T& y, const T& z) noexcept
-    {
-        data[0] = x;
-        data[1] = y;
-        data[2] = z;
-    }
+    HOST_DEVICE_INLINE T& operator[](int i) noexcept { return data[i]; }
+    HOST_DEVICE_INLINE const T& operator[](int i) const noexcept { return data[i]; }
 
-     HOST_DEVICE Vec(T x, T y, T z) noexcept
+    HOST_DEVICE_INLINE void copyTo(T* rhs) const noexcept
     {
-        data[0] = x;
-        data[1] = y;
-        data[2] = z;
-    }
-
-    HOST_DEVICE T& operator[](int i) noexcept { return data[i]; }
-    HOST_DEVICE const T& operator[](int i) const noexcept { return data[i]; }
-
-    HOST_DEVICE Vec<T, N> operator-(const Vec<T, N>& other) noexcept
-    {
-        Vec<T, N> output;
-        output[0] = this->data[0] - other[0];
-        output[1] = this->data[1] - other[1];
-        output[2] = this->data[2] - other[2];
-        return output;
-    }
-
-    HOST_DEVICE void copyTo(T* rhs) const noexcept
-    {
-        #pragma unroll
-        for (int i = 0; i < N; i++)
+#pragma unroll
+        for (int i = 0; i < Size; i++)
         {
             rhs[i] = data[i];
         }
     }
 
     template <typename U>
-    HOST_DEVICE void copyTo(U* rhs) const noexcept
+    HOST_DEVICE_INLINE void copyTo(U* rhs) const noexcept
     {
-        #pragma unroll
-        for (int i = 0; i < N; i++)
+#pragma unroll
+        for (int i = 0; i < Size; i++)
         {
             rhs[i] = U(data[i]);
         }
     }
 
-    T data[N];
+    T data[Size];
 };
 
-template <typename T, int N>
-__device__ inline Vec<T, N> operator*(const T& f, const Vec<T, N>& m) noexcept
+template <typename T>
+struct Vec<T, 2>
 {
-    Vec<T, N> result;
-    for (int idx = 0; idx < N; ++idx)
+    static constexpr size_t Size = 2;
+  
+    HOST_DEVICE_INLINE Vec() {}
+    HOST_DEVICE_INLINE Vec(const T* values) noexcept
     {
-        result.data[idx] = f * m.data[idx];
+        data[0] = values[0];
+        data[1] = values[1];
     }
+
+    template <typename U>
+    HOST_DEVICE_INLINE Vec(const U* values) noexcept 
+    {
+        data[0] = T(values[0]);
+        data[1] = T(values[1]);
+    }
+
+    template <typename U>
+    HOST_DEVICE_INLINE Vec(const U& x, const U& y) : x(T(x)), y(T(y))
+    {
+    }
+
+    HOST_DEVICE_INLINE T& operator[](int i) noexcept 
+    { 
+        assert(i < Size);
+        return data[i]; 
+    }
+    HOST_DEVICE_INLINE const T& operator[](int i) const noexcept 
+    { 
+        assert(i < Size);
+        return data[i]; 
+    }
+
+    HOST_DEVICE_INLINE void copyTo(T* rhs) const noexcept
+    {
+        rhs[0] = data[0];
+        rhs[1] = data[1];
+    }
+
+    template <typename U>
+    HOST_DEVICE_INLINE void copyTo(T* rhs) const noexcept
+    {
+        rhs[0] = U(data[0]);
+        rhs[1] = U(data[1]);
+    }
+
+    union
+    {
+        T data[Size];
+        struct
+        {
+            T x, y;
+        };
+    };
+};
+
+template <typename T>
+using Vec2 = Vec<T, 2>;
+
+template <typename T>
+__device__ inline Vec2<T> operator*(const T& f, const Vec2<T>& m) noexcept
+{
+    Vec2<T> result;
+    result.data[0] = f * m.data[0];
+    result.data[1] = f * m.data[1];
     return result;
 }
 
-using Vec1 = Vec<Scalar, 2>;
-using Vec2 = Vec<Scalar, 2>;
-using Vec3 = Vec<Scalar, 3>;
-using Vec4 = Vec<Scalar, 4>;
-using Vec5 = Vec<Scalar, 5>;
-using Vec6 = Vec<Scalar, 6>;
+template <typename T>
+struct Vec<T, 3>
+{
+    static constexpr size_t Size = 3;
 
-using Vec1d = Vec<double, 1>;
-using Vec2d = Vec<double, 2>;
-using Vec3d = Vec<double, 3>;
-using Vec4d = Vec<double, 4>;
+    HOST_DEVICE_INLINE Vec() {}
+    HOST_DEVICE_INLINE Vec(const T* values) noexcept
+    {
+        data[0] = values[0];
+        data[1] = values[1];
+        data[2] = values[2];
+    }
+
+    template <typename U>
+    HOST_DEVICE_INLINE Vec(const U& x, const U& y, const U& z) : x(T(x)), y(T(y)), z(T(z)) {}
+
+    template <typename U>
+    HOST_DEVICE_INLINE Vec(const U* values) noexcept
+    {
+        data[0] = T(values[0]);
+        data[1] = T(values[1]);
+        data[2] = T(values[2]);
+    }
+
+    HOST_DEVICE_INLINE T& operator[](int i) noexcept
+    {
+        assert(i < Size);
+        return data[i];
+    }
+    HOST_DEVICE_INLINE const T& operator[](int i) const noexcept
+    {
+        assert(i < Size);
+        return data[i];
+    }
+
+    HOST_DEVICE_INLINE void copyTo(T* rhs) const noexcept
+    {
+        rhs[0] = data[0];
+        rhs[1] = data[1];
+        rhs[2] = data[2];
+    }
+
+    template <typename U>
+    HOST_DEVICE_INLINE void copyTo(T* rhs) const noexcept
+    {
+        rhs[0] = U(data[0]);
+        rhs[1] = U(data[1]);
+        rhs[2] = U(data[2]);
+    }
+
+    union
+    {
+        T data[Size];
+        struct
+        {
+            T x, y, z;
+        };
+    };
+    
+};
+
+template <typename T>
+using Vec3 = Vec<T, 3>;
+
+template <typename T>
+__device__ inline Vec3<T> operator*(const T& f, const Vec3<T>& m) noexcept
+{
+    Vec3<T> result;
+    result.data[0] = f * m.data[0];
+    result.data[1] = f * m.data[1];
+    result.data[2] = f * m.data[2];
+    return result;
+}
+
+template <typename T>
+struct Vec<T, 4>
+{
+    static constexpr size_t Size = 4;
+
+    HOST_DEVICE_INLINE Vec() {}
+    HOST_DEVICE_INLINE Vec(const T* values) noexcept
+    {
+        data[0] = values[0];
+        data[1] = values[1];
+        data[2] = values[2];
+        data[3] = values[3];
+    }
+
+    template <typename U>
+    HOST_DEVICE_INLINE Vec(const U* values) noexcept
+    {
+        data[0] = T(values[0]);
+        data[1] = T(values[1]);
+        data[2] = T(values[2]);
+        data[3] = T(values[3]);
+    }
+
+    template <typename U>
+    HOST_DEVICE_INLINE Vec(const U& x, const U& y, const U& z, const U& w)
+        : x(T(x)), y(T(y)), z(T(z)), w(T(w))
+    {
+    }
+
+    HOST_DEVICE_INLINE T& operator[](int i) noexcept
+    {
+        assert(i < Size);
+        return data[i];
+    }
+    HOST_DEVICE_INLINE const T& operator[](int i) const noexcept
+    {
+        assert(i < Size);
+        return data[i];
+    }
+
+    HOST_DEVICE_INLINE void copyTo(T* rhs) const noexcept
+    {
+        rhs[0] = data[0];
+        rhs[1] = data[1];
+        rhs[2] = data[2];
+        rhs[3] = data[3];
+    }
+
+    template <typename U>
+    HOST_DEVICE_INLINE void copyTo(T* rhs) const noexcept
+    {
+        rhs[0] = U(data[0]);
+        rhs[1] = U(data[1]);
+        rhs[2] = U(data[2]);
+        rhs[3] = U(data[3]);
+    }
+
+    union
+    {
+        T data[Size];
+        struct
+        {
+            T x, y, z, w;
+        };
+    };
+};
+
+template <typename T>
+using Vec4 = Vec<T, 4>;
+
+template <typename T>
+__device__ inline Vec4<T> operator*(const T& f, const Vec4<T>& m) noexcept
+{
+    Vec4<T> result;
+    result.data[0] = f * m.data[0];
+    result.data[1] = f * m.data[1];
+    result.data[2] = f * m.data[2];
+    result.data[3] = f * m.data[3];
+    return result;
+}
+
+
+using Vec2i = Vec2<int>;
+using Vec3i = Vec3<int>;
+using Vec4i = Vec4<int>;
+using Vec2f = Vec2<float>;
+using Vec3f = Vec3<float>;
+using Vec4f = Vec4<float>;
+using Vec2d = Vec2<double>;
+using Vec3d = Vec3<double>;
+using Vec4d = Vec4<double>;
+
+
+
+using Vec5f = Vec<float, 5>;
 using Vec5d = Vec<double, 5>;
+using Vec6f = Vec<float, 6>;
 using Vec6d = Vec<double, 6>;
-
-template <int DIM>
-using VecNd = Vec<double, DIM>;
-
-using Vec1i = Vec<int, 1>;
-using Vec2i = Vec<int, 2>;
-using Vec3i = Vec<int, 3>;
-using Vec4i = Vec<int, 4>;
-
-template <int DIM>
-using VecNi = Vec<int, DIM>;
 
 
 template <typename T>
 struct Quat
 {
-    HOST_DEVICE Quat() {}
-    HOST_DEVICE Quat(const T* values) noexcept
+    constexpr static size_t Size = 4;
+     
+    HOST_DEVICE_INLINE Quat() {}
+    HOST_DEVICE_INLINE Quat(const T* values) noexcept
     {
         #pragma unroll
         for (int i = 0; i < 4; i++)
@@ -157,13 +345,15 @@ struct Quat
     }
 
     template <typename U>
-    HOST_DEVICE Quat(const U* values) noexcept
+    HOST_DEVICE_INLINE Quat(const U* values) noexcept
     {
         for (int i = 0; i < 4; i++)
+        {
             data[i] = T(values[i]);
+        }
     }
 
-    HOST_DEVICE Quat(const Vec<T, 4>& vec) noexcept
+    HOST_DEVICE_INLINE Quat(const Vec4<T>& vec) noexcept
     {
         #pragma unroll
         for (int i = 0; i < 4; i++)
@@ -172,7 +362,7 @@ struct Quat
         }
     }
 
-    HOST_DEVICE Quat(const Quat<T>& quat) noexcept
+    HOST_DEVICE_INLINE Quat(const Quat<T>& quat) noexcept 
     {
         #pragma unroll
         for (int i = 0; i < 4; i++)
@@ -181,34 +371,18 @@ struct Quat
         }
     }
 
-    HOST_DEVICE Quat(const T& x, const T& y, const T& z, const T& w) noexcept
-    {
-        data[0] = x;
-        data[1] = y;
-        data[2] = z;
-        data[3] = w;
-    }
-
-    HOST_DEVICE Quat(T x, T y, T z, T w) noexcept
-    {
-        data[0] = x;
-        data[1] = y;
-        data[2] = z;
-        data[3] = w;
-    }
-
-    HOST_DEVICE T& operator[](int i) noexcept
+    HOST_DEVICE_INLINE T& operator[](int i) noexcept
     {
         assert(i < 4);
         return data[i];
     }
-    HOST_DEVICE const T& operator[](int i) const noexcept
+    HOST_DEVICE_INLINE const T& operator[](int i) const noexcept
     {
         assert(i < 4);
         return data[i];
     }
 
-    HOST_DEVICE void copyTo(T* rhs) const noexcept
+    HOST_DEVICE_INLINE void copyTo(T* rhs) const noexcept
     {
         #pragma unroll
         for (int i = 0; i < 4; i++)
@@ -218,7 +392,7 @@ struct Quat
     }
 
     template <typename U>
-    HOST_DEVICE void copyTo(U* rhs) const noexcept
+    HOST_DEVICE_INLINE void copyTo(U* rhs) const noexcept
     {
         #pragma unroll
         for (int i = 0; i < 4; i++)
@@ -227,7 +401,14 @@ struct Quat
         }
     }
 
-    T data[4];
+    union
+    {
+        T data[Size];
+        struct
+        {
+            T x, y, z, w;
+        };
+    };
 };
 
 using QuatF = Quat<float>;
@@ -236,8 +417,8 @@ using QuatD = Quat<double>;
 template <typename T>
 struct Se3
 {
-    HOST_DEVICE Se3() {}
-    HOST_DEVICE Se3(const T* rValues, const T* tValues) noexcept
+    HOST_DEVICE_INLINE Se3() {}
+    HOST_DEVICE_INLINE Se3(const T* rValues, const T* tValues) noexcept
     {
         #pragma unroll
         for (int i = 0; i < 4; i++)
@@ -252,7 +433,7 @@ struct Se3
     }
 
     template <typename U>
-    HOST_DEVICE Se3(const U* rValues, const U* tValues) noexcept
+    HOST_DEVICE_INLINE Se3(const U* rValues, const U* tValues) noexcept
     {
         #pragma unroll
         for (int i = 0; i < 4; i++)
@@ -266,7 +447,7 @@ struct Se3
         }
     }
 
-    HOST_DEVICE void copyTo(T* r_rhs, T* t_rhs) const noexcept
+    HOST_DEVICE_INLINE void copyTo(T* r_rhs, T* t_rhs) const noexcept
     {
         #pragma unroll
         for (int i = 0; i < 4; i++)
@@ -281,7 +462,7 @@ struct Se3
     }
 
     template <typename U>
-    HOST_DEVICE void copyTo(U* r_rhs, U* t_rhs) const noexcept
+    HOST_DEVICE_INLINE void copyTo(U* r_rhs, U* t_rhs) const noexcept
     {
         #pragma unroll
         for (int i = 0; i < 4; i++)
@@ -295,7 +476,7 @@ struct Se3
         }
     }
 
-    HOST_DEVICE Se3(const Quat<T>& quat, const Vec<T, 3>& vec) noexcept
+    HOST_DEVICE_INLINE Se3(const Quat<T>& quat, const Vec3<T>& vec) noexcept
     {
     #pragma unroll
         for (int i = 0; i < 4; i++)
@@ -310,7 +491,7 @@ struct Se3
     }
 
     Quat<T> r;
-    Vec<T, 3> t;
+    Vec3<T> t;
 };
 
 using Se3F = Se3<float>;

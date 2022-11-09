@@ -767,7 +767,7 @@ protected:
 
 public:
     // device side
-    using ErrorVec = typename std::conditional<(DIM == 1), GpuVec1d, GpuVec<VecNd<DIM>>>::type;
+    using ErrorVec = typename std::conditional<(DIM == 1), GpuVec1d, GpuVec<Vec<double, DIM>>>::type;
     using MeasurementVec = GpuVec<GpuMeasurementType>;
 
     void init(const GraphOptimisationOptions& options) override;
