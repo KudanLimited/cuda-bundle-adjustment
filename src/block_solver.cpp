@@ -3,6 +3,7 @@
 #include "cuda_linear_solver.h"
 #include "optimisable_graph.h"
 #include "profile.h"
+#include "macro.h"
 
 #include <cstdint>
 
@@ -80,7 +81,7 @@ void BlockSolver::initialize(
     
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
-        if (!edgeSet->nedges())
+        if (CUGO_UNLIKELY(!edgeSet->nedges()))
         {
             continue;
         }
@@ -102,7 +103,7 @@ void BlockSolver::initialize(
 
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
-        if (!edgeSet->nedges())
+        if (CUGO_UNLIKELY(!edgeSet->nedges()))
         {
             continue;
         }
@@ -153,7 +154,7 @@ void BlockSolver::buildStructure(
 
         for (BaseEdgeSet* edgeSet : edgeSets)
         {
-            if (!edgeSet->nedges())
+            if (CUGO_UNLIKELY(!edgeSet->nedges()))
             {
                 continue;
             }
@@ -256,7 +257,7 @@ double BlockSolver::computeErrors(
     uint8_t streamId = 0;
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
-        if (!edgeSet->nedges())
+        if (CUGO_UNLIKELY(!edgeSet->nedges()))
         {
             continue;
         }
@@ -294,7 +295,7 @@ void BlockSolver::buildSystem(
 
     for (auto* edgeSet : edgeSets)
     {
-        if (!edgeSet->nedges())
+        if (CUGO_UNLIKELY(!edgeSet->nedges()))
         {
             continue;
         }
@@ -371,7 +372,7 @@ bool BlockSolver::solve()
     // HSc*Δxp = bp
     gpu::convertHschureBSRToCSR(d_Hsc_, d_BSR2CSR_, d_HscCSR_, cudaDevice_.getStreamAndEvent(3));
     const bool success = linearSolver_->solve(d_HscCSR_, d_bsc_.values(), d_xp_.values());
-    if (!success)
+    if (CUGO_UNLIKELY(!success))
     {
         return false;
     }

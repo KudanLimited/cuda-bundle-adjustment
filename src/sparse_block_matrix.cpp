@@ -17,6 +17,7 @@ limitations under the License.
 #include "sparse_block_matrix.h"
 
 #include "optimisable_graph.h"
+#include "macro.h"
 
 #include <algorithm>
 
@@ -78,7 +79,7 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
     int countmul = 0;
     for (auto vertex : vertices)
     {
-        if (vertex->isFixed())
+        if (CUGO_UNLIKELY(vertex->isFixed()))
         {
             continue;
         }
@@ -86,12 +87,12 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
         indices.clear();
         for (const auto edge : vertex->getEdges())
         {
-            if (edge->isActive())
+            if (CUGO_LIKELY(edge->isActive()))
             {
                 const BaseVertex* vP =
                     edge->getVertex(0); // Note: assuming pose vertices are in idx 0 of the array -
                                         // need to use a better method! check if not marginilised
-                if (!vP->isFixed())
+                if (CUGO_LIKELY(!vP->isFixed()))
                 {
                     indices.push_back(vP->getIndex());
                 }

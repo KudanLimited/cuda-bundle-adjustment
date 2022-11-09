@@ -54,15 +54,12 @@ void CudaGraphOptimisationImpl::optimize(int niterations)
     double lambda = 0.0;
     double F = 0.0;
 
+    solver_->buildStructure(edgeSets, vertexSets);
+
     // Levenberg-Marquardt iteration
     for (int iteration = 0; iteration < niterations; iteration++)
     {
         cudaDevice_.startTimingEvent();
-
-        if (iteration == 0)
-        {
-            solver_->buildStructure(edgeSets, vertexSets);
-        }
 
         const double iniF = solver_->computeErrors(edgeSets, vertexSets);
         F = iniF;

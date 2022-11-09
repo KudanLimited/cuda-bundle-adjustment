@@ -95,7 +95,7 @@ void VertexSet<T, EstimateType>::generateEstimateData()
     for (const auto& [id, vertex] : vertexMap)
     {
         assert(vertex != nullptr);
-        if (!vertex->isFixed())
+        if (CUGO_LIKELY(!vertex->isFixed()))
         {
             vertex->setIndex(count++);
             vertices.push_back(vertex);
@@ -170,7 +170,7 @@ template <typename T, typename E>
 bool VertexSet<T, E>::removeVertex(BaseVertex* v, BaseEdgeSet* edgeSet)
 {
     auto it = vertexMap.find(v->getId());
-    if (it == std::end(vertexMap))
+    if (CUGO_UNLIKELY(it == std::end(vertexMap)))
     {
         return false;
     }
@@ -531,7 +531,7 @@ void EdgeSet<DIM, E, VertexTypes...>::init(const GraphOptimisationOptions& optio
         VIndex vec;
         if (VertexSize == 1)
         {
-            if (!edge->getVertex(0)->isFixed())
+            if (CUGO_LIKELY(!edge->getVertex(0)->isFixed()))
             {
                 vec[0] = edge->getVertex(0)->getIndex();
                 edgeFlags->push_back(
@@ -541,7 +541,7 @@ void EdgeSet<DIM, E, VertexTypes...>::init(const GraphOptimisationOptions& optio
         }
         else
         {
-            if (!edge->getVertex(0)->isFixed() || !edge->getVertex(1)->isFixed())
+            if (CUGO_LIKELY(!edge->getVertex(0)->isFixed() || !edge->getVertex(1)->isFixed()))
             {
                 vec[0] = edge->getVertex(0)->getIndex();
                 vec[1] = edge->getVertex(1)->getIndex();
@@ -600,7 +600,7 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::updateEdges(const CudaDeviceInfo& deviceInfo) noexcept
 {
-    if (!edges.size())
+    if (CUGO_UNLIKELY(!edges.size()))
     {
         return;
     }
@@ -619,7 +619,7 @@ void EdgeSet<DIM, E, VertexTypes...>::updateEdges(const CudaDeviceInfo& deviceIn
         assert(edgeOutliers_.size() == edges.size());
         for (BaseEdge* edge : edges)
         {
-            if (edgeOutliers_[idx++])
+            if (CUGO_UNLIKELY(edgeOutliers_[idx++]))
             {
                 edge->inactivate();
                 outlierCount++;
@@ -643,7 +643,7 @@ void EdgeSet<DIM, E, VertexTypes...>::buildHplBlockPos(
     int edgeId = edgeOffset;
     for (BaseEdge* edge : edges)
     {
-        if (edge->allVerticesFixed())
+        if (CUGO_UNLIKELY(edge->allVerticesFixed()))
         {
             continue;
         }

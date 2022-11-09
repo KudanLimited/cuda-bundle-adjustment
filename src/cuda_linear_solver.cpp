@@ -18,6 +18,7 @@ limitations under the License.
 
 #include "cuda/cuda_block_solver.h"
 #include "device_buffer.h"
+#include "macro.h"
 
 #include <vector>
 
@@ -44,9 +45,9 @@ bool HscSparseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* 
 {
     cholesky_.factorize(d_A);
 
-    if (cholesky_.info() != Cholesky::SUCCESS)
+    if (CUGO_UNLIKELY(cholesky_.info() != Cholesky::SUCCESS))
     {
-        std::cerr << "factorize failed" << std::endl;
+        printf("factorize failed!\n");
         return false;
     }
 
@@ -70,9 +71,9 @@ bool HppSparseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* 
 {
     cholesky_.factorize(d_A);
 
-    if (cholesky_.info() != Cholesky::SUCCESS)
+    if (CUGO_UNLIKELY(cholesky_.info() != Cholesky::SUCCESS))
     {
-        std::cerr << "factorize failed" << std::endl;
+        printf("factorize failed\n");
         return false;
     }
 
@@ -94,9 +95,9 @@ bool DenseLinearSolver::solve(const Scalar* d_A, const Scalar* d_b, Scalar* d_x)
 {
     cholesky_.factorize(d_A);
 
-    if (cholesky_.info() != Cholesky::SUCCESS)
+    if (CUGO_UNLIKELY(cholesky_.info() != Cholesky::SUCCESS))
     {
-        std::cerr << "factorize failed" << std::endl;
+        printf("factorize failed!");
         return false;
     }
 
