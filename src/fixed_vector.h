@@ -91,17 +91,13 @@ struct Vec<T, 2>
     static constexpr size_t Size = 2;
   
     HOST_DEVICE_INLINE Vec() {}
-    HOST_DEVICE_INLINE Vec(const T* values) noexcept
+    HOST_DEVICE_INLINE Vec(const T* values) noexcept : x(values[0]), y(values[1])
     {
-        data[0] = values[0];
-        data[1] = values[1];
     }
 
     template <typename U>
-    HOST_DEVICE_INLINE Vec(const U* values) noexcept 
+    HOST_DEVICE_INLINE Vec(const U* values) noexcept : x(T(values[0])), y(T(values[1]))
     {
-        data[0] = T(values[0]);
-        data[1] = T(values[1]);
     }
 
     template <typename U>
@@ -161,11 +157,8 @@ struct Vec<T, 3>
     static constexpr size_t Size = 3;
 
     HOST_DEVICE_INLINE Vec() {}
-    HOST_DEVICE_INLINE Vec(const T* values) noexcept
+    HOST_DEVICE_INLINE Vec(const T* values) noexcept : x(values[0]), y(values[1]), z(values[2])
     {
-        data[0] = values[0];
-        data[1] = values[1];
-        data[2] = values[2];
     }
 
     template <typename U>
@@ -173,10 +166,8 @@ struct Vec<T, 3>
 
     template <typename U>
     HOST_DEVICE_INLINE Vec(const U* values) noexcept
+        : x(T(values[0])), y(T(values[1])), z(T(values[2]))
     {
-        data[0] = T(values[0]);
-        data[1] = T(values[1]);
-        data[2] = T(values[2]);
     }
 
     HOST_DEVICE_INLINE T& operator[](int i) noexcept
@@ -236,20 +227,14 @@ struct Vec<T, 4>
 
     HOST_DEVICE_INLINE Vec() {}
     HOST_DEVICE_INLINE Vec(const T* values) noexcept
+        : x(values[0]), y(values[1]), z(values[2]), w(values[3])
     {
-        data[0] = values[0];
-        data[1] = values[1];
-        data[2] = values[2];
-        data[3] = values[3];
     }
 
     template <typename U>
     HOST_DEVICE_INLINE Vec(const U* values) noexcept
+        : x(T(values[0])), y(T(values[1])), z(T(values[2])), w(T(values[3]))
     {
-        data[0] = T(values[0]);
-        data[1] = T(values[1]);
-        data[2] = T(values[2]);
-        data[3] = T(values[3]);
     }
 
     template <typename U>
@@ -336,39 +321,30 @@ struct Quat
      
     HOST_DEVICE_INLINE Quat() {}
     HOST_DEVICE_INLINE Quat(const T* values) noexcept
+        : x(values[0]), y(values[1]), z(values[2]), w(values[3])
     {
-        #pragma unroll
-        for (int i = 0; i < 4; i++)
-        {
-            data[i] = values[i];
-        }
     }
 
     template <typename U>
     HOST_DEVICE_INLINE Quat(const U* values) noexcept
+        : x(T(values[0])), y(T(values[1])), z(T(values[2])), w(T(values[3]))
     {
-        for (int i = 0; i < 4; i++)
-        {
-            data[i] = T(values[i]);
-        }
+    }
+
+    template <typename U>
+    HOST_DEVICE_INLINE Quat(const U& x, const U& y, const U& z, const U& w)
+        : x(T(x)), y(T(y)), z(T(z)), w(T(w))
+    {
     }
 
     HOST_DEVICE_INLINE Quat(const Vec4<T>& vec) noexcept
+        : x(vec.x), y(vec.y), z(vec.z), w(vec.w)
     {
-        #pragma unroll
-        for (int i = 0; i < 4; i++)
-        {
-            data[i] = vec[i];
-        }
     }
 
     HOST_DEVICE_INLINE Quat(const Quat<T>& quat) noexcept 
+        : x(quat.x), y(quat.y), z(quat.z), w(quat.w)
     {
-        #pragma unroll
-        for (int i = 0; i < 4; i++)
-        {
-            data[i] = quat[i];
-        }
     }
 
     HOST_DEVICE_INLINE T& operator[](int i) noexcept
