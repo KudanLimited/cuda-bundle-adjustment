@@ -1711,7 +1711,7 @@ Scalar computeActiveErrors_<2>(
         Xcs,
         chiValues);
 
-    blockSize = 512;
+    blockSize = 1024;
     gridSize = divUp(nedges, blockSize);
     const int sharedBytes = blockSize * sizeof(Scalar);
 
@@ -1770,7 +1770,7 @@ Scalar computeActiveErrors_<3>(
         Xcs,
         chiValues);
 
-    blockSize = 512;
+    blockSize = 1024;
     gridSize = divUp(nedges, blockSize);
     const int sharedBytes = blockSize * sizeof(Scalar);
 
@@ -1830,7 +1830,7 @@ void constructQuadraticForm_<2>(
     const int nedges = errors.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
-    const int block = 512;
+    const int block = 256;
     const int grid = divUp(nedges, block);
 
     constructQuadraticFormKernel<2><<<grid, block, 0, deviceInfo.stream>>>(
@@ -1876,7 +1876,7 @@ void constructQuadraticForm_<3>(
     const int nedges = errors.ssize();
     const int nomegas = omegas.ssize();
     const int ncameras = cameras.ssize();
-    const int block = 512;
+    const int block = 256;
     const int grid = divUp(nedges, block);
 
     constructQuadraticFormKernel<3><<<grid, block, 0, deviceInfo.stream>>>(
