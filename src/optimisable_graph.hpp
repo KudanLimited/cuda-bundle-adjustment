@@ -484,19 +484,9 @@ void EdgeSet<DIM, E, VertexTypes...>::init(const GraphOptimisationOptions& optio
     activeEdgeSize_ = 0;
     for (BaseEdge* edge : edges)
     {
-        if (VertexSize == 1)
+        if (CUGO_LIKELY(edge->anyVerticesNotFixed()))
         {
-            if (!edge->getVertex(0)->isFixed())
-            {
-                ++activeEdgeSize_;
-            }
-        }
-        else
-        {
-            if (!edge->getVertex(0)->isFixed() || !edge->getVertex(1)->isFixed())
-            {
-                ++activeEdgeSize_;
-            }
+            ++activeEdgeSize_;
         }
     }
 
@@ -600,45 +590,44 @@ void EdgeSet<DIM, E, VertexTypes...>::mapDevice(
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::updateEdges(const CudaDeviceInfo& deviceInfo) noexcept
 {
-    if (CUGO_UNLIKELY(!edges.size()))
-    {
-        return;
-    }
-
+    // the edgeset edges are by default declared dirty, as outliers may not be used
+    isDirty_ = true;
     if (outlierThreshold > 0.0)
     {
+        std::vector<BaseEdge*> edgesToRemove;
+        std::vector<int> edgeOutliers(activeEdgeSize_);
+        edgesToRemove.reserve(50);
+
         const size_t nedges = edges.size();
         gpu::computeOutliers(nedges, outlierThreshold, d_chiValues, d_outliers, deviceInfo);
         
-        edgeOutliers_.resize(activeEdgeSize_);
-        d_outliers.download(edgeOutliers_.data());
+        d_outliers.download(edgeOutliers.data());
         
         size_t idx = 0;
         uint32_t outlierCount = 0;
 
-        assert(edgeOutliers_.size() == edges.size());
+        assert(edgeOutliers.size() == edges.size());
         for (BaseEdge* edge : edges)
         {
-            if (CUGO_UNLIKELY(edgeOutliers_[idx++]))
+            if (CUGO_UNLIKELY(edgeOutliers[idx++]))
             {
-                edge->inactivate();
-                outlierCount++;
+                edgesToRemove.emplace_back(edge);
             }
         }
-        const uint32_t outliersRemovedThisFrame = outlierCount - currOutlierCount_;
-        if (outliersRemovedThisFrame > 0)
+
+        isDirty_ = (edgesToRemove.size() > 0) ? true : false;
+        currOutlierCount_ += edgesToRemove.size();
+
+        for (BaseEdge* edge : edgesToRemove)
         {
-            // denotes that the number of active edges has changed this frame so
-            // update the appropiate buffers
-            isDirty_ = true;
+            removeEdge(edge);
         }
-        currOutlierCount_ = outlierCount;
     }
 }
   
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::buildHplBlockPos(
-    async_vector<HplBlockPos>& hplBlockPos, int edgeOffset) noexcept
+    std::vector<HplBlockPos>& hplBlockPos, int edgeOffset) noexcept
 {
     int edgeId = edgeOffset;
     for (BaseEdge* edge : edges)
@@ -648,7 +637,7 @@ void EdgeSet<DIM, E, VertexTypes...>::buildHplBlockPos(
             continue;
         }
         
-        if (edge->isActive() && edge->allVerticesNotFixed())
+        if (edge->allVerticesNotFixed())
         {
             hplBlockPos.push_back(
                 {edge->getVertex(0)->getIndex(), edge->getVertex(1)->getIndex(), edgeId});

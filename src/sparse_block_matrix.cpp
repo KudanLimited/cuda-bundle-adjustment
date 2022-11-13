@@ -87,15 +87,12 @@ void HschurSparseBlockMatrix::constructFromVertices(const std::vector<BaseVertex
         indices.clear();
         for (const auto edge : vertex->getEdges())
         {
-            if (CUGO_LIKELY(edge->isActive()))
-            {
-                const BaseVertex* vP =
-                    edge->getVertex(0); // Note: assuming pose vertices are in idx 0 of the array -
+            const BaseVertex* vP =
+                edge->getVertex(0); // Note: assuming pose vertices are in idx 0 of the array -
                                         // need to use a better method! check if not marginilised
-                if (CUGO_LIKELY(!vP->isFixed()))
-                {
-                    indices.push_back(vP->getIndex());
-                }
+            if (CUGO_LIKELY(!vP->isFixed()))
+            {
+                indices.push_back(vP->getIndex());
             }
         }
 

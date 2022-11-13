@@ -21,6 +21,7 @@
 #include <type_traits>
 #include <unordered_set>
 #include <vector>
+#include <set>
 
 namespace cugo
 {
@@ -31,7 +32,7 @@ class BaseEdge;
 class BaseRobustKernel;
 struct CudaDeviceInfo;
 
-using EdgeContainer = std::unordered_set<BaseEdge*>;
+using EdgeContainer = std::set<BaseEdge*>;
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Vertex
@@ -567,7 +568,7 @@ public:
     mapDevice(const GraphOptimisationOptions& options, const CudaDeviceInfo& deviceInfo, int* edge2HData = nullptr) = 0;
 
     virtual void buildHplBlockPos(
-        async_vector<HplBlockPos>& hplBlockPos, int edgeOffset) noexcept = 0;
+        std::vector<HplBlockPos>& hplBlockPos, int edgeOffset) noexcept = 0;
     /**
      * @brief Clear the device side containers in this set. Note: This does not deallocate device
      * memory.
@@ -757,9 +758,6 @@ protected:
     /// The camera params which which will be applied to all edges in this set. This is only used if
     /// option @p perEdgeCamera is false.
     Camera camera_;
-    // outlier members - only used if outlier threshold is greater than zero
-    /// Used to download outlier data from device to the host.
-    async_vector<int> edgeOutliers_;
     /// The number of outliers counted last frame.
     uint32_t currOutlierCount_;
     /// States whether edges have been declared inactive this run
@@ -772,7 +770,7 @@ public:
 
     void init(const GraphOptimisationOptions& options) override;
 
-    void buildHplBlockPos(async_vector<HplBlockPos>& hplBlockPos, int edgeOffset) noexcept override;
+    void buildHplBlockPos(std::vector<HplBlockPos>& hplBlockPos, int edgeOffset) noexcept override;
 
     void mapDevice(
         const GraphOptimisationOptions& options,

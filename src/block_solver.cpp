@@ -81,7 +81,7 @@ void BlockSolver::initialize(
     
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
-        if (CUGO_UNLIKELY(!edgeSet->nedges()))
+        if (CUGO_UNLIKELY(!edgeSet->nedges()) || !edgeSet->isDirty())
         {
             continue;
         }
@@ -103,7 +103,7 @@ void BlockSolver::initialize(
 
     for (BaseEdgeSet* edgeSet : edgeSets)
     {
-        if (CUGO_UNLIKELY(!edgeSet->nedges()))
+        if (CUGO_UNLIKELY(!edgeSet->nedges()) || !edgeSet->isDirty())
         {
             continue;
         }
@@ -150,33 +150,31 @@ void BlockSolver::buildStructure(
     {
         bool rebuildBlockPos = false;
         uint32_t offset = 0;
-        HplblockPos_.clear();
+        std::vector<HplBlockPos> HplblockPos;
+        HplblockPos.reserve(200000);
 
         for (BaseEdgeSet* edgeSet : edgeSets)
         {
-            if (CUGO_UNLIKELY(!edgeSet->nedges()))
+            if (CUGO_UNLIKELY(!edgeSet->nedges()) || !edgeSet->isDirty())
             {
                 continue;
             }
-            if (edgeSet->isDirty())
-            {
-                edgeSet->buildHplBlockPos(HplblockPos_, offset);
-                offset += edgeSet->nActiveEdges();
-                edgeSet->setDirtyState(false);
-                rebuildBlockPos = true;
-            }
+            edgeSet->buildHplBlockPos(HplblockPos, offset);
+            offset += edgeSet->nActiveEdges();
+            edgeSet->setDirtyState(false);
+            rebuildBlockPos = true;
         }
 
         if (rebuildBlockPos)
         {
-            const size_t nVertexBlockPos = HplblockPos_.size();
+            const size_t nVertexBlockPos = HplblockPos.size();
             d_Hpl_.resize(numP_, numL_);
             d_Hpl_.resizeNonZeros(nVertexBlockPos);
             d_nnzPerCol_.resize(numL_ + 1);
 
             // build Hpl block matrix structure
             d_HplBlockPos_.assignAsync(
-                nVertexBlockPos, HplblockPos_.data(), cudaDevice_.getStream(3));
+                nVertexBlockPos, HplblockPos.data(), cudaDevice_.getStream(3));
             gpu::buildHplStructure(
                 d_HplBlockPos_,
                 d_Hpl_,
@@ -185,6 +183,8 @@ void BlockSolver::buildStructure(
                 cudaDevice_.getStreamAndEvent(3),
                 cudaDevice_.getStreamAndEvent(4));
 
+            d_Hpl_invHll_.resize(nVertexBlockPos);
+       
             // build host Hschur sparse block matrix structure
             Hsc_.resize(numP_, numP_);
             Hsc_.constructFromVertices(verticesL_);
@@ -203,8 +203,7 @@ void BlockSolver::buildStructure(
 
             d_HscCSR_.resize(Hsc_.nnzSymm());
             d_BSR2CSR_.assignAsync(Hsc_.nnzSymm(), (int*)Hsc_.BSR2CSR());
-            d_Hpl_invHll_.resize(nVertexBlockPos);
-
+        
             d_HscMulBlockIds_.resize(Hsc_.nmulBlocks());
             gpu::findHschureMulBlockIndices(
                 d_Hpl_, d_Hsc_, d_HscMulBlockIds_, cudaDevice_.getStreamAndEvent(3));
@@ -424,6 +423,10 @@ void BlockSolver::updateEdges(const EdgeSetVec& edgeSets)
 { 
     for (const auto& edgeSet : edgeSets)
     {
+        if (CUGO_UNLIKELY(!edgeSet->nedges()))
+        {
+            continue;
+        }
         edgeSet->updateEdges(cudaDevice_.getStreamAndEvent(1));
     }
 }
