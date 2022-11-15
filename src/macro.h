@@ -59,6 +59,10 @@ limitations under the License.
     }
 
 
+#ifndef __has_builtin
+#define __has_builtin(x) 0
+#endif
+
 #if __has_builtin(__builtin_expect)
 #ifdef __cplusplus
 #define CUGO_LIKELY(exp) (__builtin_expect(!!(exp), true))
