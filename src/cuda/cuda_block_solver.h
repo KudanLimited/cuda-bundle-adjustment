@@ -17,11 +17,11 @@ limitations under the License.
 #pragma once
 
 #include "cuda/cuda_constants.h"
+#include "cuda_device.h"
 #include "device_matrix.h"
 #include "fixed_vector.h"
 #include "graph_optimisation_options.h"
 #include "measurements.h"
-#include "cuda_device.h"
 #include "robust_kernel.h"
 
 namespace cugo
@@ -175,6 +175,23 @@ void CUGO_API constructQuadraticForm_(
     GpuHplBlockMat& Hpl,
     const CudaDeviceInfo& deviceInfo);
 
+void constructQuadraticForm_depth(
+    const GpuVec3d& Xcs,
+    const GpuVecSe3d& se3,
+    GpuVec3d& errors,
+    const GpuVec1d& omegas,
+    const GpuVec2i& edge2PL,
+    const GpuVec1i& edge2Hpl,
+    const GpuVec1b& flags,
+    const GpuVec5d& cameras,
+    const RobustKernel& robustKernel,
+    const GpuVec1i& outliers,
+    GpuPxPBlockVec& Hpp,
+    GpuPx1BlockVec& bp,
+    GpuLxLBlockVec& Hll,
+    GpuLx1BlockVec& bl,
+    GpuHplBlockMat& Hpl,
+    const CudaDeviceInfo& deviceInfo);
 
 template <int M>
 Scalar computeActiveErrors_(

@@ -16,9 +16,9 @@ limitations under the License.
 
 #pragma once
 
+#include "cuda_device.h"
 #include "macro.h"
 #include "optimisable_graph.h"
-#include "cuda_device.h"
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -40,8 +40,7 @@ public:
     ~StereoEdgeSet() {}
 
     Scalar computeError(
-        const VertexSetVec& vertexSets,
-        Scalar* chi, const CudaDeviceInfo& deviceInfo) override
+        const VertexSetVec& vertexSets, Scalar* chi, const CudaDeviceInfo& deviceInfo) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d poseEstimateData = poseVertexSet->getDeviceEstimates();
@@ -109,8 +108,7 @@ public:
     ~MonoEdgeSet() {}
 
     Scalar computeError(
-        const VertexSetVec& vertexSets,
-        Scalar* chi, const CudaDeviceInfo& deviceInfo) override
+        const VertexSetVec& vertexSets, Scalar* chi, const CudaDeviceInfo& deviceInfo) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d poseEstimateData = poseVertexSet->getDeviceEstimates();
@@ -162,7 +160,6 @@ public:
             bl,
             Hpl,
             deviceInfo);
-
     }
 
 private:
@@ -177,8 +174,7 @@ public:
     ~DepthEdgeSet() {}
 
     Scalar computeError(
-        const VertexSetVec& vertexSets,
-        Scalar* chi, const CudaDeviceInfo& deviceInfo) override
+        const VertexSetVec& vertexSets, Scalar* chi, const CudaDeviceInfo& deviceInfo) override
     {
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d poseEstimateData = poseVertexSet->getDeviceEstimates();
@@ -213,7 +209,7 @@ public:
         // NOTE: This assumes the pose vertex is of the SE3 form and is in index position zero
         PoseVertexSet* poseVertexSet = static_cast<PoseVertexSet*>(vertexSets[0]);
         GpuVecSe3d se3_data = poseVertexSet->getDeviceEstimates();
-        gpu::constructQuadraticForm_<3>(
+        gpu::constructQuadraticForm_depth(
             d_Xcs,
             se3_data,
             d_errors,

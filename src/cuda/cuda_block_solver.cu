@@ -173,7 +173,11 @@ dot_stride_<3, 1, 1>(const Scalar* __restrict__ a, const Scalar* __restrict__ b)
 
 // matrix(tansposed)-vector product: b = AT*x
 template <int M, int N, AssignOP OP = ASSIGN>
-__device__ inline void MatTMulVec(const Scalar* __restrict__ A, const Scalar* __restrict__ x, Scalar* __restrict__ b, Scalar omega)
+__device__ inline void MatTMulVec(
+    const Scalar* __restrict__ A,
+    const Scalar* __restrict__ x,
+    Scalar* __restrict__ b,
+    Scalar omega)
 {
 #pragma unroll
     for (int i = 0; i < M; i++)
@@ -577,6 +581,53 @@ __device__ void computeJacobians<3>(
     JP(2, 5) = JP(0, 5) - bf * invZZ;
 }
 
+__device__ void computeJacobians_depth(
+    const Vec3d& Xc, const QuatD& q, CameraParamView cam, MatView3x6d JP, MatView3x3d JL)
+{
+    const Scalar X = Xc[0];
+    const Scalar Y = Xc[1];
+    const Scalar invZ = 1.0 / Xc[2];
+    const Scalar invZsq = invZ * invZ;
+    const Scalar fu = cam.fx();
+    const Scalar fv = cam.fy();
+
+    Matx<Scalar, 3, 3> R;
+    quaternionToRotationMatrix(q, R);
+
+    JL(0, 0) = -fu * R(0, 0) * invZ + fu * X * R(2, 0) * invZsq;
+    JL(0, 1) = -fu * R(0, 1) * invZ + fu * X * R(2, 1) * invZsq;
+    JL(0, 2) = -fu * R(0, 2) * invZ + fu * X * R(2, 2) * invZsq;
+
+    JL(1, 0) = -fv * R(1, 0) * invZ + fv * Y * R(2, 0) * invZsq;
+    JL(1, 1) = -fv * R(1, 1) * invZ + fv * Y * R(2, 1) * invZsq;
+    JL(1, 2) = -fv * R(1, 2) * invZ + fv * Y * R(2, 2) * invZsq;
+
+    JL(2, 0) = R(2, 0) * invZsq;
+    JL(2, 1) = R(2, 1) * invZsq;
+    JL(2, 2) = R(2, 2) * invZsq;
+
+    JP(0, 0) = X * Y * invZsq * fu;
+    JP(0, 1) = -(1.0 + X * X * invZsq) * fu;
+    JP(0, 2) = fu * Y * invZ;
+    JP(0, 3) = -fu * invZ;
+    JP(0, 4) = 0.0;
+    JP(0, 5) = X * invZsq * fu;
+
+    JP(1, 0) = fv * (1.0 + Y * Y * invZsq);
+    JP(1, 1) = -fv * X * Y * invZsq;
+    JP(1, 2) = -fv * X * invZ;
+    JP(1, 3) = 0.0;
+    JP(1, 4) = -fv * invZ;
+    JP(1, 5) = fv * Y * invZsq;
+
+    JP(2, 0) = Y * invZsq;
+    JP(2, 1) = -X * invZsq;
+    JP(2, 2) = 0.0;
+    JP(2, 3) = 0.0;
+    JP(2, 4) = 0.0;
+    JP(2, 5) = invZsq;
+}
+
 __device__ inline QuatD conjugate(const QuatD& r)
 {
     QuatD output;
@@ -883,16 +934,10 @@ inline void cooperativeLaunch(
     void* argumentsPtrs[sizeof...(KernelParameters)];
     auto argIdx = 0;
 
-    detail::for_each_argument_address(
-        [&](void* x) { argumentsPtrs[argIdx++] = x; }, parameters...);
+    detail::for_each_argument_address([&](void* x) { argumentsPtrs[argIdx++] = x; }, parameters...);
 
     cudaLaunchCooperativeKernel<KernelFunction>(
-        &kernel_function,
-        gridSize,
-        blockSize,
-        argumentsPtrs,
-        sharedBytes,
-        streamId);
+        &kernel_function, gridSize, blockSize, argumentsPtrs, sharedBytes, streamId);
 }
 
 __device__ void reduceBlock(double* sdata, const cg::thread_block& cta)
@@ -977,7 +1022,6 @@ public:
     __device__ virtual Scalar derivative(const Scalar x) const { return 1; }
 
 protected:
-
     Scalar delta_;
 };
 
@@ -985,7 +1029,10 @@ protected:
 class RobustKernelTurkey : public RobustKernelFunc
 {
 public:
-    __device__ inline RobustKernelTurkey(const Scalar delta) : RobustKernelFunc(delta), deltaSq_(delta * delta) {}
+    __device__ inline RobustKernelTurkey(const Scalar delta)
+        : RobustKernelFunc(delta), deltaSq_(delta * delta)
+    {
+    }
 
     __device__ inline Scalar robustify(const Scalar x) const
     {
@@ -1035,7 +1082,7 @@ __global__ void createRkFunctionKernel(const RobustKernelType type, const Scalar
 {
     if (threadIdx.x == 0 && blockIdx.x == 0)
     {
-        switch (type) 
+        switch (type)
         {
             case RobustKernelType::None:
                 robustKernelFunc = new (rkBuffer) RobustKernelFunc(delta[0]);
@@ -1148,7 +1195,46 @@ __global__ void computeOutliersKernel(
     }
 }
 
-    template <int MDIM>
+template <int MDIM>
+__device__ void computeQuadraticForm(
+    const Scalar omega,
+    const int flag,
+    const int iP,
+    const int iL,
+    const int iPL,
+    const Vecxd<MDIM>& error,
+    PxPBlockPtr Hpp,
+    Px1BlockPtr bp,
+    LxLBlockPtr Hll,
+    Lx1BlockPtr bl,
+    PxLBlockPtr Hpl,
+    Scalar* JP,
+    Scalar* JL)
+{
+    if (!(flag & EDGE_FLAG_FIXED_P))
+    {
+        // Hpp += = JPT*Ω*JP
+        MatTMulMat<PDIM, MDIM, PDIM, ACCUM_ATOMIC>(JP, JP, Hpp.at(iP), omega);
+
+        // bp += = JPT*Ω*r
+        MatTMulVec<PDIM, MDIM, ACCUM_ATOMIC>(JP, error.data, bp.at(iP), omega);
+    }
+    if (!(flag & EDGE_FLAG_FIXED_L))
+    {
+        // Hll += = JLT*Ω*JL
+        MatTMulMat<LDIM, MDIM, LDIM, ACCUM_ATOMIC>(JL, JL, Hll.at(iL), omega);
+
+        // bl += = JLT*Ω*r
+        MatTMulVec<LDIM, MDIM, ACCUM_ATOMIC>(JL, error.data, bl.at(iL), omega);
+    }
+    if (!flag)
+    {
+        // Hpl += = JPT*Ω*JL
+        MatTMulMat<PDIM, MDIM, LDIM, ASSIGN>(JP, JL, Hpl.at(iPL), omega);
+    }
+}
+
+template <int MDIM>
 __global__ void constructQuadraticFormKernel(
     int nedges,
     int nomegas,
@@ -1196,31 +1282,60 @@ __global__ void constructQuadraticFormKernel(
     Scalar JL[MDIM * LDIM];
     computeJacobians<MDIM>(Xc, q, camera, JP, JL);
 
-    if (!(flag & EDGE_FLAG_FIXED_P))
-    {
-        // Hpp += = JPT*Ω*JP
-        MatTMulMat<PDIM, MDIM, PDIM, ACCUM_ATOMIC>(JP, JP, Hpp.at(iP), rhoOmega);
+    computeQuadraticForm(rhoOmega, flag, iP, iL, iPL, error, Hpp, bp, Hll, bl, Hpl, JP, JL);
+}
 
-        // bp += = JPT*Ω*r
-        MatTMulVec<PDIM, MDIM, ACCUM_ATOMIC>(JP, error.data, bp.at(iP), rhoOmega);
-    }
-    if (!(flag & EDGE_FLAG_FIXED_L))
+__global__ void constructQuadraticFormKernel_depth(
+    int nedges,
+    int nomegas,
+    int ncameras,
+    const Vec3d* Xcs,
+    const Se3D* se3,
+    const Vec3d* errors,
+    const Scalar* omegas,
+    const Vec2i* edge2PL,
+    const int* edge2Hpl,
+    const uint8_t* flags,
+    const Vec5d* cameras,
+    const int* outliers,
+    PxPBlockPtr Hpp,
+    Px1BlockPtr bp,
+    LxLBlockPtr Hll,
+    Lx1BlockPtr bl,
+    PxLBlockPtr Hpl)
+{
+    const int iE = blockIdx.x * blockDim.x + threadIdx.x;
+    if (iE >= nedges || outliers[iE])
     {
-        // Hll += = JLT*Ω*JL
-        MatTMulMat<LDIM, MDIM, LDIM, ACCUM_ATOMIC>(JL, JL, Hll.at(iL), rhoOmega);
+        return;
+    }
 
-        // bl += = JLT*Ω*r
-        MatTMulVec<LDIM, MDIM, ACCUM_ATOMIC>(JL, error.data, bl.at(iL), rhoOmega);
-    }
-    if (!flag)
-    {
-        // Hpl += = JPT*Ω*JL
-        MatTMulMat<PDIM, MDIM, LDIM, ASSIGN>(JP, JL, Hpl.at(iPL), rhoOmega);
-    }
+    const Scalar omega = (nomegas > 1) ? omegas[iE] : omegas[0];
+    const int iP = edge2PL[iE][0];
+    const int iL = edge2PL[iE][1];
+    const int iPL = edge2Hpl[iE];
+    const int flag = flags[iE];
+
+    const QuatD& q = se3[iP].r;
+    const Vec3d& Xc = Xcs[iE];
+    const Vec3d& error = errors[iE];
+    const Vec5d& camera = (ncameras > 1) ? cameras[iE] : cameras[0];
+
+    const Scalar e = squaredNorm(error) * omega;
+    const Scalar rho1 = robustKernelFunc->derivative(e);
+    const Scalar rhoOmega = omega * rho1;
+
+    // compute Jacobians
+    Scalar JP[3 * PDIM];
+    Scalar JL[3 * LDIM];
+    computeJacobians_depth(Xc, q, camera, JP, JL);
+
+    computeQuadraticForm(rhoOmega, flag, iP, iL, iPL, error, Hpp, bp, Hll, bl, Hpl, JP, JL);
 }
 
 template <int DIM>
-__global__ void maxDiagonalKernel(int size, int blockSize, const Scalar* __restrict__ D, Scalar* __restrict__ maxD)
+__global__ void
+maxDiagonalKernel(int size, int blockSize, const Scalar* __restrict__ D, Scalar* __restrict__ maxD)
 {
     const int sharedIdx = threadIdx.x;
     extern __shared__ Scalar cache[];
@@ -1313,8 +1428,8 @@ __global__ void computeBschureKernel(
     }
 }
 
-__global__ void initializeHschurKernel(
-    int rows, PxPBlockPtr Hpp, PxPBlockPtr Hsc, const int* HscRowPtr)
+__global__ void
+initializeHschurKernel(int rows, PxPBlockPtr Hpp, PxPBlockPtr Hsc, const int* HscRowPtr)
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= rows)
@@ -1325,11 +1440,7 @@ __global__ void initializeHschurKernel(
 }
 
 __global__ void computeHschureKernel(
-    int size,
-    const Vec3i* mulBlockIds,
-    PxLBlockPtr Hpl_invHll,
-    PxLBlockPtr Hpl,
-    PxPBlockPtr Hschur)
+    int size, const Vec3i* mulBlockIds, PxLBlockPtr Hpl_invHll, PxLBlockPtr Hpl, PxPBlockPtr Hschur)
 {
     const int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= size)
@@ -1350,7 +1461,7 @@ __global__ void findHschureMulBlockIndicesKernel(
     const int* __restrict__ HplRowInd,
     const int* __restrict__ HscRowPtr,
     const int* __restrict__ HscColInd,
-    Vec3i*  mulBlockIds,
+    Vec3i* mulBlockIds,
     int* nindices)
 {
     const int colId = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1378,10 +1489,7 @@ __global__ void findHschureMulBlockIndicesKernel(
 }
 
 __global__ void permuteNnzPerRowKernel(
-    int size,
-    const int* __restrict__ srcRowPtr,
-    const int* __restrict__ P,
-    int*  nnzPerRow)
+    int size, const int* __restrict__ srcRowPtr, const int* __restrict__ P, int* nnzPerRow)
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= size)
@@ -1396,9 +1504,9 @@ __global__ void permuteColIndKernel(
     const int* __restrict__ srcRowPtr,
     const int* __restrict__ srcColInd,
     const int* __restrict__ P,
-    int*  dstColInd,
-    int*  dstMap,
-    int*  nnzPerRow)
+    int* dstColInd,
+    int* dstMap,
+    int* nnzPerRow)
 {
     const int rowId = blockIdx.x * blockDim.x + threadIdx.x;
     if (rowId >= size)
@@ -1550,7 +1658,7 @@ void calculateOccupancy(int size, void* kernelFunc, int& outputBlockSize, int& o
         outputGridSize = minGridSize;
     }
 }
-       
+
 void waitForEvent(const cudaEvent_t event) { CUDA_CHECK(cudaEventSynchronize(event)); }
 
 void createRkFunction(
@@ -1591,7 +1699,8 @@ void buildHplStructure(
     nnzPerColKernel<<<gridSize, blockSize, 0, deviceInfo1.stream>>>(blockpos, nblocks, nnzPerCol);
     CUDA_CHECK(cudaEventRecord(deviceInfo1.event, deviceInfo1.stream));
 
-    setRowIndKernel<<<gridSize, blockSize, 0 , deviceInfo2.stream>>>(blockpos, nblocks, rowInd, indexPL);
+    setRowIndKernel<<<gridSize, blockSize, 0, deviceInfo2.stream>>>(
+        blockpos, nblocks, rowInd, indexPL);
     CUDA_CHECK(cudaEventRecord(deviceInfo2.event, deviceInfo2.stream));
 
     CUDA_CHECK(cudaEventRecord(deviceInfo1.event, deviceInfo1.stream));
@@ -1624,7 +1733,7 @@ void findHschureMulBlockIndices(
         Hsc.innerIndices(),
         mulBlockIds,
         nindices);
-    
+
     auto ptrSrc = thrust::device_pointer_cast(mulBlockIds.data());
     thrust::sort(ptrSrc, ptrSrc + mulBlockIds.size(), LessRowId());
 
@@ -1900,8 +2009,57 @@ void constructQuadraticForm_<3>(
     CUDA_CHECK(cudaGetLastError());
 }
 
+void constructQuadraticForm_depth(
+    const GpuVec3d& Xcs,
+    const GpuVecSe3d& se3,
+    GpuVec3d& errors,
+    const GpuVec1d& omegas,
+    const GpuVec2i& edge2PL,
+    const GpuVec1i& edge2Hpl,
+    const GpuVec1b& flags,
+    const GpuVec5d& cameras,
+    const RobustKernel& robustKernel,
+    const GpuVec1i& outliers,
+    GpuPxPBlockVec& Hpp,
+    GpuPx1BlockVec& bp,
+    GpuLxLBlockVec& Hll,
+    GpuLx1BlockVec& bl,
+    GpuHplBlockMat& Hpl,
+    const CudaDeviceInfo& deviceInfo)
+{
+    const int nedges = errors.ssize();
+    const int nomegas = omegas.ssize();
+    const int ncameras = cameras.ssize();
+    const int block = 512;
+    const int grid = divUp(nedges, block);
+
+    constructQuadraticFormKernel_depth<<<grid, block, 0, deviceInfo.stream>>>(
+        nedges,
+        nomegas,
+        ncameras,
+        Xcs,
+        se3,
+        errors,
+        omegas,
+        edge2PL,
+        edge2Hpl,
+        flags,
+        cameras,
+        outliers,
+        Hpp,
+        bp,
+        Hll,
+        bl,
+        Hpl);
+    CUDA_CHECK(cudaGetLastError());
+}
+
 template <typename T, int DIM>
-Scalar maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* d_maxD, Scalar * h_tmpMax, const CudaDeviceInfo& deviceInfo)
+Scalar maxDiagonal_(
+    const DeviceBlockVector<T, DIM, DIM>& D,
+    Scalar* d_maxD,
+    Scalar* h_tmpMax,
+    const CudaDeviceInfo& deviceInfo)
 {
     const int size = D.size() * DIM;
     int gridSize;
@@ -1911,13 +2069,15 @@ Scalar maxDiagonal_(const DeviceBlockVector<T, DIM, DIM>& D, Scalar* d_maxD, Sca
 
     int sharedBytes = sizeof(Scalar) * blockSize;
 
-    maxDiagonalKernel<DIM><<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(size, blockSize, D.values(), d_maxD);
-    
-    CUDA_CHECK(cudaMemcpyAsync(h_tmpMax, d_maxD, sizeof(Scalar) * gridSize, cudaMemcpyDeviceToHost, deviceInfo.stream));
+    maxDiagonalKernel<DIM><<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
+        size, blockSize, D.values(), d_maxD);
+
+    CUDA_CHECK(cudaMemcpyAsync(
+        h_tmpMax, d_maxD, sizeof(Scalar) * gridSize, cudaMemcpyDeviceToHost, deviceInfo.stream));
 
     CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
     CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
-    
+
     Scalar maxv = 0;
     for (int i = 0; i < gridSize; i++)
     {
@@ -1950,8 +2110,9 @@ void addLambda_(
     int gridSize;
     int blockSize;
     calculateOccupancy(size, (void*)addLambdaKernel<DIM>, blockSize, gridSize);
-    
-    addLambdaKernel<DIM><<<gridSize, blockSize, 0, deviceInfo.stream>>>(size, D.values(), lambda, backup.values());
+
+    addLambdaKernel<DIM>
+        <<<gridSize, blockSize, 0, deviceInfo.stream>>>(size, D.values(), lambda, backup.values());
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
     CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
@@ -2035,9 +2196,10 @@ void computeHschure(
     int blockSize;
     int gridSize;
     calculateOccupancy(Hsc.rows(), (void*)initializeHschurKernel, blockSize, gridSize);
-   
+
     Hsc.fillZero();
-    initializeHschurKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(Hsc.rows(), Hpp, Hsc, Hsc.outerIndices());
+    initializeHschurKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(
+        Hsc.rows(), Hpp, Hsc, Hsc.outerIndices());
 
     CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
     CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
@@ -2063,7 +2225,8 @@ void convertHschureBSRToCSR(
     int gridSize;
     calculateOccupancy(size, (void*)convertBSRToCSRKernel, blockSize, gridSize);
 
-    convertBSRToCSRKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(size, HscBSR.values(), HscCSR, BSR2CSR);
+    convertBSRToCSRKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(
+        size, HscBSR.values(), HscCSR, BSR2CSR);
 
     CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
     CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
@@ -2095,7 +2258,8 @@ void twistCSR(
     calculateOccupancy(size, (void*)permuteNnzPerRowKernel, blockSize, gridSize);
 
     // permute rows
-    permuteNnzPerRowKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(size, srcRowPtr, P, nnzPerRow);
+    permuteNnzPerRowKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(
+        size, srcRowPtr, P, nnzPerRow);
     CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
     CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
 
@@ -2108,7 +2272,7 @@ void twistCSR(
     calculateOccupancy(size, (void*)permuteColIndKernel, blockSize, gridSize);
     permuteColIndKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(
         size, srcRowPtr, srcColInd, P, dstColInd, dstMap, nnzPerRow);
-    
+
     CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
     CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
     CUDA_CHECK(cudaGetLastError());
@@ -2147,7 +2311,7 @@ void updatePoses(const GpuPx1BlockVec& xp, GpuVecSe3d& estimate, const CudaDevic
     int gridSize;
     int blockSize;
     calculateOccupancy(xp.size(), (void*)updatePosesKernel, blockSize, gridSize);
-   
+
     updatePosesKernel<<<gridSize, blockSize, 0, deviceInfo.stream>>>(xp.size(), xp, estimate);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
@@ -2179,7 +2343,8 @@ void computeScale(
 
     CUDA_CHECK(cudaMemset(scale, 0, sizeof(Scalar)));
 
-    computeScaleKernel<<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(x, b, scale, lambda, x.ssize(), blockSize);
+    computeScaleKernel<<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
+        x, b, scale, lambda, x.ssize(), blockSize);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
     CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
@@ -2422,7 +2587,7 @@ __global__ void computeActiveErrorsKernel_Plane(
     Scalar* chi)
 {
     Scalar sumchi = 0;
-    
+
     extern __shared__ Scalar cache[];
 
     const int tid = threadIdx.x;
@@ -2445,8 +2610,8 @@ __global__ void computeActiveErrorsKernel_Plane(
         sumchi += (errors[iE] * errors[iE]) * omega;
 
         iE += gridSize;
-    } 
-   
+    }
+
     parallelReductionAndAdd(cache, blockSize, tid, sumchi, chi);
 }
 
@@ -2565,7 +2730,7 @@ Scalar computeActiveErrors_DepthBa(
         CUDA_CHECK(cudaMemset(outliers.data(), 0, nedges * sizeof(int)));
     }
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
-    
+
     computeActiveErrorsKernel_DepthBa<<<grid, block, 0, deviceInfo.stream>>>(
         nedges,
         nomegas,
@@ -2582,10 +2747,10 @@ Scalar computeActiveErrors_DepthBa(
         Xcs,
         chi);
     CUDA_CHECK(cudaGetLastError());
-    
+
     Scalar h_chi = 0;
     CUDA_CHECK(cudaMemcpy(&h_chi, chi, sizeof(Scalar), cudaMemcpyDeviceToHost));
-  
+
     return h_chi;
 }
 
@@ -2629,7 +2794,7 @@ Scalar computeActiveErrors_Plane(
 {
     const int nedges = measurements.ssize();
     const int nomegas = omegas.ssize();
-    
+
     // Using a fixed thread number here as otherwise if the occupancy is
     // calculated at runtime based on the system, this will lead to
     // inconsistent results from the kernel. Maybe due to shared buffer
@@ -2642,14 +2807,14 @@ Scalar computeActiveErrors_Plane(
     CUDA_CHECK(cudaMemset(chi, 0, sizeof(Scalar)));
     computeActiveErrorsKernel_Plane<<<gridSize, blockSize, sharedBytes, deviceInfo.stream>>>(
         nedges, nomegas, blockSize, poseEstimate, measurements, omegas, edge2PL, errors, Xcs, chi);
-  
+
     hAsyncScalar h_chi;
     h_chi.download(chi, deviceInfo.stream);
 
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(deviceInfo.event, deviceInfo.stream));
     CUDA_CHECK(cudaEventSynchronize(deviceInfo.event));
-    
+
     return *h_chi;
 }
 
