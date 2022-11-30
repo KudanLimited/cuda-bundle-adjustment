@@ -563,11 +563,13 @@ public:
      * @param stream A CUDA stream object.
      * @param options A @see GraphOptimisationOptions object
      */
-    virtual void
-    mapDevice(const GraphOptimisationOptions& options, const CudaDeviceInfo& deviceInfo, int* edge2HData = nullptr) = 0;
+    virtual void mapDevice(
+        const GraphOptimisationOptions& options,
+        const CudaDeviceInfo& deviceInfo,
+        int* edge2HData = nullptr) = 0;
 
-    virtual void buildHplBlockPos(
-        async_vector<HplBlockPos>& hplBlockPos, int edgeOffset) noexcept = 0;
+    virtual void
+    buildHplBlockPos(async_vector<HplBlockPos>& hplBlockPos, int edgeOffset) noexcept = 0;
     /**
      * @brief Clear the device side containers in this set. Note: This does not deallocate device
      * memory.
@@ -578,11 +580,12 @@ public:
      * @brief Clear the edges from the set.
      */
     virtual void clearEdges() noexcept = 0;
-    
+
     /**
-    * @brief If the outlier threshold is greater than zero, then any edge outliers determined by the 
-    * @p computeErrors kernel, will be removed from the edge container.
-    */
+     * @brief If the outlier threshold is greater than zero, then any edge outliers determined by
+     * the
+     * @p computeErrors kernel, will be removed from the edge container.
+     */
     virtual void updateEdges(const CudaDeviceInfo& deviceInfo) noexcept = 0;
 
     /**
@@ -620,9 +623,9 @@ public:
     virtual Information getInformation() noexcept = 0;
 
     /**
-    * @brief Return the outlier threshold used to determine edge outliers.
-    * @return The outlier threshold - if zero outlier logic not used.
-    */
+     * @brief Return the outlier threshold used to determine edge outliers.
+     * @return The outlier threshold - if zero outlier logic not used.
+     */
     virtual Scalar getOutlierThreshold() const noexcept = 0;
 
     virtual uint32_t getOutlierCount() const noexcept = 0;
@@ -667,7 +670,8 @@ public:
      * @param stream A CUDA stream object
      * @return Scalar The calculated chi2 value
      */
-    virtual Scalar computeError(const VertexSetVec& vertexSets, Scalar* chi, const CudaDeviceInfo& deviceInfo)
+    virtual Scalar
+    computeError(const VertexSetVec& vertexSets, Scalar* chi, const CudaDeviceInfo& deviceInfo)
     {
         return 0;
     }
@@ -676,7 +680,7 @@ public:
 /**
  * @brief Group together a set of edges of the same type.
  * @tparam DIM dimension of the measurement vector.
- * @tparam E The measurement type for this edge 
+ * @tparam E The measurement type for this edge
  * @tparam VertexTypes A varadic template of vertex types associated with this edge.
  */
 template <int DIM, typename E, typename... VertexTypes>
@@ -698,7 +702,8 @@ public:
         : activeEdgeSize_(0),
           outlierThreshold(0.0),
           info_(0.0),
-          totalBufferSize_(0), 
+          totalBufferSize_(0),
+          currOutlierCount_(0),
           isDirty_(true)
     {
     }
@@ -767,7 +772,8 @@ protected:
 
 public:
     // device side
-    using ErrorVec = typename std::conditional<(DIM == 1), GpuVec1d, GpuVec<Vec<double, DIM>>>::type;
+    using ErrorVec =
+        typename std::conditional<(DIM == 1), GpuVec1d, GpuVec<Vec<double, DIM>>>::type;
     using MeasurementVec = GpuVec<GpuMeasurementType>;
 
     void init(const GraphOptimisationOptions& options) override;

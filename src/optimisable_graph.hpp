@@ -126,7 +126,8 @@ void VertexSet<T, EstimateType>::generateEstimateData()
 }
 
 template <typename T, typename EstimateType>
-void VertexSet<T, EstimateType>::mapEstimateData(Scalar* d_dataPtr, const CudaDeviceInfo& deviceInfo)
+void VertexSet<T, EstimateType>::mapEstimateData(
+    Scalar* d_dataPtr, const CudaDeviceInfo& deviceInfo)
 {
     // upload to the device
     d_estimate.map(estimates.size(), d_dataPtr);
@@ -428,6 +429,8 @@ void EdgeSet<DIM, E, VertexTypes...>::clearEdges() noexcept
 {
     edges.clear();
     currOutlierCount_ = 0;
+    totalBufferSize_ = 0;
+    activeEdgeSize_ = 0;
     // Set edges state to dirty to ensure that the Hpl data is built the first time round
     isDirty_ = true;
 }
@@ -478,7 +481,7 @@ void EdgeSet<DIM, E, VertexTypes...>::init(const GraphOptimisationOptions& optio
         assert(info_ == 0.0);
     }
 
-    // calculate the number of active edges (either vertex is not fixed) 
+    // calculate the number of active edges (either vertex is not fixed)
     // NOTE: The assumption here is that there is either one vertex and this is
     // a pose type or there are two vertices and they are pose and landmark (in that order)
     activeEdgeSize_ = 0;
@@ -548,7 +551,7 @@ void EdgeSet<DIM, E, VertexTypes...>::init(const GraphOptimisationOptions& optio
                 edgeFlags->push_back(BlockSolver::makeEdgeFlag(
                     edge->getVertex(0)->isFixed(), edge->getVertex(1)->isFixed()));
                 isActive = true;
-            } 
+            }
         }
 
         if (isActive)
@@ -609,10 +612,10 @@ void EdgeSet<DIM, E, VertexTypes...>::updateEdges(const CudaDeviceInfo& deviceIn
     {
         const size_t nedges = edges.size();
         gpu::computeOutliers(nedges, outlierThreshold, d_chiValues, d_outliers, deviceInfo);
-        
+
         edgeOutliers_.resize(activeEdgeSize_);
         d_outliers.download(edgeOutliers_.data());
-        
+
         size_t idx = 0;
         uint32_t outlierCount = 0;
 
@@ -635,7 +638,7 @@ void EdgeSet<DIM, E, VertexTypes...>::updateEdges(const CudaDeviceInfo& deviceIn
         currOutlierCount_ = outlierCount;
     }
 }
-  
+
 template <int DIM, typename E, typename... VertexTypes>
 void EdgeSet<DIM, E, VertexTypes...>::buildHplBlockPos(
     async_vector<HplBlockPos>& hplBlockPos, int edgeOffset) noexcept
@@ -647,7 +650,7 @@ void EdgeSet<DIM, E, VertexTypes...>::buildHplBlockPos(
         {
             continue;
         }
-        
+
         if (edge->isActive() && edge->allVerticesNotFixed())
         {
             hplBlockPos.push_back(
@@ -662,7 +665,7 @@ uint32_t EdgeSet<DIM, E, VertexTypes...>::getOutlierCount() const noexcept
 {
     return currOutlierCount_;
 }
-     
+
 template <int DIM, typename E, typename... VertexTypes>
 bool EdgeSet<DIM, E, VertexTypes...>::isDirty() const noexcept
 {
