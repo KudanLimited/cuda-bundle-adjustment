@@ -6,8 +6,8 @@
 
 #include <cassert>
 #include <cstring>
-#include <exception>
 #include <memory>
+#include <stdexcept>
 
 namespace cugo
 {
@@ -123,7 +123,7 @@ public:
      * @return A @p ArenaPtr that manages the chunk.
      */
     template <typename T>
-    std::unique_ptr<ArenaPool<T>> allocate(size_t size) 
+    std::unique_ptr<ArenaPool<T>> allocate(size_t size)
     {
         std::size_t totalSize = size * sizeof(T);
         // TODO: readjust the arena size if the capacity is reached - this will also
@@ -132,7 +132,7 @@ public:
         // method to the memory pools. Throws an exception for now.
         if (totalSize > capacity_)
         {
-            std::runtime_error("Capacity reached for Arena. Increase the allocated size.");
+            throw std::runtime_error("Capacity reached for Arena. Increase the allocated size.");
         }
 
         T* alignedArenaPtr = reinterpret_cast<T*>(alignedPtr<T>(arena_ + currSize_));

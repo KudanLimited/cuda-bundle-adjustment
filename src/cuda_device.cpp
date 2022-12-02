@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 
 namespace cugo
 {
@@ -40,7 +41,7 @@ void CudaDevice::init()
 #endif
 }
 
-void CudaDevice::destroy() 
+void CudaDevice::destroy()
 {
     for (int i = 0; i < streams_.size(); ++i)
     {

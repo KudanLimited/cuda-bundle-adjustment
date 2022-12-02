@@ -6,11 +6,12 @@
 
 #include <array>
 #include <cassert>
+#include <cstdint>
 
 namespace cugo
 {
 
- /**
+/**
  * To aid in the easier passing of streams and events to functions that
  * call kernels.
  */
@@ -40,8 +41,8 @@ public:
     void init();
 
     /**
-    * @brief Destroy the cuda backend.
-    */
+     * @brief Destroy the cuda backend.
+     */
     void destroy();
 
     /**
@@ -104,7 +105,6 @@ private:
     /// for timing events
     cudaEvent_t timeStart;
     cudaEvent_t timeStop;
-
 };
 
 } // namespace cugo
