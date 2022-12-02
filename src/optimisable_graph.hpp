@@ -667,6 +667,12 @@ uint32_t EdgeSet<DIM, E, VertexTypes...>::getOutlierCount() const noexcept
 }
 
 template <int DIM, typename E, typename... VertexTypes>
+uint32_t EdgeSet<DIM, E, VertexTypes...>::getInlierCount() const noexcept
+{
+    return activeEdgeSize_ - currOutlierCount_;
+}
+
+template <int DIM, typename E, typename... VertexTypes>
 bool EdgeSet<DIM, E, VertexTypes...>::isDirty() const noexcept
 {
     return isDirty_;

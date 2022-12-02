@@ -630,6 +630,8 @@ public:
 
     virtual uint32_t getOutlierCount() const noexcept = 0;
 
+    virtual uint32_t getInlierCount() const noexcept = 0;
+
     virtual bool isDirty() const noexcept = 0;
 
     virtual void setDirtyState(bool state) noexcept = 0;
@@ -726,6 +728,7 @@ public:
     Camera& getCamera() noexcept override;
     Scalar getOutlierThreshold() const noexcept override;
     uint32_t getOutlierCount() const noexcept override;
+    uint32_t getInlierCount() const noexcept;
     bool isDirty() const noexcept override;
     void setDirtyState(bool state) noexcept override;
 
